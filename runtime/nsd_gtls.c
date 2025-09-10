@@ -37,6 +37,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <sys/select.h>
 
 #include "rsyslog.h"
 #include "syslogd-types.h"
@@ -2118,6 +2119,56 @@ static rsRetVal Send(nsd_t *pNsd, uchar *pBuf, ssize_t *pLenBuf) {
     if (pThis->iMode == 0) {
         CHKiRet(nsd_ptcp.Send(pThis->pTcp, pBuf, pLenBuf));
         FINALIZE;
+    }
+
+    /* Check for incoming data (including TLS 1.3 Key Update messages) before sending.
+     * This is required by RFC 8446 to handle post-handshake messages properly.
+     * We use gnutls_record_check_pending first, then do a non-blocking check.
+     */
+    if (pThis->sess != NULL) {
+        /* First check if there's already buffered data in GnuTLS */
+        size_t pendingData = gnutls_record_check_pending(pThis->sess);
+        if (pendingData > 0) {
+            char rcvBuf[NSD_GTLS_MAX_RCVBUF];
+            ssize_t rcvd = gnutls_record_recv(pThis->sess, rcvBuf, sizeof(rcvBuf));
+            if (rcvd > 0) {
+                /* We received application data, which is unexpected for a log sender.
+                 * Log it but continue with the send operation. */
+                DBGPRINTF("Send: Unexpected application data received (%zd bytes) - discarding\n", rcvd);
+            } else if (rcvd < 0 && rcvd != GNUTLS_E_INTERRUPTED && rcvd != GNUTLS_E_AGAIN) {
+                DBGPRINTF("Send: gnutls_record_recv for pending data failed with error %zd\n", rcvd);
+            }
+        } else {
+            /* Check if there's data available on the underlying socket using select() with zero timeout */
+            int fd = -1;
+            gnutls_transport_ptr_t fdPtr = gnutls_transport_get_ptr(pThis->sess);
+            if (fdPtr != NULL) {
+                fd = (int)(intptr_t)fdPtr;
+            }
+            
+            if (fd >= 0) {
+                fd_set readfds;
+                struct timeval tv;
+                FD_ZERO(&readfds);
+                FD_SET(fd, &readfds);
+                tv.tv_sec = 0;
+                tv.tv_usec = 0;  /* Non-blocking check */
+                
+                int ret = select(fd + 1, &readfds, NULL, NULL, &tv);
+                if (ret > 0 && FD_ISSET(fd, &readfds)) {
+                    /* Data is available, try to read it */
+                    char rcvBuf[NSD_GTLS_MAX_RCVBUF];
+                    ssize_t rcvd = gnutls_record_recv(pThis->sess, rcvBuf, sizeof(rcvBuf));
+                    if (rcvd > 0) {
+                        /* We received application data, which is unexpected for a log sender.
+                         * Log it but continue with the send operation. */
+                        DBGPRINTF("Send: Unexpected application data received (%zd bytes) from socket - discarding\n", rcvd);
+                    } else if (rcvd < 0 && rcvd != GNUTLS_E_INTERRUPTED && rcvd != GNUTLS_E_AGAIN) {
+                        DBGPRINTF("Send: gnutls_record_recv for socket data failed with error %zd\n", rcvd);
+                    }
+                }
+            }
+        }
     }
 
     while (1) { /* loop broken inside */

@@ -35,6 +35,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <sys/select.h>
 
 #include "rsyslog.h"
 #include "syslogd-types.h"
@@ -1131,6 +1132,58 @@ static rsRetVal Send(nsd_t *pNsd, uchar *pBuf, ssize_t *pLenBuf) {
     if (pThis->iMode == 0) {
         CHKiRet(nsd_ptcp.Send(pThis->pTcp, pBuf, pLenBuf));
         FINALIZE;
+    }
+
+    /* Check for incoming data (including TLS 1.3 Key Update messages) before sending.
+     * This is required by RFC 8446 to handle post-handshake messages properly.
+     * We use SSL_pending first, then do a non-blocking check with select().
+     */
+    if (SSL_pending(pThis->pNetOssl->ssl) > 0 || pThis->pNetOssl->ssl != NULL) {
+        /* First check if there's already buffered data in OpenSSL */
+        if (SSL_pending(pThis->pNetOssl->ssl) > 0) {
+            char rcvBuf[NSD_OSSL_MAX_RCVBUF];
+            int rcvd = SSL_read(pThis->pNetOssl->ssl, rcvBuf, sizeof(rcvBuf));
+            if (rcvd < 0) {
+                err = SSL_get_error(pThis->pNetOssl->ssl, rcvd);
+                /* Only log non-transient errors */
+                if (err != SSL_ERROR_WANT_READ && err != SSL_ERROR_WANT_WRITE) {
+                    DBGPRINTF("Send: SSL_read for pending data failed with error %d\n", err);
+                }
+            } else if (rcvd > 0) {
+                /* We received application data, which is unexpected for a log sender.
+                 * Log it but continue with the send operation. */
+                DBGPRINTF("Send: Unexpected application data received (%d bytes) - discarding\n", rcvd);
+            }
+        } else {
+            /* Check if there's data available on the underlying socket using select() with zero timeout */
+            int fd = SSL_get_fd(pThis->pNetOssl->ssl);
+            if (fd >= 0) {
+                fd_set readfds;
+                struct timeval tv;
+                FD_ZERO(&readfds);
+                FD_SET(fd, &readfds);
+                tv.tv_sec = 0;
+                tv.tv_usec = 0;  /* Non-blocking check */
+                
+                int ret = select(fd + 1, &readfds, NULL, NULL, &tv);
+                if (ret > 0 && FD_ISSET(fd, &readfds)) {
+                    /* Data is available, try to read it */
+                    char rcvBuf[NSD_OSSL_MAX_RCVBUF];
+                    int rcvd = SSL_read(pThis->pNetOssl->ssl, rcvBuf, sizeof(rcvBuf));
+                    if (rcvd < 0) {
+                        err = SSL_get_error(pThis->pNetOssl->ssl, rcvd);
+                        /* Only log non-transient errors */
+                        if (err != SSL_ERROR_WANT_READ && err != SSL_ERROR_WANT_WRITE) {
+                            DBGPRINTF("Send: SSL_read for socket data failed with error %d\n", err);
+                        }
+                    } else if (rcvd > 0) {
+                        /* We received application data, which is unexpected for a log sender.
+                         * Log it but continue with the send operation. */
+                        DBGPRINTF("Send: Unexpected application data received (%d bytes) from socket - discarding\n", rcvd);
+                    }
+                }
+            }
+        }
     }
 
     while (1) {
