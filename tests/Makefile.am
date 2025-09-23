@@ -501,11 +501,19 @@ TESTS +=  \
 	parsertest-parse-nodate.sh \
 	parsertest-parse-nodate-udp.sh \
 	parsertest-snare_ccoff_udp.sh \
-	parsertest-snare_ccoff_udp2.sh
+    parsertest-snare_ccoff_udp2.sh
+
+if ENABLE_MMSNAREWINSEC
+TESTS += \
+    mmsnarewinsec-basic.sh\
+	mmsnarewinsec-json.sh\
+	mmsnarewinsec-syslog.sh\
+	mmsnarewinsec-comprehensive.sh
+endif
 
 if ENABLE_OMSENDERTRACK
 TESTS += \
-	omsendertrack-basic.sh
+        omsendertrack-basic.sh
 TESTS += \
 	omsendertrack-statefile.sh
 if HAVE_VALGRIND
@@ -519,10 +527,10 @@ endif
 
 if ENABLE_LIBZSTD
 TESTS +=  \
-	zstd.sh
+        zstd.sh
 if HAVE_VALGRIND
 TESTS +=  \
-	zstd-vg.sh
+        zstd-vg.sh
 endif # if HAVE_VALGRIND
 endif
 
