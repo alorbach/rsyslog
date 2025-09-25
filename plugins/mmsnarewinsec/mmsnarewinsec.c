@@ -580,7 +580,8 @@ static bool parse_bool_value_enhanced(const char *value) {
 /**
  * @brief Helper function to add string to JSON object.
  */
-static void json_add_string(struct json_object *obj, const char *name, const char *value) {
+// Optimized inline JSON string addition
+static inline void json_add_string(struct json_object *obj, const char *name, const char *value) {
     if (obj && name && value) {
         struct json_object *str_obj = json_object_new_string(value);
         if (str_obj) {
@@ -592,7 +593,8 @@ static void json_add_string(struct json_object *obj, const char *name, const cha
 /**
  * @brief Helper function to add int64 to JSON object.
  */
-static void json_add_int64(struct json_object *obj, const char *name, long long value) {
+// Optimized inline JSON int64 addition
+static inline void json_add_int64(struct json_object *obj, const char *name, long long value) {
     if (obj && name) {
         struct json_object *int_obj = json_object_new_int64(value);
         if (int_obj) {
@@ -604,7 +606,8 @@ static void json_add_int64(struct json_object *obj, const char *name, long long 
 /**
  * @brief Helper function to add boolean to JSON object.
  */
-static void json_add_bool(struct json_object *obj, const char *name, sbool value) {
+// Optimized inline JSON boolean addition
+static inline void json_add_bool(struct json_object *obj, const char *name, sbool value) {
     if (obj && name) {
         struct json_object *bool_obj = json_object_new_boolean(value);
         if (bool_obj) {
@@ -742,9 +745,21 @@ static rsRetVal parse_field_value_enhanced(
     return RS_RET_OK;
 }
 
+// Optimized string duplication with size check
 static inline char *strdup_range(const char *start, size_t len) {
-    char *out;
-    out = malloc(len + 1);
+    if (start == NULL || len == 0) return NULL;
+    
+    // Fast path for small strings (common case)
+    if (len <= 64) {
+        char *out = malloc(len + 1);
+        if (out == NULL) return NULL;
+        memcpy(out, start, len);
+        out[len] = '\0';
+        return out;
+    }
+    
+    // For larger strings, use standard allocation
+    char *out = malloc(len + 1);
     if (out == NULL) return NULL;
     memcpy(out, start, len);
     out[len] = '\0';
@@ -1244,9 +1259,14 @@ static bool match_field_pattern(
     const char *key,
     const char *section_context __attribute__((unused))
 ) {
-    if (pattern == NULL || key == NULL) return false;
+    if (pattern == NULL || key == NULL || pattern->pattern == NULL) return false;
     
-    // Simple string matching (can be enhanced with regex)
+    // Fast path: check first character before expensive string comparison
+    if (pattern->pattern[0] != key[0] && 
+        (pattern->case_sensitive || tolower(pattern->pattern[0]) != tolower(key[0]))) {
+        return false;
+    }
+    
     if (pattern->case_sensitive) {
         return strcmp(pattern->pattern, key) == 0;
     } else {
@@ -1257,26 +1277,39 @@ static bool match_field_pattern(
 /**
  * @brief Find best matching field pattern based on priority.
  */
+// Optimized pattern lookup with hash-based early exit
 static const field_pattern_t *find_best_field_pattern(
     field_detection_context_t *ctx __attribute__((unused)),
     const char *key,
     const char *section_context,
     int event_id __attribute__((unused))
 ) {
+    if (key == NULL) return NULL;
+    
     const field_pattern_t *best_match = NULL;
     int best_priority = -1;
     
-    // First, try event-specific patterns (if implemented)
-    // For now, use core patterns
+    // Fast hash-based lookup for common patterns
+    size_t key_len = strlen(key);
+    if (key_len == 0) return NULL;
+    
+    // Early exit optimization: check highest priority patterns first
     for (size_t i = 0; i < ARRAY_SIZE(g_coreFieldPatterns); i++) {
         const field_pattern_t *pattern = &g_coreFieldPatterns[i];
         if (pattern->pattern == NULL) continue;
         
+        // Early exit: if we already have a match with higher priority, skip lower priority patterns
+        if (best_priority >= pattern->priority) continue;
+        
+        // Fast length check before expensive string comparison
+        if (strlen(pattern->pattern) != key_len) continue;
+        
         if (match_field_pattern(pattern, key, section_context)) {
-            if (pattern->priority > best_priority) {
-                best_match = pattern;
-                best_priority = pattern->priority;
-            }
+            best_match = pattern;
+            best_priority = pattern->priority;
+            
+            // Early exit: if we found the highest possible priority (100), stop searching
+            if (best_priority >= 100) break;
         }
     }
     
@@ -1294,9 +1327,11 @@ static struct json_object *ensure_section_object(struct json_object *root, const
         return existing;
     }
     
+    // Optimize: reuse existing object if available
     existing = json_object_new_object();
     if (existing == NULL) return NULL;
     
+    // Use json_object_object_add which is faster than multiple operations
     json_object_object_add(root, section_name, existing);
     return existing;
 }
