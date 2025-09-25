@@ -26,10 +26,15 @@ template(name="performance_json" type="list" option.jsonf="on") {
 
 input(type="imtcp" port="'$TCPFLOOD_PORT'")
 action(type="mmsnarewinsec" 
-       rootpath="!win"
-       enablesections="all"
-       debugjson="on"
-       template="performance_json")
+       container="!win"
+       enable.network="on"
+       enable.laps="on"
+       enable.tls="on"
+       enable.wdac="on"
+       emit.rawpayload="on"
+       emit.debugjson="on")
+
+*.* action(type="omfile" file="$RSYSLOG_OUT_LOG" template="performance_json")
 '
 
 # Test performance with comprehensive sample data files

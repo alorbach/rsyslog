@@ -34,6 +34,8 @@
 #include "syslogd-types.h"
 #include "template.h"
 #include "unicode-helper.h"
+#include <stdbool.h>
+#include <errno.h>
 
 MODULE_TYPE_OUTPUT;
 MODULE_TYPE_NOKEEP;
@@ -396,7 +398,7 @@ static const field_pattern_t g_coreFieldPatterns[] = {
 /**
  * @brief Enhanced section patterns for flexible detection.
  */
-static const section_descriptor_enhanced_t g_sectionPatterns[] = {
+/* static const section_descriptor_enhanced_t g_sectionPatterns[] = {
     {"Subject:", "Subject", SECTION_STANDARD, 100, true},
     {"Logon Information:", "Logon", SECTION_STANDARD, 95, true},
     {"New Logon:", "NewLogon", SECTION_STANDARD, 90, true},
@@ -417,7 +419,7 @@ static const section_descriptor_enhanced_t g_sectionPatterns[] = {
     {"Privileges:", "Privileges", SECTION_LIST, 30, true},
     {"User Claims:", "UserClaims", SECTION_LIST, 25, true},
     {"Device Claims:", "DeviceClaims", SECTION_LIST, 25, true}
-};
+}; */
 
 static int is_placeholder(const char *value) {
     if (value == NULL) return 1;
@@ -576,6 +578,60 @@ static bool parse_bool_value_enhanced(const char *value) {
 }
 
 /**
+ * @brief Helper function to add string to JSON object.
+ */
+static void json_add_string(struct json_object *obj, const char *name, const char *value) {
+    if (obj && name && value) {
+        struct json_object *str_obj = json_object_new_string(value);
+        if (str_obj) {
+            json_object_object_add(obj, name, str_obj);
+        }
+    }
+}
+
+/**
+ * @brief Helper function to add int64 to JSON object.
+ */
+static void json_add_int64(struct json_object *obj, const char *name, long long value) {
+    if (obj && name) {
+        struct json_object *int_obj = json_object_new_int64(value);
+        if (int_obj) {
+            json_object_object_add(obj, name, int_obj);
+        }
+    }
+}
+
+/**
+ * @brief Helper function to add boolean to JSON object.
+ */
+static void json_add_bool(struct json_object *obj, const char *name, sbool value) {
+    if (obj && name) {
+        struct json_object *bool_obj = json_object_new_boolean(value);
+        if (bool_obj) {
+            json_object_object_add(obj, name, bool_obj);
+        }
+    }
+}
+
+/**
+ * @brief Helper function to parse int64 with error handling.
+ */
+static sbool try_parse_int64(const char *value, long long *outVal) {
+    if (!value || !outVal) return 0;
+    
+    char *endptr;
+    errno = 0;
+    long long result = strtoll(value, &endptr, 10);
+    
+    if (errno != 0 || *endptr != '\0') {
+        return 0;
+    }
+    
+    *outVal = result;
+    return 1;
+}
+
+/**
  * @brief Enhanced value parsing with type awareness and better error handling.
  */
 static rsRetVal parse_field_value_enhanced(
@@ -583,8 +639,8 @@ static rsRetVal parse_field_value_enhanced(
     field_type_t type, 
     struct json_object *target, 
     const char *key,
-    const char *section_context,
-    int event_id
+    const char *section_context __attribute__((unused)),
+    int event_id __attribute__((unused))
 ) {
     if (value == NULL || *value == '\0') return RS_RET_OK;
     
@@ -660,6 +716,9 @@ static rsRetVal parse_field_value_enhanced(
             } else {
                 json_add_string(target, key, trimmed);
             }
+            break;
+        default:
+            json_add_string(target, key, trimmed);
             break;
     }
     
@@ -1041,30 +1100,6 @@ static inline void append_unparsed(parse_context_t *ctx, const char *text) {
     if (arr != NULL) json_object_array_add(arr, json_object_new_string(text));
 }
 
-static void json_add_string(struct json_object *obj, const char *name, const char *value) {
-    if (obj == NULL || name == NULL || value == NULL) return;
-    json_object_object_add(obj, name, json_object_new_string(value));
-}
-
-static void json_add_int64(struct json_object *obj, const char *name, long long value) {
-    if (obj == NULL || name == NULL) return;
-    json_object_object_add(obj, name, json_object_new_int64(value));
-}
-
-static void json_add_bool(struct json_object *obj, const char *name, sbool value) {
-    if (obj == NULL || name == NULL) return;
-    json_object_object_add(obj, name, json_object_new_boolean(value ? 1 : 0));
-}
-
-static sbool try_parse_int64(const char *value, long long *outVal) {
-    char *end = NULL;
-    long long val;
-    if (value == NULL || *value == '\0') return 0;
-    val = strtoll(value, &end, 0);
-    if (end == value || (end != NULL && *end != '\0' && !isspace((unsigned char)*end))) return 0;
-    if (outVal != NULL) *outVal = val;
-    return 1;
-}
 
 static const char *derive_outcome(const char *auditResult) {
     if (auditResult == NULL) return NULL;
@@ -1135,7 +1170,7 @@ typedef void (*token_callback_t)(const char *token, size_t len, void *user_data)
 /**
  * @brief Generic tokenization function (based on PR #111 approach).
  */
-static rsRetVal tokenize_on_multispace(
+/* static rsRetVal tokenize_on_multispace(
     const char *str, 
     size_t len, 
     token_callback_t callback, 
@@ -1183,7 +1218,7 @@ static rsRetVal tokenize_on_multispace(
     }
     
     return RS_RET_OK;
-}
+} */
 
 /**
  * @brief Enhanced field pattern matching.
@@ -1191,7 +1226,7 @@ static rsRetVal tokenize_on_multispace(
 static bool match_field_pattern(
     const field_pattern_t *pattern,
     const char *key,
-    const char *section_context
+    const char *section_context __attribute__((unused))
 ) {
     if (pattern == NULL || key == NULL) return false;
     
@@ -1207,10 +1242,10 @@ static bool match_field_pattern(
  * @brief Find best matching field pattern based on priority.
  */
 static const field_pattern_t *find_best_field_pattern(
-    field_detection_context_t *ctx,
+    field_detection_context_t *ctx __attribute__((unused)),
     const char *key,
     const char *section_context,
-    int event_id
+    int event_id __attribute__((unused))
 ) {
     const field_pattern_t *best_match = NULL;
     int best_priority = -1;
@@ -1253,7 +1288,7 @@ static struct json_object *ensure_section_object(struct json_object *root, const
 /**
  * @brief Enhanced field detection and parsing.
  */
-static rsRetVal detect_and_parse_field(
+/* static rsRetVal detect_and_parse_field(
     field_detection_context_t *ctx,
     const char *line,
     const char *section_context
@@ -1317,7 +1352,7 @@ static rsRetVal detect_and_parse_field(
     free(key);
     free(value);
     return RS_RET_OK;
-}
+} */
 
 /**
  * @brief Parse a whitespace-delimited sequence of key-value pairs.

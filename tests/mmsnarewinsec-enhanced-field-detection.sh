@@ -74,10 +74,15 @@ template(name="enhanced_json" type="list" option.jsonf="on") {
 
 input(type="imtcp" port="'$TCPFLOOD_PORT'")
 action(type="mmsnarewinsec" 
-       rootpath="!win"
-       enablesections="all"
-       debugjson="on"
-       template="enhanced_json")
+       container="!win"
+       enable.network="on"
+       enable.laps="on"
+       enable.tls="on"
+       enable.wdac="on"
+       emit.rawpayload="on"
+       emit.debugjson="on")
+
+*.* action(type="omfile" file="$RSYSLOG_OUT_LOG" template="enhanced_json")
 '
 
 # Test with comprehensive dataset from Logon_Logoff category

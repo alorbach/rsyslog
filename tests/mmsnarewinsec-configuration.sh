@@ -30,10 +30,15 @@ template(name="config_test_json" type="list" option.jsonf="on") {
 
 input(type="imtcp" port="'$TCPFLOOD_PORT'")
 action(type="mmsnarewinsec" 
-       rootpath="!win"
-       enablesections="all"
-       debugjson="on"
-       template="config_test_json")
+       container="!win"
+       enable.network="on"
+       enable.laps="on"
+       enable.tls="on"
+       enable.wdac="on"
+       emit.rawpayload="on"
+       emit.debugjson="on")
+
+*.* action(type="omfile" file="$RSYSLOG_OUT_LOG" template="config_test_json")
 '
 
 # Test configuration-driven field mapping with sample data
