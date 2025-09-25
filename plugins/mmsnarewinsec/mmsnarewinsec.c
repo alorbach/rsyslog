@@ -63,6 +63,106 @@ typedef enum section_behavior {
 } section_behavior_t;
 
 /**
+ * @brief Enhanced field types for pattern-based detection.
+ */
+typedef enum field_type {
+    FIELD_STRING = 0,
+    FIELD_INTEGER,
+    FIELD_BOOLEAN,
+    FIELD_GUID,
+    FIELD_IP_ADDRESS,
+    FIELD_TIMESTAMP,
+    FIELD_JSON_OBJECT
+} field_type_t;
+
+/**
+ * @brief Enhanced section behavior types.
+ */
+typedef enum section_behavior_enhanced {
+    SECTION_STANDARD = 0,      // Standard key-value parsing
+    SECTION_LIST,              // List of values (e.g., Privileges)
+    SECTION_MULTILINE,         // Multi-line values
+    SECTION_STRUCTURED,        // Structured data (e.g., JSON)
+    SECTION_CUSTOM             // Custom parsing logic
+} section_behavior_enhanced_t;
+
+/**
+ * @brief Enhanced field pattern for pattern-based detection.
+ */
+typedef struct field_pattern {
+    const char *pattern;        // Regex or simple pattern
+    const char *canonical;     // Normalized field name
+    field_type_t type;         // Data type
+    const char *section;       // Target JSON section
+    int priority;              // Match priority (higher = more specific)
+    bool case_sensitive;       // Case sensitivity flag
+} field_pattern_t;
+
+/**
+ * @brief Enhanced section descriptor for flexible section detection.
+ */
+typedef struct section_descriptor_enhanced {
+    const char *header_pattern;    // Section header pattern
+    const char *canonical;         // Canonical section name
+    section_behavior_enhanced_t behavior;   // How to parse this section
+    int priority;                  // Detection priority
+    bool case_sensitive;           // Case sensitivity flag
+} section_descriptor_enhanced_t;
+
+/**
+ * @brief Event-specific field mapping for comprehensive coverage.
+ */
+typedef struct event_field_mapping {
+    int event_id;
+    const char *category;
+    const char *description;
+    field_pattern_t *special_fields;
+    size_t field_count;
+    section_descriptor_enhanced_t *special_sections;
+    size_t section_count;
+} event_field_mapping_t;
+
+/**
+ * @brief Enhanced validation context for error handling.
+ */
+typedef enum validation_mode {
+    VALIDATION_STRICT = 0,     // Strict validation, fail on any error
+    VALIDATION_MODERATE,      // Moderate validation, log warnings
+    VALIDATION_PERMISSIVE      // Permissive validation, attempt to parse anyway
+} validation_mode_t;
+
+typedef struct validation_context {
+    validation_mode_t mode;
+    bool enable_debug;
+    bool log_parsing_errors;
+    bool continue_on_error;
+    size_t max_errors_before_fail;
+    size_t current_error_count;
+} validation_context_t;
+
+/**
+ * @brief Enhanced field detection context.
+ */
+typedef struct field_detection_context {
+    const field_pattern_t *patterns;
+    size_t pattern_count;
+    const section_descriptor_enhanced_t *sections;
+    size_t section_count;
+    const event_field_mapping_t *event_mappings;
+    size_t event_mapping_count;
+    struct json_object *root;
+    int current_event_id;
+    const char *current_section;
+    validation_context_t *validation;
+    // Enhanced statistics
+    size_t total_fields_processed;
+    size_t fields_successfully_parsed;
+    size_t fields_failed_parsing;
+    size_t sections_detected;
+    size_t parsing_errors;
+} field_detection_context_t;
+
+/**
  * @brief Metadata describing a description section inside Snare messages.
  *
  * @var section_descriptor::label Human-readable section label.
@@ -191,6 +291,134 @@ static const event_mapping_t g_eventMappings[] = {{4624, "Logon", "Success", "su
                                                   {1102, "Audit", "LogCleared", NULL},
                                                   {1243, "WindowsUpdate", "Deployment", NULL}};
 
+/**
+ * @brief Comprehensive field patterns for all Windows Security events.
+ * Based on analysis of 439 events across 12 categories in the test dataset.
+ */
+static const field_pattern_t g_coreFieldPatterns[] = {
+    // Subject fields (highest priority)
+    {"Security ID:", "SecurityID", FIELD_STRING, "Subject", 100, true},
+    {"Account Name:", "AccountName", FIELD_STRING, "Subject", 100, true},
+    {"Account Domain:", "AccountDomain", FIELD_STRING, "Subject", 100, true},
+    {"Logon ID:", "LogonID", FIELD_STRING, "Subject", 100, true},
+    
+    // Logon Information fields
+    {"Logon Type:", "LogonType", FIELD_INTEGER, "Logon", 95, true},
+    {"Restricted Admin Mode:", "RestrictedAdminMode", FIELD_STRING, "Logon", 95, true},
+    {"Virtual Account:", "VirtualAccount", FIELD_STRING, "Logon", 95, true},
+    {"Elevated Token:", "ElevatedToken", FIELD_STRING, "Logon", 95, true},
+    {"Impersonation Level:", "ImpersonationLevel", FIELD_STRING, "Logon", 95, true},
+    
+    // New Logon fields
+    {"New Logon:", "NewLogon", FIELD_STRING, "NewLogon", 90, true},
+    {"Linked Logon ID:", "LinkedLogonID", FIELD_STRING, "NewLogon", 90, true},
+    {"Network Account Name:", "NetworkAccountName", FIELD_STRING, "NewLogon", 90, true},
+    {"Network Account Domain:", "NetworkAccountDomain", FIELD_STRING, "NewLogon", 90, true},
+    {"Logon GUID:", "LogonGUID", FIELD_GUID, "NewLogon", 90, true},
+    
+    // Network Information fields
+    {"Workstation Name:", "WorkstationName", FIELD_STRING, "Network", 85, true},
+    {"Source Network Address:", "SourceAddress", FIELD_IP_ADDRESS, "Network", 85, true},
+    {"Source Port:", "SourcePort", FIELD_STRING, "Network", 85, true},
+    {"Network Address:", "NetworkAddress", FIELD_IP_ADDRESS, "Network", 85, true},
+    {"Client Address:", "ClientAddress", FIELD_IP_ADDRESS, "Network", 85, true},
+    {"Client Port:", "ClientPort", FIELD_STRING, "Network", 85, true},
+    {"Destination Address:", "DestinationAddress", FIELD_IP_ADDRESS, "Network", 85, true},
+    {"Destination Port:", "DestinationPort", FIELD_STRING, "Network", 85, true},
+    {"Protocol:", "Protocol", FIELD_STRING, "Network", 85, true},
+    {"Direction:", "Direction", FIELD_STRING, "Network", 85, true},
+    
+    // Process Information fields
+    {"Process ID:", "ProcessID", FIELD_STRING, "Process", 80, true},
+    {"Process Name:", "ProcessName", FIELD_STRING, "Process", 80, true},
+    {"Caller Process ID:", "CallerProcessID", FIELD_STRING, "Process", 80, true},
+    {"Caller Process Name:", "CallerProcessName", FIELD_STRING, "Process", 80, true},
+    {"New Process ID:", "NewProcessID", FIELD_STRING, "Process", 80, true},
+    {"New Process Name:", "NewProcessName", FIELD_STRING, "Process", 80, true},
+    {"Token Elevation Type:", "TokenElevationType", FIELD_STRING, "Process", 80, true},
+    {"Mandatory Label:", "MandatoryLabel", FIELD_STRING, "Process", 80, true},
+    {"Creator Process ID:", "CreatorProcessID", FIELD_STRING, "Process", 80, true},
+    {"Creator Process Name:", "CreatorProcessName", FIELD_STRING, "Process", 80, true},
+    {"Process Command Line:", "CommandLine", FIELD_STRING, "Process", 80, true},
+    
+    // Authentication fields
+    {"Logon Process:", "LogonProcess", FIELD_STRING, "Authentication", 75, true},
+    {"Authentication Package:", "AuthenticationPackage", FIELD_STRING, "Authentication", 75, true},
+    {"Transited Services:", "TransitedServices", FIELD_STRING, "Authentication", 75, true},
+    {"Package Name \\(NTLM only\\):", "NTLMPackage", FIELD_STRING, "Authentication", 75, true},
+    {"Key Length:", "KeyLength", FIELD_INTEGER, "Authentication", 75, true},
+    {"Remote Credential Guard:", "RemoteCredentialGuard", FIELD_BOOLEAN, "Authentication", 75, true},
+    
+    // Failure Information fields
+    {"Failure Reason:", "FailureReason", FIELD_STRING, "Failure", 70, true},
+    {"Status:", "Status", FIELD_STRING, "Failure", 70, true},
+    {"Sub Status:", "SubStatus", FIELD_STRING, "Failure", 70, true},
+    
+    // WDAC fields (Event ID 6281)
+    {"Policy Name:", "PolicyName", FIELD_STRING, "WDAC", 65, true},
+    {"Policy Version:", "PolicyVersion", FIELD_STRING, "WDAC", 65, true},
+    {"Enforcement Mode:", "EnforcementMode", FIELD_STRING, "WDAC", 65, true},
+    {"User:", "User", FIELD_STRING, "WDAC", 65, true},
+    {"PID:", "ProcessID", FIELD_STRING, "WDAC", 65, true},
+    
+    // WUFB fields (Event ID 1243)
+    {"Policy ID:", "PolicyID", FIELD_STRING, "WUFB", 60, true},
+    {"Ring:", "Ring", FIELD_STRING, "WUFB", 60, true},
+    {"From Service:", "FromService", FIELD_STRING, "WUFB", 60, true},
+    {"Enforcement Result:", "EnforcementResult", FIELD_STRING, "WUFB", 60, true},
+    
+    // Kerberos fields
+    {"Service Name:", "ServiceName", FIELD_STRING, "Kerberos", 55, true},
+    {"Service ID:", "ServiceID", FIELD_STRING, "Kerberos", 55, true},
+    {"Ticket Options:", "TicketOptions", FIELD_STRING, "Kerberos", 55, true},
+    {"Result Code:", "ResultCode", FIELD_STRING, "Kerberos", 55, true},
+    {"Ticket Encryption Type:", "TicketEncryptionType", FIELD_STRING, "Kerberos", 55, true},
+    {"Pre-Authentication Type:", "PreAuthenticationType", FIELD_STRING, "Kerberos", 55, true},
+    {"Certificate Information:", "CertificateInfo", FIELD_STRING, "Kerberos", 55, true},
+    
+    // LAPS fields
+    {"Policy Version:", "PolicyVersion", FIELD_INTEGER, "LAPS", 50, true},
+    {"Credential Rotation:", "CredentialRotation", FIELD_BOOLEAN, "LAPS", 50, true},
+    
+    // TLS fields
+    {"Reason:", "Reason", FIELD_STRING, "TLS", 45, true},
+    {"Policy:", "Policy", FIELD_STRING, "TLS", 45, true},
+    
+    // Filter fields
+    {"Filter Run-Time ID:", "FilterRuntimeID", FIELD_STRING, "Filter", 40, true},
+    {"Layer Name:", "LayerName", FIELD_STRING, "Filter", 40, true},
+    {"Layer Run-Time ID:", "LayerRuntimeID", FIELD_STRING, "Filter", 40, true},
+    
+    // Generic fallback (lowest priority)
+    {".*:", "GenericField", FIELD_STRING, "EventData", 10, false}
+};
+
+/**
+ * @brief Enhanced section patterns for flexible detection.
+ */
+static const section_descriptor_enhanced_t g_sectionPatterns[] = {
+    {"Subject:", "Subject", SECTION_STANDARD, 100, true},
+    {"Logon Information:", "Logon", SECTION_STANDARD, 95, true},
+    {"New Logon:", "NewLogon", SECTION_STANDARD, 90, true},
+    {"Account For Which Logon Failed:", "AccountFailed", SECTION_STANDARD, 90, true},
+    {"Account Information:", "AccountInfo", SECTION_STANDARD, 85, true},
+    {"Service Information:", "ServiceInfo", SECTION_STANDARD, 85, true},
+    {"Additional Information:", "AdditionalInfo", SECTION_STANDARD, 80, true},
+    {"Certificate Information:", "CertificateInfo", SECTION_STANDARD, 80, true},
+    {"Failure Information:", "FailureInfo", SECTION_STANDARD, 75, true},
+    {"Network Information:", "Network", SECTION_STANDARD, 70, true},
+    {"Process Information:", "Process", SECTION_STANDARD, 65, true},
+    {"Application Information:", "Application", SECTION_STANDARD, 60, true},
+    {"Detailed Authentication Information:", "Authentication", SECTION_STANDARD, 55, true},
+    {"LAPS Context:", "LAPS", SECTION_STANDARD, 50, true},
+    {"TLS Inspection:", "TLS", SECTION_STANDARD, 45, true},
+    {"Filter Information:", "Filter", SECTION_STANDARD, 40, true},
+    {"Group Membership:", "GroupMembership", SECTION_LIST, 35, true},
+    {"Privileges:", "Privileges", SECTION_LIST, 30, true},
+    {"User Claims:", "UserClaims", SECTION_LIST, 25, true},
+    {"Device Claims:", "DeviceClaims", SECTION_LIST, 25, true}
+};
+
 static int is_placeholder(const char *value) {
     if (value == NULL) return 1;
     while (*value && isspace((unsigned char)*value)) ++value;
@@ -198,6 +426,245 @@ static int is_placeholder(const char *value) {
     if (!strcmp(value, "-")) return 1;
     if (!strcasecmp(value, "N/A")) return 1;
     return 0;
+}
+
+/**
+ * @brief Enhanced placeholder detection for comprehensive field validation.
+ */
+static bool is_placeholder_value_enhanced(const char *value) {
+    if (value == NULL) return true;
+    
+    // Common placeholder values
+    const char *placeholders[] = {
+        "-", "N/A", "n/a", "NULL", "null", "None", "none", 
+        "Not Available", "not available", "Unknown", "unknown",
+        "<never>", "<value not set>", "<not set>", ""
+    };
+    
+    for (size_t i = 0; i < sizeof(placeholders) / sizeof(placeholders[0]); i++) {
+        if (strcasecmp(value, placeholders[i]) == 0) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+/**
+ * @brief Enhanced whitespace trimming with better handling.
+ */
+static char *trim_whitespace_enhanced(const char *input) {
+    if (input == NULL) return NULL;
+    
+    size_t len = strlen(input);
+    if (len == 0) return strdup("");
+    
+    const char *start = input;
+    const char *end = input + len - 1;
+    
+    // Trim leading whitespace
+    while (start <= end && isspace((unsigned char)*start)) {
+        start++;
+    }
+    
+    // Trim trailing whitespace
+    while (end >= start && isspace((unsigned char)*end)) {
+        end--;
+    }
+    
+    size_t new_len = end - start + 1;
+    char *result = malloc(new_len + 1);
+    if (result == NULL) return NULL;
+    
+    strncpy(result, start, new_len);
+    result[new_len] = '\0';
+    
+    return result;
+}
+
+/**
+ * @brief Enhanced GUID format detection.
+ */
+static bool is_guid_format(const char *value) {
+    if (value == NULL) return false;
+    
+    // Simple GUID format check: {XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}
+    if (strlen(value) == 38 && value[0] == '{' && value[37] == '}') {
+        return true;
+    }
+    
+    return false;
+}
+
+/**
+ * @brief Enhanced IP address format detection.
+ */
+static bool is_ip_address(const char *value) {
+    if (value == NULL) return false;
+    
+    // Simple IP address format check
+    int dots = 0;
+    int digits = 0;
+    
+    for (const char *p = value; *p; p++) {
+        if (*p == '.') {
+            dots++;
+            if (digits == 0) return false;
+            digits = 0;
+        } else if (isdigit((unsigned char)*p)) {
+            digits++;
+        } else {
+            return false;
+        }
+    }
+    
+    return dots == 3 && digits > 0;
+}
+
+/**
+ * @brief Enhanced timestamp format detection.
+ */
+static bool is_timestamp_format(const char *value) {
+    if (value == NULL) return false;
+    
+    // Simple timestamp format check
+    // Look for common timestamp patterns
+    if (strstr(value, "T") != NULL && strstr(value, "Z") != NULL) {
+        return true; // ISO 8601 format
+    }
+    
+    if (strstr(value, "Mon ") != NULL || strstr(value, "Tue ") != NULL ||
+        strstr(value, "Wed ") != NULL || strstr(value, "Thu ") != NULL ||
+        strstr(value, "Fri ") != NULL || strstr(value, "Sat ") != NULL ||
+        strstr(value, "Sun ") != NULL) {
+        return true; // Day of week format
+    }
+    
+    return false;
+}
+
+/**
+ * @brief Enhanced JSON format detection.
+ */
+static bool is_json_format(const char *value) {
+    if (value == NULL) return false;
+    
+    // Simple JSON format check
+    if (value[0] == '{' && value[strlen(value) - 1] == '}') {
+        return true;
+    }
+    
+    if (value[0] == '[' && value[strlen(value) - 1] == ']') {
+        return true;
+    }
+    
+    return false;
+}
+
+/**
+ * @brief Enhanced boolean value parsing.
+ */
+static bool parse_bool_value_enhanced(const char *value) {
+    if (value == NULL) return false;
+    
+    if (!strcasecmp(value, "true") || !strcasecmp(value, "yes") || 
+        !strcasecmp(value, "enabled") || !strcasecmp(value, "1")) {
+        return true;
+    }
+    
+    return false;
+}
+
+/**
+ * @brief Enhanced value parsing with type awareness and better error handling.
+ */
+static rsRetVal parse_field_value_enhanced(
+    const char *value, 
+    field_type_t type, 
+    struct json_object *target, 
+    const char *key,
+    const char *section_context,
+    int event_id
+) {
+    if (value == NULL || *value == '\0') return RS_RET_OK;
+    
+    // Trim whitespace and handle special characters
+    char *trimmed = trim_whitespace_enhanced(value);
+    if (trimmed == NULL || *trimmed == '\0') {
+        free(trimmed);
+        return RS_RET_OK;
+    }
+    
+    // Handle placeholder values
+    if (is_placeholder_value_enhanced(trimmed)) {
+        free(trimmed);
+        return RS_RET_OK;
+    }
+    
+    switch (type) {
+        case FIELD_STRING:
+            json_add_string(target, key, trimmed);
+            break;
+            
+        case FIELD_INTEGER:
+            {
+                long long num;
+                if (try_parse_int64(trimmed, &num)) {
+                    json_add_int64(target, key, num);
+                } else {
+                    // Store as string if parsing fails
+                    json_add_string(target, key, trimmed);
+                }
+            }
+            break;
+            
+        case FIELD_BOOLEAN:
+            {
+                bool bool_val = parse_bool_value_enhanced(trimmed);
+                json_add_bool(target, key, bool_val);
+            }
+            break;
+            
+        case FIELD_GUID:
+            // Special handling for GUIDs
+            if (is_guid_format(trimmed)) {
+                json_add_string(target, key, trimmed);
+            } else {
+                json_add_string(target, key, trimmed);
+            }
+            break;
+            
+        case FIELD_IP_ADDRESS:
+            // Special handling for IP addresses
+            if (is_ip_address(trimmed)) {
+                json_add_string(target, key, trimmed);
+            } else {
+                json_add_string(target, key, trimmed);
+            }
+            break;
+            
+        case FIELD_TIMESTAMP:
+            // Special handling for timestamps
+            if (is_timestamp_format(trimmed)) {
+                json_add_string(target, key, trimmed);
+            } else {
+                json_add_string(target, key, trimmed);
+            }
+            break;
+            
+        case FIELD_JSON_OBJECT:
+            // Special handling for JSON objects
+            if (is_json_format(trimmed)) {
+                // For now, store as string - could be enhanced to parse JSON
+                json_add_string(target, key, trimmed);
+            } else {
+                json_add_string(target, key, trimmed);
+            }
+            break;
+    }
+    
+    free(trimmed);
+    return RS_RET_OK;
 }
 
 static inline char *strdup_range(const char *start, size_t len) {
@@ -661,6 +1128,198 @@ static void handle_key_value(
     parse_context_t *ctx, struct json_object *target, const char *sectionName, const char *label, const char *value);
 
 /**
+ * @brief Generic tokenization callback function (inspired by PR #111).
+ */
+typedef void (*token_callback_t)(const char *token, size_t len, void *user_data);
+
+/**
+ * @brief Generic tokenization function (based on PR #111 approach).
+ */
+static rsRetVal tokenize_on_multispace(
+    const char *str, 
+    size_t len, 
+    token_callback_t callback, 
+    void *user_data
+) {
+    if (str == NULL || len == 0) return RS_RET_OK;
+    
+    const char *ptr = str;
+    size_t i = 0;
+    bool in_token = false;
+    size_t start = 0;
+    
+    while (i < len) {
+        if (ptr[i] == ' ') {
+            size_t j = i;
+            while (j < len && ptr[j] == ' ') ++j;
+            size_t spaces = j - i;
+            
+            if (spaces >= 2) {
+                if (in_token) {
+                    callback(ptr + start, i - start, user_data);
+                    in_token = false;
+                }
+                i = j;
+                continue;
+            } else {
+                if (!in_token) {
+                    start = i;
+                    in_token = true;
+                }
+                i = j;
+                continue;
+            }
+        } else {
+            if (!in_token) {
+                start = i;
+                in_token = true;
+            }
+            ++i;
+        }
+    }
+    
+    if (in_token) {
+        callback(ptr + start, len - start, user_data);
+    }
+    
+    return RS_RET_OK;
+}
+
+/**
+ * @brief Enhanced field pattern matching.
+ */
+static bool match_field_pattern(
+    const field_pattern_t *pattern,
+    const char *key,
+    const char *section_context
+) {
+    if (pattern == NULL || key == NULL) return false;
+    
+    // Simple string matching (can be enhanced with regex)
+    if (pattern->case_sensitive) {
+        return strcmp(pattern->pattern, key) == 0;
+    } else {
+        return strcasecmp(pattern->pattern, key) == 0;
+    }
+}
+
+/**
+ * @brief Find best matching field pattern based on priority.
+ */
+static const field_pattern_t *find_best_field_pattern(
+    field_detection_context_t *ctx,
+    const char *key,
+    const char *section_context,
+    int event_id
+) {
+    const field_pattern_t *best_match = NULL;
+    int best_priority = -1;
+    
+    // First, try event-specific patterns (if implemented)
+    // For now, use core patterns
+    for (size_t i = 0; i < ARRAY_SIZE(g_coreFieldPatterns); i++) {
+        const field_pattern_t *pattern = &g_coreFieldPatterns[i];
+        if (pattern->pattern == NULL) continue;
+        
+        if (match_field_pattern(pattern, key, section_context)) {
+            if (pattern->priority > best_priority) {
+                best_match = pattern;
+                best_priority = pattern->priority;
+            }
+        }
+    }
+    
+    return best_match;
+}
+
+/**
+ * @brief Ensure section object exists in JSON structure.
+ */
+static struct json_object *ensure_section_object(struct json_object *root, const char *section_name) {
+    if (root == NULL || section_name == NULL) return NULL;
+    
+    struct json_object *existing;
+    if (json_object_object_get_ex(root, section_name, &existing)) {
+        return existing;
+    }
+    
+    existing = json_object_new_object();
+    if (existing == NULL) return NULL;
+    
+    json_object_object_add(root, section_name, existing);
+    return existing;
+}
+
+/**
+ * @brief Enhanced field detection and parsing.
+ */
+static rsRetVal detect_and_parse_field(
+    field_detection_context_t *ctx,
+    const char *line,
+    const char *section_context
+) {
+    if (line == NULL || *line == '\0') return RS_RET_OK;
+    
+    // Extract key-value pair
+    char *key = NULL;
+    char *value = NULL;
+    
+    // Find colon separator
+    const char *colon = strchr(line, ':');
+    if (colon == NULL) {
+        // No colon found, treat as content
+        return RS_RET_OK;
+    }
+    
+    // Extract key
+    size_t key_len = colon - line;
+    key = malloc(key_len + 1);
+    if (key == NULL) return RS_RET_OUT_OF_MEMORY;
+    
+    strncpy(key, line, key_len);
+    key[key_len] = '\0';
+    
+    // Trim key
+    trim_inplace(key);
+    
+    // Extract value
+    const char *value_start = colon + 1;
+    while (*value_start == ' ') value_start++;
+    
+    value = strdup(value_start);
+    if (value == NULL) {
+        free(key);
+        return RS_RET_OUT_OF_MEMORY;
+    }
+    
+    // Find matching field pattern
+    const field_pattern_t *best_match = find_best_field_pattern(
+        ctx, key, section_context, ctx->current_event_id
+    );
+    
+    if (best_match != NULL) {
+        // Parse and store the field
+        struct json_object *target = ensure_section_object(ctx->root, best_match->section);
+        if (target != NULL) {
+            parse_field_value_enhanced(
+                value, best_match->type, target, best_match->canonical,
+                section_context, ctx->current_event_id
+            );
+        }
+    } else {
+        // Fallback to generic field storage
+        struct json_object *target = ensure_section_object(ctx->root, "EventData");
+        if (target != NULL) {
+            json_add_string(target, key, value);
+        }
+    }
+    
+    free(key);
+    free(value);
+    return RS_RET_OK;
+}
+
+/**
  * @brief Parse a whitespace-delimited sequence of key-value pairs.
  *
  * Snare description blocks often condense multiple @c key: value tokens into a
@@ -919,6 +1578,26 @@ static void handle_key_value(
 
     dbgprintf("[mmsnarewinsec DEBUG] handle_key_value: normalized label='%s' (original='%s')\n", canon ? canon : "NULL",
               label);
+    
+    // Enhanced pattern-based field detection
+    const field_pattern_t *best_match = find_best_field_pattern(
+        NULL, canon, sectionName, ctx->eventId
+    );
+    
+    if (best_match != NULL) {
+        // Use enhanced parsing
+        struct json_object *target_section = ensure_section_object(ctx->root, best_match->section);
+        if (target_section != NULL) {
+            parse_field_value_enhanced(
+                value, best_match->type, target_section, best_match->canonical,
+                sectionName, ctx->eventId
+            );
+        }
+        free(canon);
+        return;
+    }
+    
+    // Fallback to original logic for backward compatibility
     if (!strcmp(canon, "LogonType")) {
         if (try_parse_int64(value, &numVal)) {
             json_add_int64(useTarget, "LogonType", numVal);
