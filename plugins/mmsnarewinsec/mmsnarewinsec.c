@@ -20,6 +20,7 @@
 #include <ctype.h>
 #include <json.h>
 #include <json_object_iterator.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -103,6 +104,100 @@ typedef struct event_mapping {
     const char *subtype;
     const char *outcome;
 } event_mapping_t;
+
+typedef enum field_value_type {
+    fieldValueString = 0,
+    fieldValueInt64,
+    fieldValueInt64WithRaw,
+    fieldValueBool,
+    fieldValueJson,
+    fieldValueLogonType,
+    fieldValueRemoteCredentialGuard,
+    fieldValuePrivilegeList
+} field_value_type_t;
+
+typedef enum field_pattern_sensitivity {
+    fieldSensitivityCanonical = 0,
+    fieldSensitivityCaseSensitive,
+    fieldSensitivityCaseInsensitive
+} field_pattern_sensitivity_t;
+
+typedef struct field_pattern {
+    const char *pattern;
+    const char *canonical;
+    field_value_type_t value_type;
+    const char *section;
+    int priority;
+    field_pattern_sensitivity_t sensitivity;
+} field_pattern_t;
+
+typedef struct event_field_mapping {
+    int event_id;
+    const field_pattern_t *patterns;
+    size_t pattern_count;
+    uint32_t required_flags;
+} event_field_mapping_t;
+
+#define FIELD_PRIORITY_BASE 10
+#define FIELD_PRIORITY_EVENT_OVERRIDE 100
+
+#define FIELD_SECTION_EVENT_DATA "EventData"
+#define FIELD_SECTION_LOGON "Logon"
+#define FIELD_SECTION_ROOT "Root"
+
+static const field_pattern_t g_coreFieldPatterns[] = {
+    {"LogonType", "LogonType", fieldValueLogonType, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"SecurityID", "SecurityID", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"AccountName", "AccountName", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"AccountDomain", "AccountDomain", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"LogonID", "LogonID", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"LinkedLogonID", "LinkedLogonID", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"NetworkAccountName", "NetworkAccountName", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"LogonGUID", "LogonGUID", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"ProcessID", "ProcessID", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"ProcessName", "ProcessName", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"ProcessCommandLine", "ProcessCommandLine", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"TokenElevationType", "TokenElevationType", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"MandatoryLabel", "MandatoryLabel", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"WorkstationName", "WorkstationName", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"SourceNetworkAddress", "SourceNetworkAddress", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"SourcePort", "SourcePort", fieldValueInt64, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"ClientPort", "ClientPort", fieldValueInt64, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"DestinationPort", "DestinationPort", fieldValueInt64, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"LogonProcess", "LogonProcess", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"AuthenticationPackage", "AuthenticationPackage", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"TransitedServices", "TransitedServices", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"PackageName", "PackageName", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"RestrictedAdminMode", "RestrictedAdminMode", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"VirtualAccount", "VirtualAccount", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"ElevatedToken", "ElevatedToken", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"ImpersonationLevel", "ImpersonationLevel", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"KeyLength", "KeyLength", fieldValueInt64, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"RemoteCredentialGuard", "RemoteCredentialGuard", fieldValueRemoteCredentialGuard, NULL, FIELD_PRIORITY_BASE,
+     fieldSensitivityCanonical},
+    {"Privileges", "Privileges", fieldValuePrivilegeList, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+};
+
+static const field_pattern_t g_event6281FieldPatterns[] = {
+    {"PolicyName", "PolicyName", fieldValueString, "WDAC", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
+    {"PolicyVersion", "PolicyVersion", fieldValueString, "WDAC", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
+    {"EnforcementMode", "EnforcementMode", fieldValueString, "WDAC", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
+    {"User", "User", fieldValueString, "WDAC", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
+    {"PID", "PID", fieldValueInt64WithRaw, "WDAC", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
+};
+
+static const field_pattern_t g_event1243FieldPatterns[] = {
+    {"PolicyID", "PolicyID", fieldValueString, "WUFB", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
+    {"Ring", "Ring", fieldValueString, "WUFB", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
+    {"FromService", "FromService", fieldValueString, "WUFB", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
+    {"EnforcementResult", "EnforcementResult", fieldValueString, "WUFB", FIELD_PRIORITY_EVENT_OVERRIDE,
+     fieldSensitivityCanonical},
+};
+
+static const event_field_mapping_t g_eventFieldMappings[] = {
+    {6281, g_event6281FieldPatterns, ARRAY_SIZE(g_event6281FieldPatterns), SECTION_FLAG_WDAC},
+    {1243, g_event1243FieldPatterns, ARRAY_SIZE(g_event1243FieldPatterns), SECTION_FLAG_NONE},
+};
 
 /**
  * @brief Per-instance configuration shared across workers.
@@ -535,6 +630,12 @@ typedef struct parse_context {
     const section_descriptor_t *activeSection;
     struct json_object *activeSectionObj;
     sbool summarySet;
+    const field_pattern_t *corePatterns;
+    size_t corePatternCount;
+    const field_pattern_t *eventPatterns;
+    size_t eventPatternCount;
+    int patternEventId;
+    sbool patternsPrepared;
 } parse_context_t;
 
 static struct json_object *ensure_object(struct json_object *parent, const char *name) {
@@ -598,6 +699,231 @@ static sbool try_parse_int64(const char *value, long long *outVal) {
     if (outVal != NULL) *outVal = val;
     return 1;
 }
+
+static sbool try_parse_bool(const char *value, sbool *outVal) {
+    if (value == NULL) return 0;
+    if (!strcasecmp(value, "true") || !strcasecmp(value, "yes") || !strcasecmp(value, "enabled") ||
+        !strcasecmp(value, "on")) {
+        if (outVal != NULL) *outVal = 1;
+        return 1;
+    }
+    if (!strcasecmp(value, "false") || !strcasecmp(value, "no") || !strcasecmp(value, "disabled") ||
+        !strcasecmp(value, "off")) {
+        if (outVal != NULL) *outVal = 0;
+        return 1;
+    }
+    if (!strcmp(value, "1")) {
+        if (outVal != NULL) *outVal = 1;
+        return 1;
+    }
+    if (!strcmp(value, "0")) {
+        if (outVal != NULL) *outVal = 0;
+        return 1;
+    }
+    return 0;
+}
+
+static struct json_object *try_parse_json_block(const char *value) {
+    struct json_tokener *tokener;
+    struct json_object *parsed;
+    enum json_tokener_error err;
+    if (value == NULL) return NULL;
+    tokener = json_tokener_new();
+    if (tokener == NULL) return NULL;
+    parsed = json_tokener_parse_ex(tokener, value, (int)strlen(value));
+    err = fjson_tokener_get_error(tokener);
+    json_tokener_free(tokener);
+    if (err != fjson_tokener_success || parsed == NULL) {
+        if (parsed != NULL) json_object_put(parsed);
+        return NULL;
+    }
+    return parsed;
+}
+
+static void parse_privilege_sequence(parse_context_t *ctx, const char *text);
+
+static void ensure_event_patterns(parse_context_t *ctx) {
+    if (ctx == NULL) return;
+    if (ctx->patternsPrepared && ctx->patternEventId == ctx->eventId) return;
+    ctx->eventPatterns = NULL;
+    ctx->eventPatternCount = 0;
+    ctx->patternEventId = ctx->eventId;
+    for (size_t i = 0; i < ARRAY_SIZE(g_eventFieldMappings); ++i) {
+        const event_field_mapping_t *mapping = &g_eventFieldMappings[i];
+        if (mapping->event_id == ctx->eventId) {
+            if (section_is_enabled(ctx->inst, mapping->required_flags)) {
+                ctx->eventPatterns = mapping->patterns;
+                ctx->eventPatternCount = mapping->pattern_count;
+            }
+            break;
+        }
+    }
+    ctx->patternsPrepared = 1;
+}
+
+static sbool pattern_matches(const field_pattern_t *pattern, const char *label, const char *canon) {
+    if (pattern == NULL) return 0;
+    switch (pattern->sensitivity) {
+        case fieldSensitivityCanonical:
+            if (canon == NULL) return 0;
+            return strcmp(pattern->pattern, canon) == 0;
+        case fieldSensitivityCaseSensitive:
+            if (label == NULL) return 0;
+            return strcmp(pattern->pattern, label) == 0;
+        case fieldSensitivityCaseInsensitive:
+            if (label == NULL) return 0;
+            return strcasecmp(pattern->pattern, label) == 0;
+        default:
+            return 0;
+    }
+}
+
+static const field_pattern_t *select_field_pattern(parse_context_t *ctx, const char *label, const char *canon) {
+    const field_pattern_t *best = NULL;
+    int bestPriority = INT_MIN;
+    if (ctx == NULL) return NULL;
+    if (ctx->eventPatterns != NULL) {
+        for (size_t i = 0; i < ctx->eventPatternCount; ++i) {
+            const field_pattern_t *candidate = &ctx->eventPatterns[i];
+            if (pattern_matches(candidate, label, canon) && candidate->priority > bestPriority) {
+                bestPriority = candidate->priority;
+                best = candidate;
+            }
+        }
+    }
+    if (ctx->corePatterns != NULL) {
+        for (size_t i = 0; i < ctx->corePatternCount; ++i) {
+            const field_pattern_t *candidate = &ctx->corePatterns[i];
+            if (pattern_matches(candidate, label, canon) && candidate->priority > bestPriority) {
+                bestPriority = candidate->priority;
+                best = candidate;
+            }
+        }
+    }
+    return best;
+}
+
+static void add_raw_string(struct json_object *obj, const char *baseName, const char *value) {
+    size_t len;
+    char *rawName;
+    if (obj == NULL || baseName == NULL || value == NULL) return;
+    len = strlen(baseName) + 4 + 1; /* "Raw" suffix */
+    rawName = malloc(len);
+    if (rawName == NULL) {
+        json_add_string(obj, baseName, value);
+        return;
+    }
+    snprintf(rawName, len, "%sRaw", baseName);
+    json_add_string(obj, rawName, value);
+    free(rawName);
+}
+
+static struct json_object *resolve_target_object(parse_context_t *ctx,
+                                                 struct json_object *hint,
+                                                 const field_pattern_t *pattern) {
+    if (ctx == NULL) return NULL;
+    if (pattern == NULL || pattern->section == NULL) {
+        if (hint != NULL) return hint;
+        return ensure_event_data(ctx);
+    }
+    if (!strcmp(pattern->section, FIELD_SECTION_EVENT_DATA)) return ensure_event_data(ctx);
+    if (!strcmp(pattern->section, FIELD_SECTION_LOGON)) return ensure_logon_root(ctx);
+    if (!strcmp(pattern->section, FIELD_SECTION_ROOT)) return ctx->root;
+    return ensure_object(ctx->root, pattern->section);
+}
+
+static void write_field_value(parse_context_t *ctx,
+                              struct json_object *dest,
+                              const field_pattern_t *pattern,
+                              const char *canon,
+                              const char *value) {
+    const char *fieldName;
+    long long numVal;
+    sbool boolVal;
+    struct json_object *jsonBlock;
+    if (ctx == NULL || dest == NULL || pattern == NULL) return;
+    fieldName = (pattern->canonical != NULL) ? pattern->canonical : canon;
+    if (fieldName == NULL) return;
+    switch (pattern->value_type) {
+        case fieldValueLogonType:
+            if (try_parse_int64(value, &numVal)) {
+                json_add_int64(dest, fieldName, numVal);
+                const char *desc = lookup_logon_description((int)numVal);
+                if (desc != NULL) json_add_string(dest, "LogonTypeName", desc);
+            } else {
+                add_raw_string(dest, fieldName, value);
+            }
+            break;
+        case fieldValueInt64:
+            if (try_parse_int64(value, &numVal))
+                json_add_int64(dest, fieldName, numVal);
+            else
+                json_add_string(dest, fieldName, value);
+            break;
+        case fieldValueInt64WithRaw:
+            if (try_parse_int64(value, &numVal))
+                json_add_int64(dest, fieldName, numVal);
+            else
+                add_raw_string(dest, fieldName, value);
+            break;
+        case fieldValueBool:
+            if (try_parse_bool(value, &boolVal))
+                json_add_bool(dest, fieldName, boolVal);
+            else
+                json_add_string(dest, fieldName, value);
+            break;
+        case fieldValueJson:
+            jsonBlock = try_parse_json_block(value);
+            if (jsonBlock != NULL)
+                json_object_object_add(dest, fieldName, jsonBlock);
+            else
+                json_add_string(dest, fieldName, value);
+            break;
+        case fieldValueRemoteCredentialGuard:
+            if (try_parse_bool(value, &boolVal)) {
+                json_add_bool(dest, fieldName, boolVal);
+                json_add_bool(ensure_logon_root(ctx), fieldName, boolVal);
+            } else {
+                json_add_string(dest, fieldName, value);
+            }
+            break;
+        case fieldValuePrivilegeList:
+            parse_privilege_sequence(ctx, value);
+            break;
+        case fieldValueString:
+        default:
+            json_add_string(dest, fieldName, value);
+            break;
+    }
+}
+
+static void dispatch_field(parse_context_t *ctx,
+                           struct json_object *target,
+                           const char *sectionName,
+                           const char *label,
+                           const char *value) {
+    (void)sectionName;
+    if (ctx == NULL || label == NULL) return;
+    if (value == NULL) value = "";
+
+    ensure_event_patterns(ctx);
+
+    char *canon = normalize_label(label);
+    if (canon == NULL) return;
+
+    const field_pattern_t *pattern = select_field_pattern(ctx, label, canon);
+    struct json_object *dest = resolve_target_object(ctx, target, pattern);
+    if (dest == NULL && target != NULL) dest = target;
+    if (dest == NULL) dest = ensure_event_data(ctx);
+
+    if (pattern != NULL && dest != NULL)
+        write_field_value(ctx, dest, pattern, canon, value);
+    else if (dest != NULL)
+        json_add_string(dest, canon, value);
+
+    free(canon);
+}
+
 
 static const char *derive_outcome(const char *auditResult) {
     if (auditResult == NULL) return NULL;
@@ -752,16 +1078,8 @@ static void handle_inline_remote_credential_guard(parse_context_t *ctx,
                                                   struct json_object *sectionObj,
                                                   const char *value) {
     sbool boolVal = 0;
-    sbool haveBool = 0;
     if (value == NULL) return;
-    if (!strcasecmp(value, "Enabled") || !strcasecmp(value, "True") || !strcasecmp(value, "Yes")) {
-        boolVal = 1;
-        haveBool = 1;
-    } else if (!strcasecmp(value, "Disabled") || !strcasecmp(value, "False") || !strcasecmp(value, "No")) {
-        boolVal = 0;
-        haveBool = 1;
-    }
-    if (haveBool) {
+    if (try_parse_bool(value, &boolVal)) {
         json_add_bool(sectionObj, "Enabled", boolVal);
         json_add_bool(ensure_logon_root(ctx), "RemoteCredentialGuard", boolVal);
     }
@@ -793,13 +1111,11 @@ static void parse_semicolon_sequence(parse_context_t *ctx, struct json_object *s
         char *canon = normalize_label(key);
         if (canon == NULL) continue;
         if (!strcmp(canon, "CredentialRotation")) {
-            if (!strcasecmp(val, "true") || !strcasecmp(val, "yes")) {
-                json_add_bool(sectionObj, canon, 1);
-            } else if (!strcasecmp(val, "false") || !strcasecmp(val, "no")) {
-                json_add_bool(sectionObj, canon, 0);
-            } else {
+            sbool boolVal = 0;
+            if (try_parse_bool(val, &boolVal))
+                json_add_bool(sectionObj, canon, boolVal);
+            else
                 json_add_string(sectionObj, canon, val);
-            }
         } else {
             json_add_string(sectionObj, canon, val);
         }
@@ -820,67 +1136,7 @@ static void parse_semicolon_sequence(parse_context_t *ctx, struct json_object *s
  * @param value Raw value associated with @p label.
  */
 static void handle_general_key(parse_context_t *ctx, const char *label, const char *value) {
-    struct json_object *target;
-    if (label == NULL || value == NULL) return;
-    if (ctx->eventId == 6281 && ctx->inst->enableWdac) {
-        struct json_object *wdac = ensure_object(ctx->root, "WDAC");
-        if (wdac != NULL) {
-            if (!strcmp(label, "Policy Name")) {
-                json_add_string(wdac, "PolicyName", value);
-                return;
-            }
-            if (!strcmp(label, "Policy Version")) {
-                json_add_string(wdac, "PolicyVersion", value);
-                return;
-            }
-            if (!strcmp(label, "Enforcement Mode")) {
-                json_add_string(wdac, "EnforcementMode", value);
-                return;
-            }
-            if (!strcmp(label, "User")) {
-                json_add_string(wdac, "User", value);
-                return;
-            }
-            if (!strcmp(label, "PID")) {
-                long long pid;
-                if (try_parse_int64(value, &pid))
-                    json_add_int64(wdac, "PID", pid);
-                else
-                    json_add_string(wdac, "PIDRaw", value);
-                return;
-            }
-        }
-    }
-    if (ctx->eventId == 1243) {
-        struct json_object *wufb = ensure_object(ctx->root, "WUFB");
-        if (wufb != NULL) {
-            if (!strcmp(label, "Policy ID")) {
-                json_add_string(wufb, "PolicyID", value);
-                return;
-            }
-            if (!strcmp(label, "Ring")) {
-                json_add_string(wufb, "Ring", value);
-                return;
-            }
-            if (!strcmp(label, "From Service")) {
-                json_add_string(wufb, "FromService", value);
-                return;
-            }
-            if (!strcmp(label, "Enforcement Result")) {
-                json_add_string(wufb, "EnforcementResult", value);
-                return;
-            }
-        }
-    }
-    target = ensure_event_data(ctx);
-    if (target == NULL) return;
-    {
-        char *canon = normalize_label(label);
-        if (canon != NULL) {
-            json_add_string(target, canon, value);
-            free(canon);
-        }
-    }
+    dispatch_field(ctx, NULL, NULL, label, value);
 }
 
 /**
@@ -899,168 +1155,7 @@ static void handle_general_key(parse_context_t *ctx, const char *label, const ch
  */
 static void handle_key_value(
     parse_context_t *ctx, struct json_object *target, const char *sectionName, const char *label, const char *value) {
-    struct json_object *useTarget = target;
-    char *canon;
-    long long numVal;
-    if (value == NULL) value = "";
-
-    dbgprintf("[mmsnarewinsec DEBUG] handle_key_value: label='%s', value='%s', sectionName='%s', useTarget=%p\n",
-              label ? label : "NULL", value ? value : "NULL", sectionName ? sectionName : "NULL", (void *)useTarget);
-
-    if (useTarget == NULL && sectionName == NULL) {
-        dbgprintf("[mmsnarewinsec DEBUG] handle_key_value: calling handle_general_key\n");
-        handle_general_key(ctx, label, value);
-        return;
-    }
-    if (useTarget == NULL) useTarget = ensure_event_data(ctx);
-    if (useTarget == NULL) return;
-    canon = normalize_label(label);
-    if (canon == NULL) return;
-
-    dbgprintf("[mmsnarewinsec DEBUG] handle_key_value: normalized label='%s' (original='%s')\n", canon ? canon : "NULL",
-              label);
-    if (!strcmp(canon, "LogonType")) {
-        if (try_parse_int64(value, &numVal)) {
-            json_add_int64(useTarget, "LogonType", numVal);
-            const char *desc = lookup_logon_description((int)numVal);
-            if (desc != NULL) json_add_string(useTarget, "LogonTypeName", desc);
-        } else {
-            json_add_string(useTarget, "LogonTypeRaw", value);
-        }
-        goto finalize;
-    }
-    // Handle Windows Security Event Log specific field names
-    if (!strcmp(canon, "SecurityID")) {
-        dbgprintf("[mmsnarewinsec DEBUG] handle_key_value: matched SecurityID, storing value='%s'\n", value);
-        json_add_string(useTarget, "SecurityID", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "AccountName")) {
-        dbgprintf("[mmsnarewinsec DEBUG] handle_key_value: matched AccountName, storing value='%s'\n", value);
-        json_add_string(useTarget, "AccountName", value);
-        goto finalize;
-    }
-    dbgprintf("[mmsnarewinsec DEBUG] handle_key_value: checking AccountDomain, canon='%s'\n", canon);
-    if (!strcmp(canon, "AccountDomain")) {
-        dbgprintf("[mmsnarewinsec DEBUG] handle_key_value: matched AccountDomain, storing value='%s'\n", value);
-        json_add_string(useTarget, "AccountDomain", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "LogonID")) {
-        json_add_string(useTarget, "LogonID", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "LinkedLogonID")) {
-        json_add_string(useTarget, "LinkedLogonID", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "NetworkAccountName")) {
-        json_add_string(useTarget, "NetworkAccountName", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "LogonGUID")) {
-        json_add_string(useTarget, "LogonGUID", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "ProcessID")) {
-        json_add_string(useTarget, "ProcessID", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "ProcessName")) {
-        json_add_string(useTarget, "ProcessName", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "ProcessCommandLine")) {
-        json_add_string(useTarget, "ProcessCommandLine", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "TokenElevationType")) {
-        json_add_string(useTarget, "TokenElevationType", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "MandatoryLabel")) {
-        json_add_string(useTarget, "MandatoryLabel", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "WorkstationName")) {
-        json_add_string(useTarget, "WorkstationName", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "SourceNetworkAddress")) {
-        json_add_string(useTarget, "SourceNetworkAddress", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "SourcePort")) {
-        json_add_string(useTarget, "SourcePort", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "LogonProcess")) {
-        json_add_string(useTarget, "LogonProcess", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "AuthenticationPackage")) {
-        json_add_string(useTarget, "AuthenticationPackage", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "TransitedServices")) {
-        json_add_string(useTarget, "TransitedServices", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "PackageName")) {
-        json_add_string(useTarget, "PackageName", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "RestrictedAdminMode")) {
-        json_add_string(useTarget, "RestrictedAdminMode", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "VirtualAccount")) {
-        json_add_string(useTarget, "VirtualAccount", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "ElevatedToken")) {
-        json_add_string(useTarget, "ElevatedToken", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "ImpersonationLevel")) {
-        json_add_string(useTarget, "ImpersonationLevel", value);
-        goto finalize;
-    }
-    if (!strcmp(canon, "SourcePort") || !strcmp(canon, "ClientPort") || !strcmp(canon, "DestinationPort")) {
-        if (try_parse_int64(value, &numVal)) {
-            json_add_int64(useTarget, canon, numVal);
-            goto finalize;
-        }
-    }
-    if (!strcmp(canon, "KeyLength")) {
-        if (try_parse_int64(value, &numVal)) {
-            json_add_int64(useTarget, canon, numVal);
-            goto finalize;
-        }
-    }
-    if (!strcmp(canon, "RemoteCredentialGuard")) {
-        sbool boolVal = 0;
-        sbool haveBool = 0;
-        if (!strcasecmp(value, "Enabled") || !strcasecmp(value, "True") || !strcasecmp(value, "Yes")) {
-            boolVal = 1;
-            haveBool = 1;
-        } else if (!strcasecmp(value, "Disabled") || !strcasecmp(value, "False") || !strcasecmp(value, "No")) {
-            boolVal = 0;
-            haveBool = 1;
-        }
-        if (haveBool) {
-            json_add_bool(useTarget, canon, boolVal);
-            json_add_bool(ensure_logon_root(ctx), "RemoteCredentialGuard", boolVal);
-            goto finalize;
-        }
-    }
-    if (!strcmp(canon, "Privileges")) {
-        parse_privilege_sequence(ctx, value);
-        goto finalize;
-    }
-    json_add_string(useTarget, canon, value);
-finalize:
-    free(canon);
+    dispatch_field(ctx, target, sectionName, label, value);
 }
 
 static char *normalize_description(const char *desc) {
@@ -1408,6 +1503,12 @@ static rsRetVal parse_snare_text(
     memset(&ctx, 0, sizeof(ctx));
     ctx.inst = pData;
     ctx.msg = pMsg;
+    ctx.corePatterns = g_coreFieldPatterns;
+    ctx.corePatternCount = ARRAY_SIZE(g_coreFieldPatterns);
+    ctx.eventPatterns = NULL;
+    ctx.eventPatternCount = 0;
+    ctx.patternEventId = -1;
+    ctx.patternsPrepared = 0;
     ctx.root = json_object_new_object();
     if (ctx.root == NULL) {
         LogError(0, RS_RET_OUT_OF_MEMORY, "mmsnarewinsec: failed to create root JSON object");
@@ -1506,6 +1607,12 @@ static rsRetVal parse_snare_json(instanceData *pData, smsg_t *pMsg, const char *
     memset(&ctx, 0, sizeof(ctx));
     ctx.inst = pData;
     ctx.msg = pMsg;
+    ctx.corePatterns = g_coreFieldPatterns;
+    ctx.corePatternCount = ARRAY_SIZE(g_coreFieldPatterns);
+    ctx.eventPatterns = NULL;
+    ctx.eventPatternCount = 0;
+    ctx.patternEventId = -1;
+    ctx.patternsPrepared = 0;
     ctx.root = json_object_new_object();
     if (ctx.root == NULL) {
         LogError(0, RS_RET_OUT_OF_MEMORY, "mmsnarewinsec: failed to create root JSON object");
