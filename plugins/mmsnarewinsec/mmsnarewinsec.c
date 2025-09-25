@@ -254,6 +254,7 @@ typedef struct _instanceData {
 } instanceData;
 
 static void free_runtime_tables(instanceData *pData);
+static rsRetVal parse_validation_mode(const char *mode, sbool *strictOut);
 
 /** worker data */
 typedef struct wrkrInstanceData {
@@ -262,6 +263,9 @@ typedef struct wrkrInstanceData {
 
 struct modConfData_s {
     rsconf_t *pConf;
+    char *definitionFile;
+    char *definitionJson;
+    sbool strictValidation;
 };
 static modConfData_t *loadModConf = NULL;
 static modConfData_t *runModConf = NULL;
@@ -781,18 +785,25 @@ static void free_runtime_tables(instanceData *pData) {
     }
 }
 
-static rsRetVal set_validation_mode(instanceData *pData, const char *mode) {
-    if (pData == NULL || mode == NULL) return RS_RET_INVALID_PARAMS;
+static rsRetVal parse_validation_mode(const char *mode, sbool *strictOut) {
+    if (mode == NULL || strictOut == NULL) return RS_RET_INVALID_PARAMS;
     if (!strcasecmp(mode, "strict")) {
-        pData->strictValidation = 1;
+        *strictOut = 1;
         return RS_RET_OK;
     }
     if (!strcasecmp(mode, "permissive") || !strcasecmp(mode, "lenient") || !strcasecmp(mode, "default")) {
-        pData->strictValidation = 0;
+        *strictOut = 0;
         return RS_RET_OK;
     }
     LogError(0, RS_RET_INVALID_PARAMS, "mmsnarewinsec: unknown validation.mode '%s'", mode);
     return RS_RET_INVALID_PARAMS;
+}
+
+static rsRetVal set_validation_mode(instanceData *pData, const char *mode) {
+    rsRetVal r;
+    if (pData == NULL || mode == NULL) return RS_RET_INVALID_PARAMS;
+    r = parse_validation_mode(mode, &pData->strictValidation);
+    return r;
 }
 
 static rsRetVal read_text_file(const char *path, char **out) {
@@ -2879,6 +2890,11 @@ static rsRetVal process_message(instanceData *pData, smsg_t *pMsg, uchar *msgTex
 
 DEF_OMOD_STATIC_DATA;
 
+static struct cnfparamdescr modpdescr[] = {{"definition.file", eCmdHdlrString, 0},
+                                           {"definition.json", eCmdHdlrString, 0},
+                                           {"validation.mode", eCmdHdlrString, 0}};
+static struct cnfparamblk modpblk = {CNFPARAMBLK_VERSION, ARRAY_SIZE(modpdescr), modpdescr};
+
 static struct cnfparamdescr actpdescr[] = {
     {"container", eCmdHdlrString, 0},     {"enable.network", eCmdHdlrBinary, 0},
     {"enable.laps", eCmdHdlrBinary, 0},   {"enable.tls", eCmdHdlrBinary, 0},
@@ -2891,7 +2907,61 @@ BEGINbeginCnfLoad
     CODESTARTbeginCnfLoad;
     loadModConf = pModConf;
     pModConf->pConf = pConf;
+    free(pModConf->definitionFile);
+    pModConf->definitionFile = NULL;
+    free(pModConf->definitionJson);
+    pModConf->definitionJson = NULL;
+    pModConf->strictValidation = 0;
 ENDbeginCnfLoad
+
+BEGINsetModCnf
+    struct cnfparamvals *pvals = NULL;
+    int i;
+    CODESTARTsetModCnf;
+    pvals = nvlstGetParams(lst, &modpblk, NULL);
+    if (pvals == NULL) {
+        LogError(0, RS_RET_MISSING_CNFPARAMS,
+                 "mmsnarewinsec: error processing module config parameters [module(...)]");
+        ABORT_FINALIZE(RS_RET_MISSING_CNFPARAMS);
+    }
+    if (Debug) {
+        dbgprintf("module (global) param blk for mmsnarewinsec:\n");
+        cnfparamsPrint(&modpblk, pvals);
+    }
+    for (i = 0; i < (int)modpblk.nParams; ++i) {
+        if (!pvals[i].bUsed) continue;
+        if (!strcmp(modpblk.descr[i].name, "definition.file")) {
+            char *value = es_str2cstr(pvals[i].val.d.estr, NULL);
+            if (value == NULL) {
+                ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+            }
+            free(loadModConf->definitionFile);
+            loadModConf->definitionFile = value;
+        } else if (!strcmp(modpblk.descr[i].name, "definition.json")) {
+            char *value = es_str2cstr(pvals[i].val.d.estr, NULL);
+            if (value == NULL) {
+                ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+            }
+            free(loadModConf->definitionJson);
+            loadModConf->definitionJson = value;
+        } else if (!strcmp(modpblk.descr[i].name, "validation.mode")) {
+            char *mode = es_str2cstr(pvals[i].val.d.estr, NULL);
+            rsRetVal r;
+            if (mode == NULL) {
+                ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+            }
+            r = parse_validation_mode(mode, &loadModConf->strictValidation);
+            free(mode);
+            if (r != RS_RET_OK) {
+                ABORT_FINALIZE(r);
+            }
+        } else {
+            dbgprintf("mmsnarewinsec: unhandled module parameter '%s'\n", modpblk.descr[i].name);
+        }
+    }
+finalize_it:
+    if (pvals != NULL) cnfparamvalsDestruct(pvals, &modpblk);
+ENDsetModCnf
 
 BEGINendCnfLoad
     CODESTARTendCnfLoad;
@@ -2908,6 +2978,12 @@ ENDactivateCnf
 
 BEGINfreeCnf
     CODESTARTfreeCnf;
+    if (pModConf != NULL) {
+        free(pModConf->definitionFile);
+        pModConf->definitionFile = NULL;
+        free(pModConf->definitionJson);
+        pModConf->definitionJson = NULL;
+    }
 ENDfreeCnf
 
 BEGINcreateInstance
@@ -2968,6 +3044,9 @@ BEGINnewActInst
     CHKiRet(OMSRsetEntry(*ppOMSR, 0, NULL, OMSR_TPL_AS_MSG));
     CHKiRet(createInstance(&pData));
     setInstParamDefaults(pData);
+    if (loadModConf != NULL) {
+        pData->strictValidation = loadModConf->strictValidation;
+    }
     for (i = 0; i < (int)actpblk.nParams; ++i) {
         if (!pvals[i].bUsed) continue;
         if (!strcmp(actpblk.descr[i].name, "container")) {
@@ -3009,6 +3088,14 @@ BEGINnewActInst
         }
     }
     CHKiRet(initialize_runtime_tables(pData));
+    if (loadModConf != NULL) {
+        if (loadModConf->definitionFile != NULL) {
+            CHKiRet(load_custom_definition_file(pData, loadModConf->definitionFile));
+        }
+        if (loadModConf->definitionJson != NULL) {
+            CHKiRet(load_custom_definition_text(pData, loadModConf->definitionJson, "module definition.json"));
+        }
+    }
     if (definitionFile != NULL) {
         CHKiRet(load_custom_definition_file(pData, definitionFile));
     }
