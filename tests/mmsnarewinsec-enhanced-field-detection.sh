@@ -82,10 +82,13 @@ action(type="mmsnarewinsec"
 
 # Test with comprehensive dataset from Logon_Logoff category
 startup
-tcpflood -m1 -M "\"<14>Jun 10 11:30:45 LAB-LOGON105 MSWinEventLog\t1\tSecurity\t10105\tMon Jun 10 11:30:45 2024\t4627\tMicrosoft-Windows-Security-Auditing\tN/A\tN/A\tSuccess Audit\tLAB-LOGON105\tGroup Membership\t\tGroup membership information. Subject: Security ID: CLOUDDOMAIN\\User009 Account Name: User009 Account Domain: CLOUDDOMAIN Logon ID: 0x7A202 Logon Type: 2 New Logon:    Security ID: HOST-004\\admin Account Name: admin Account Domain: HOST-004 Logon ID: 0x1D80AF1 Event in sequence: 1 of 1 Group Membership: HOST-004\\None Everyone NT AUTHORITY\\Local account and member of admins   group BUILTIN\\admins BUILTIN\\Users NT AUTHORITY\\INTERACTIVE CONSOLE LOGON NT AUTHORITY\\Authenticated Users NT AUTHORITY\\This Organization NT AUTHORITY\\Authenticated Users3 LOCAL NT AUTHORITY\\NTLM Authentication Mandatory Label\\High Mandatory Level\t1\""
+tcpflood -m1 -i ${srcdir}/tests/testsuites/mmsnarewinsec/samples-all-data/Logon_Logoff.data
 shutdown_when_empty
 wait_shutdown
 
-# Validate enhanced field extraction
+# Validate enhanced field extraction for various event types
 content_check '{"eventid":4627,"subject_securityid":"CLOUDDOMAIN\\User009","subject_accountname":"User009","subject_accountdomain":"CLOUDDOMAIN","subject_logonid":"0x7A202","logon_type":2}'
+content_check '{"eventid":4650,"network_fields":{"LocalEndpoint":"jsmith@srv1.dmn","RemoteEndpoint":"DMN/SRV2$"}}'
+content_check '{"eventid":4624,"subject":{"SecurityID":"SYSTEM","AccountName":"HOST-007$","AccountDomain":"WORKGROUP","LogonID":"0x3E7"}}'
+content_check '{"eventid":4625,"failure":{"FailureReason":"Unknown user name or bad password","Status":"0xc000006d","SubStatus":"0xc0000064"}}'
 exit_test

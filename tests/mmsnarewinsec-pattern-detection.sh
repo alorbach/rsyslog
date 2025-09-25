@@ -33,11 +33,19 @@ action(type="mmsnarewinsec"
 
 # Test with various field patterns from the comprehensive dataset
 startup
-# Test IPsec events (4650-4984)
-tcpflood -m1 -M "\"<14>Jun 10 11:30:45 LAB-LOGON105 MSWinEventLog\t1\tSecurity\t10105\tMon Jun 10 11:30:45 2024\t4650\tMicrosoft-Windows-Security-Auditing\tN/A\tN/A\tSuccess Audit\tLAB-LOGON105\tIPsec Main Mode\t\tAn IPsec Main Mode security association was established. Extended Mode was not enabled. Certificate authentication was not used. Local Endpoint: Principal Name: jsmith@srv1.dmn Network Address: 10.40.1.123 Keying Module Port: 500 Remote Endpoint: Principal Name: DMN/SRV2\$ Network Address: 10.40.1.101 Keying Module Port: 500 Security Association Information: Lifetime (minutes): 480 Quick Mode Limit: 0 Main Mode SA ID: 9 Cryptographic Information: Cipher Algorithm: 3DES Integrity Algorithm: SHA1 Diffie-Hellman Group: DH group 2 Additional Information: Keying Module Name: IKEv1 Authentication Method: Kerberos Role: Responder Impersonation State: Not enabled Main Mode Filter ID: 71695\t1\""
+# Test with multiple data files to cover different event types and patterns
+tcpflood -m1 -i ${srcdir}/tests/testsuites/mmsnarewinsec/samples-all-data/Logon_Logoff.data
+tcpflood -m1 -i ${srcdir}/tests/testsuites/mmsnarewinsec/samples-all-data/Account_Management.data
+tcpflood -m1 -i ${srcdir}/tests/testsuites/mmsnarewinsec/samples-all-data/System.data
+tcpflood -m1 -i ${srcdir}/tests/testsuites/mmsnarewinsec/samples-all-data/Object_Access.data
+tcpflood -m1 -i ${srcdir}/tests/testsuites/mmsnarewinsec/samples-all-data/Process_Tracking.data
 shutdown_when_empty
 wait_shutdown
 
-# Validate pattern-based field extraction
+# Validate pattern-based field extraction for various event types
 content_check '{"eventid":4650,"network_fields":{"LocalEndpoint":"jsmith@srv1.dmn","RemoteEndpoint":"DMN/SRV2$"}}'
+content_check '{"eventid":4624,"subject":{"SecurityID":"SYSTEM","AccountName":"HOST-007$","AccountDomain":"WORKGROUP","LogonID":"0x3E7"}}'
+content_check '{"eventid":4608,"process":{"ProcessName":"C:\\Windows\\System32\\winlogon.exe","ProcessID":"0x4c0"}}'
+content_check '{"eventid":4656,"subject":{"SecurityID":"HOST-001\\admin","AccountName":"admin","AccountDomain":"HOST-001","LogonID":"0x1fd23"}}'
+content_check '{"eventid":4688,"process":{"NewProcessID":"0x4c0","NewProcessName":"C:\\Windows\\System32\\notepad.exe"}}'
 exit_test

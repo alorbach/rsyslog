@@ -55,10 +55,13 @@ action(type="mmsnarewinsec"
 
 # Test Account Management events from samples-all-data/Account_Management.data
 startup
-tcpflood -m1 -M "\"<14>Apr 08 09:15:30 LAB-ACCOU12 MSWinEventLog\t1\tSecurity\t10012\tMon Apr 08 09:15:30 2024\t4783\tMicrosoft-Windows-Security-Auditing\tN/A\tN/A\tSuccess Audit\tLAB-ACCOU12\tApplication Group Management\t\tA basic application group was created. Subject: Security ID: DOMAIN\\admin Account Name: admin Account Domain: DOMAIN Logon ID: 0x30999 Group: Security ID: DOMAIN\\\$K21000-R2HC42Q10MLQ Account Name: \$K21000-R2HC42Q10MLQ Account Domain: DOMAIN Attributes: SAM Account Name: \$K21000-R2HC42Q10MLQ SID History: - Additional Information: Privileges: -\t1\""
+tcpflood -m1 -i ${srcdir}/tests/testsuites/mmsnarewinsec/samples-all-data/Account_Management.data
 shutdown_when_empty
 wait_shutdown
 
-# Validate Account Management field extraction
+# Validate Account Management field extraction for various event types
 content_check '{"eventid":4783,"subject_securityid":"DOMAIN\\admin","subject_accountname":"admin","subject_accountdomain":"DOMAIN","subject_logonid":"0x30999"}'
+content_check '{"eventid":4720,"newaccount_securityid":"DOMAIN-FR\\John.Locke","newaccount_accountname":"John.Locke","newaccount_accountdomain":"DOMAIN-FR"}'
+content_check '{"eventid":4741,"newaccount_securityid":"S-1-5-21-1234567890-1234567890-1234567890-1109","newaccount_accountname":"WORKSTATION-001$","newaccount_accountdomain":"DOMAIN"}'
+content_check '{"eventid":4722,"targetaccount_securityid":"DOMAIN-FR\\John.Locke","targetaccount_accountname":"John.Locke","targetaccount_accountdomain":"DOMAIN-FR"}'
 exit_test
