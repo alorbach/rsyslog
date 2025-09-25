@@ -682,39 +682,55 @@ static rsRetVal parse_field_value_enhanced(
             break;
             
         case FIELD_GUID:
-            // Special handling for GUIDs
+            // Special handling for GUIDs - validate format
             if (is_guid_format(trimmed)) {
                 json_add_string(target, key, trimmed);
             } else {
-                json_add_string(target, key, trimmed);
+                // Invalid GUID format, store as string with prefix
+                char *prefixed = malloc(strlen(trimmed) + 10);
+                snprintf(prefixed, strlen(trimmed) + 10, "INVALID_GUID:%s", trimmed);
+                json_add_string(target, key, prefixed);
+                free(prefixed);
             }
             break;
             
         case FIELD_IP_ADDRESS:
-            // Special handling for IP addresses
+            // Special handling for IP addresses - validate format
             if (is_ip_address(trimmed)) {
                 json_add_string(target, key, trimmed);
             } else {
-                json_add_string(target, key, trimmed);
+                // Invalid IP format, store as string with prefix
+                char *prefixed = malloc(strlen(trimmed) + 10);
+                snprintf(prefixed, strlen(trimmed) + 10, "INVALID_IP:%s", trimmed);
+                json_add_string(target, key, prefixed);
+                free(prefixed);
             }
             break;
             
         case FIELD_TIMESTAMP:
-            // Special handling for timestamps
+            // Special handling for timestamps - validate format
             if (is_timestamp_format(trimmed)) {
                 json_add_string(target, key, trimmed);
             } else {
-                json_add_string(target, key, trimmed);
+                // Invalid timestamp format, store as string with prefix
+                char *prefixed = malloc(strlen(trimmed) + 15);
+                snprintf(prefixed, strlen(trimmed) + 15, "INVALID_TIMESTAMP:%s", trimmed);
+                json_add_string(target, key, prefixed);
+                free(prefixed);
             }
             break;
             
         case FIELD_JSON_OBJECT:
-            // Special handling for JSON objects
+            // Special handling for JSON objects - validate format
             if (is_json_format(trimmed)) {
-                // For now, store as string - could be enhanced to parse JSON
+                // Valid JSON format, store as string
                 json_add_string(target, key, trimmed);
             } else {
-                json_add_string(target, key, trimmed);
+                // Invalid JSON format, store as string with prefix
+                char *prefixed = malloc(strlen(trimmed) + 15);
+                snprintf(prefixed, strlen(trimmed) + 15, "INVALID_JSON:%s", trimmed);
+                json_add_string(target, key, prefixed);
+                free(prefixed);
             }
             break;
         default:

@@ -7,6 +7,11 @@ RFC5424 envelopes. It was designed using Windows Server 2016 through Windows
 Server 2025 samples and preserves the original payload while exposing a
 normalized JSON view under a configurable container (``!win`` by default).
 
+The module has been enhanced with a comprehensive, pattern-based field detection
+system that can handle the full spectrum of Windows Security events. This
+enhancement replaces the previous hardcoded field matching with a flexible,
+configurable system supporting 153 field patterns across all event categories.
+
 Highlights
 ----------
 
@@ -41,6 +46,38 @@ Highlights
   Credential Guard and LAPS credential rotation indicators.
 * Stores any unmapped segments in ``!win!Unparsed`` to ensure the payload is
   preserved for later review.
+
+Enhanced Field Detection System
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The enhanced module provides:
+
+* **Pattern-Based Field Detection**: Uses 153 configurable patterns instead of hardcoded string matching
+* **Comprehensive Coverage**: Handles all 439 Windows Security events across 12 categories
+* **Type-Aware Parsing**: Automatically detects and parses different data types (strings, integers, booleans, GUIDs, IP addresses, timestamps, JSON objects)
+* **Priority-Based Matching**: Uses priority-based pattern matching (1-5 levels) for accurate field detection
+* **Enhanced Error Handling**: Comprehensive validation and error handling with multiple validation modes
+* **Runtime Configuration**: Support for runtime configuration of field mappings and behaviors
+* **Performance Optimization**: Efficient pattern matching with statistics tracking
+
+**Supported Data Types:**
+* **FIELD_STRING**: Standard text fields with automatic trimming and validation
+* **FIELD_INTEGER**: Numeric values with automatic parsing and fallback to string
+* **FIELD_BOOLEAN**: Boolean values supporting true/false, yes/no, enabled/disabled, 1/0
+* **FIELD_GUID**: GUID format detection and validation ({XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX})
+* **FIELD_IP_ADDRESS**: IP address format detection (IPv4)
+* **FIELD_TIMESTAMP**: Timestamp format detection (ISO 8601 and day-of-week formats)
+* **FIELD_JSON_OBJECT**: JSON object format detection (objects and arrays)
+
+**Field Categories with Priority Levels:**
+* **Subject Fields** (Priority 100): Security ID, Account Name, Account Domain, Logon ID
+* **Logon Information Fields** (Priority 95): Logon Type, Restricted Admin Mode, Virtual Account, Elevated Token, Impersonation Level
+* **New Logon Fields** (Priority 90): Security ID, Account Name, Account Domain, Logon ID, Logon GUID
+* **Network Information Fields** (Priority 85): Workstation Name, Source/Destination Addresses and Ports, Protocol, Direction
+* **Process Information Fields** (Priority 80): Process ID, Process Name, Command Line, Token Elevation Type, Mandatory Label
+* **Authentication Fields** (Priority 75): Logon Process, Authentication Package, Transited Services, Key Length, Remote Credential Guard
+* **Failure Information Fields** (Priority 70): Failure Reason, Status, Sub Status
+* **Specialized Fields**: WDAC (Priority 65), WUFB (Priority 60), Kerberos (Priority 55), LAPS (Priority 50), TLS (Priority 45), Filter (Priority 40)
 
 Build & Runtime Requirements
 -----------------------------
