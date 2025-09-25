@@ -18,6 +18,7 @@
 
 #include <assert.h>
 #include <ctype.h>
+#include <errno.h>
 #include <json.h>
 #include <json_object_iterator.h>
 #include <limits.h>
@@ -71,11 +72,19 @@ typedef enum section_behavior {
  * @var section_descriptor::behavior Parsing behavior applied to the section.
  * @var section_descriptor::flags Feature flags gating optional sections.
  */
+typedef enum field_pattern_sensitivity {
+    fieldSensitivityCanonical = 0,
+    fieldSensitivityCaseSensitive,
+    fieldSensitivityCaseInsensitive
+} field_pattern_sensitivity_t;
+
 typedef struct section_descriptor {
-    const char *label;
+    const char *pattern;
     const char *canonical;
     section_behavior_t behavior;
     uint32_t flags;
+    int priority;
+    field_pattern_sensitivity_t sensitivity;
 } section_descriptor_t;
 
 /**
@@ -116,12 +125,6 @@ typedef enum field_value_type {
     fieldValuePrivilegeList
 } field_value_type_t;
 
-typedef enum field_pattern_sensitivity {
-    fieldSensitivityCanonical = 0,
-    fieldSensitivityCaseSensitive,
-    fieldSensitivityCaseInsensitive
-} field_pattern_sensitivity_t;
-
 typedef struct field_pattern {
     const char *pattern;
     const char *canonical;
@@ -133,13 +136,16 @@ typedef struct field_pattern {
 
 typedef struct event_field_mapping {
     int event_id;
-    const field_pattern_t *patterns;
+    field_pattern_t *patterns;
     size_t pattern_count;
     uint32_t required_flags;
 } event_field_mapping_t;
 
 #define FIELD_PRIORITY_BASE 10
 #define FIELD_PRIORITY_EVENT_OVERRIDE 100
+
+#define SECTION_PRIORITY_DEFAULT 100
+#define SECTION_PRIORITY_OVERRIDE 200
 
 #define FIELD_SECTION_EVENT_DATA "EventData"
 #define FIELD_SECTION_LOGON "Logon"
@@ -178,7 +184,7 @@ static const field_pattern_t g_coreFieldPatterns[] = {
     {"Privileges", "Privileges", fieldValuePrivilegeList, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
 };
 
-static const field_pattern_t g_event6281FieldPatterns[] = {
+static field_pattern_t g_event6281FieldPatterns[] = {
     {"PolicyName", "PolicyName", fieldValueString, "WDAC", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
     {"PolicyVersion", "PolicyVersion", fieldValueString, "WDAC", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
     {"EnforcementMode", "EnforcementMode", fieldValueString, "WDAC", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
@@ -186,7 +192,7 @@ static const field_pattern_t g_event6281FieldPatterns[] = {
     {"PID", "PID", fieldValueInt64WithRaw, "WDAC", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
 };
 
-static const field_pattern_t g_event1243FieldPatterns[] = {
+static field_pattern_t g_event1243FieldPatterns[] = {
     {"PolicyID", "PolicyID", fieldValueString, "WUFB", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
     {"Ring", "Ring", fieldValueString, "WUFB", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
     {"FromService", "FromService", fieldValueString, "WUFB", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
@@ -215,6 +221,18 @@ static const event_field_mapping_t g_eventFieldMappings[] = {
  *      alongside parsed data when true.
  * @var instanceData::emitDebugJson Forces creation of an empty Unparsed array
  *      for easier diagnostics when true.
+ * @var instanceData::strictValidation Controls whether invalid custom
+ *      definitions abort initialization.
+ * @var instanceData::sectionDescriptors Runtime section descriptor table.
+ * @var instanceData::sectionDescriptorCount Number of active section
+ *      descriptors.
+ * @var instanceData::corePatterns Runtime field pattern table shared by all
+ *      events.
+ * @var instanceData::corePatternCount Number of entries in ::corePatterns.
+ * @var instanceData::eventFieldMappings Runtime event-specific pattern table.
+ * @var instanceData::eventFieldMappingCount Number of event-specific mappings.
+ * @var instanceData::eventMappings Runtime event metadata overrides.
+ * @var instanceData::eventMappingCount Number of event metadata entries.
  */
 typedef struct _instanceData {
     uchar *container;
@@ -224,7 +242,19 @@ typedef struct _instanceData {
     sbool enableWdac;
     sbool emitRawPayload;
     sbool emitDebugJson;
+    sbool strictValidation;
+    section_descriptor_t *sectionDescriptors;
+    size_t sectionDescriptorCount;
+    field_pattern_t *corePatterns;
+    size_t corePatternCount;
+    event_field_mapping_t *eventFieldMappings;
+    size_t eventFieldMappingCount;
+    event_mapping_t *eventMappings;
+    size_t eventMappingCount;
 } instanceData;
+
+static void free_runtime_tables(instanceData *pData);
+static rsRetVal parse_validation_mode(const char *mode, sbool *strictOut);
 
 /** worker data */
 typedef struct wrkrInstanceData {
@@ -233,30 +263,52 @@ typedef struct wrkrInstanceData {
 
 struct modConfData_s {
     rsconf_t *pConf;
+    char *definitionFile;
+    char *definitionJson;
+    sbool strictValidation;
 };
 static modConfData_t *loadModConf = NULL;
 static modConfData_t *runModConf = NULL;
 
-static const section_descriptor_t g_sectionDescriptors[] = {
-    {"Subject", "Subject", sectionBehaviorStandard, SECTION_FLAG_NONE},
-    {"Logon Information", "LogonInformation", sectionBehaviorStandard, SECTION_FLAG_NONE},
-    {"New Logon", "NewLogon", sectionBehaviorStandard, SECTION_FLAG_NONE},
-    {"Account For Which Logon Failed", "TargetAccount", sectionBehaviorStandard, SECTION_FLAG_NONE},
-    {"Failure Information", "Failure", sectionBehaviorStandard, SECTION_FLAG_NONE},
-    {"Network Information", "Network", sectionBehaviorStandard, SECTION_FLAG_NETWORK},
-    {"Process Information", "Process", sectionBehaviorStandard, SECTION_FLAG_NONE},
-    {"Detailed Authentication Information", "DetailedAuthentication", sectionBehaviorStandard, SECTION_FLAG_NONE},
-    {"Application Information", "Application", sectionBehaviorStandard, SECTION_FLAG_NONE},
-    {"Filter Information", "Filter", sectionBehaviorStandard, SECTION_FLAG_NONE},
-    {"Account Information", "AccountInformation", sectionBehaviorStandard, SECTION_FLAG_NONE},
-    {"Service Information", "Service", sectionBehaviorStandard, SECTION_FLAG_NONE},
-    {"Additional Information", "AdditionalInformation", sectionBehaviorStandard, SECTION_FLAG_NONE},
-    {"Share Information", "Share", sectionBehaviorStandard, SECTION_FLAG_NONE},
-    {"Certificate Information", "Certificate", sectionBehaviorStandard, SECTION_FLAG_NONE},
-    {"Remote Credential Guard", "RemoteCredentialGuard", sectionBehaviorInlineValue, SECTION_FLAG_NONE},
-    {"LAPS Context", "LAPS", sectionBehaviorSemicolon, SECTION_FLAG_LAPS},
-    {"TLS Inspection", "TLSInspection", sectionBehaviorStandard, SECTION_FLAG_TLS},
-    {"Privileges", "Privileges", sectionBehaviorList, SECTION_FLAG_NONE},
+static const section_descriptor_t g_builtinSectionDescriptors[] = {
+    {"Subject", "Subject", sectionBehaviorStandard, SECTION_FLAG_NONE, SECTION_PRIORITY_DEFAULT,
+     fieldSensitivityCaseSensitive},
+    {"Logon Information", "LogonInformation", sectionBehaviorStandard, SECTION_FLAG_NONE, SECTION_PRIORITY_DEFAULT,
+     fieldSensitivityCaseSensitive},
+    {"New Logon", "NewLogon", sectionBehaviorStandard, SECTION_FLAG_NONE, SECTION_PRIORITY_DEFAULT,
+     fieldSensitivityCaseSensitive},
+    {"Account For Which Logon Failed", "TargetAccount", sectionBehaviorStandard, SECTION_FLAG_NONE,
+     SECTION_PRIORITY_DEFAULT, fieldSensitivityCaseSensitive},
+    {"Failure Information", "Failure", sectionBehaviorStandard, SECTION_FLAG_NONE, SECTION_PRIORITY_DEFAULT,
+     fieldSensitivityCaseSensitive},
+    {"Network Information", "Network", sectionBehaviorStandard, SECTION_FLAG_NETWORK, SECTION_PRIORITY_DEFAULT,
+     fieldSensitivityCaseSensitive},
+    {"Process Information", "Process", sectionBehaviorStandard, SECTION_FLAG_NONE, SECTION_PRIORITY_DEFAULT,
+     fieldSensitivityCaseSensitive},
+    {"Detailed Authentication Information", "DetailedAuthentication", sectionBehaviorStandard, SECTION_FLAG_NONE,
+     SECTION_PRIORITY_DEFAULT, fieldSensitivityCaseSensitive},
+    {"Application Information", "Application", sectionBehaviorStandard, SECTION_FLAG_NONE, SECTION_PRIORITY_DEFAULT,
+     fieldSensitivityCaseSensitive},
+    {"Filter Information", "Filter", sectionBehaviorStandard, SECTION_FLAG_NONE, SECTION_PRIORITY_DEFAULT,
+     fieldSensitivityCaseSensitive},
+    {"Account Information", "AccountInformation", sectionBehaviorStandard, SECTION_FLAG_NONE, SECTION_PRIORITY_DEFAULT,
+     fieldSensitivityCaseSensitive},
+    {"Service Information", "Service", sectionBehaviorStandard, SECTION_FLAG_NONE, SECTION_PRIORITY_DEFAULT,
+     fieldSensitivityCaseSensitive},
+    {"Additional Information", "AdditionalInformation", sectionBehaviorStandard, SECTION_FLAG_NONE,
+     SECTION_PRIORITY_DEFAULT, fieldSensitivityCaseSensitive},
+    {"Share Information", "Share", sectionBehaviorStandard, SECTION_FLAG_NONE, SECTION_PRIORITY_DEFAULT,
+     fieldSensitivityCaseSensitive},
+    {"Certificate Information", "Certificate", sectionBehaviorStandard, SECTION_FLAG_NONE, SECTION_PRIORITY_DEFAULT,
+     fieldSensitivityCaseSensitive},
+    {"Remote Credential Guard", "RemoteCredentialGuard", sectionBehaviorInlineValue, SECTION_FLAG_NONE,
+     SECTION_PRIORITY_OVERRIDE, fieldSensitivityCaseInsensitive},
+    {"LAPS Context", "LAPS", sectionBehaviorSemicolon, SECTION_FLAG_LAPS, SECTION_PRIORITY_DEFAULT,
+     fieldSensitivityCaseSensitive},
+    {"TLS Inspection", "TLSInspection", sectionBehaviorStandard, SECTION_FLAG_TLS, SECTION_PRIORITY_DEFAULT,
+     fieldSensitivityCaseSensitive},
+    {"Privileges", "Privileges", sectionBehaviorList, SECTION_FLAG_NONE, SECTION_PRIORITY_OVERRIDE,
+     fieldSensitivityCaseSensitive},
 };
 
 static const logon_type_map_t g_logonTypeMap[] = {{0, "System"},
@@ -371,11 +423,1089 @@ static inline char *normalize_label(const char *label) {
     return out;
 }
 
-static inline const section_descriptor_t *lookup_section(const char *label) {
-    for (size_t i = 0; i < ARRAY_SIZE(g_sectionDescriptors); ++i) {
-        if (!strcmp(label, g_sectionDescriptors[i].label)) return &g_sectionDescriptors[i];
+static void cleanup_section_descriptor(section_descriptor_t *desc) {
+    if (desc == NULL) return;
+    free((char *)desc->pattern);
+    free((char *)desc->canonical);
+    desc->pattern = NULL;
+    desc->canonical = NULL;
+}
+
+static void cleanup_field_pattern(field_pattern_t *pattern) {
+    if (pattern == NULL) return;
+    free((char *)pattern->pattern);
+    free((char *)pattern->canonical);
+    free((char *)pattern->section);
+    pattern->pattern = NULL;
+    pattern->canonical = NULL;
+    pattern->section = NULL;
+}
+
+static void cleanup_event_mapping(event_mapping_t *mapping) {
+    if (mapping == NULL) return;
+    free((char *)mapping->category);
+    free((char *)mapping->subtype);
+    free((char *)mapping->outcome);
+    mapping->category = NULL;
+    mapping->subtype = NULL;
+    mapping->outcome = NULL;
+}
+
+static void cleanup_event_field_mapping(event_field_mapping_t *mapping) {
+    if (mapping == NULL) return;
+    if (mapping->patterns != NULL) {
+        for (size_t i = 0; i < mapping->pattern_count; ++i) {
+            cleanup_field_pattern(&mapping->patterns[i]);
+        }
+        free(mapping->patterns);
+    }
+    mapping->patterns = NULL;
+    mapping->pattern_count = 0;
+}
+
+static rsRetVal copy_section_descriptor(section_descriptor_t *dst, const section_descriptor_t *src) {
+    if (dst == NULL || src == NULL) return RS_RET_INVALID_PARAMS;
+    memset(dst, 0, sizeof(*dst));
+    if (src->pattern != NULL) {
+        dst->pattern = strdup(src->pattern);
+        if (dst->pattern == NULL) return RS_RET_OUT_OF_MEMORY;
+    }
+    if (src->canonical != NULL) {
+        dst->canonical = strdup(src->canonical);
+        if (dst->canonical == NULL) {
+            cleanup_section_descriptor(dst);
+            return RS_RET_OUT_OF_MEMORY;
+        }
+    }
+    dst->behavior = src->behavior;
+    dst->flags = src->flags;
+    dst->priority = src->priority;
+    dst->sensitivity = src->sensitivity;
+    return RS_RET_OK;
+}
+
+static rsRetVal copy_field_pattern(field_pattern_t *dst, const field_pattern_t *src) {
+    if (dst == NULL || src == NULL) return RS_RET_INVALID_PARAMS;
+    memset(dst, 0, sizeof(*dst));
+    if (src->pattern != NULL) {
+        dst->pattern = strdup(src->pattern);
+        if (dst->pattern == NULL) return RS_RET_OUT_OF_MEMORY;
+    }
+    if (src->canonical != NULL) {
+        dst->canonical = strdup(src->canonical);
+        if (dst->canonical == NULL) {
+            cleanup_field_pattern(dst);
+            return RS_RET_OUT_OF_MEMORY;
+        }
+    }
+    if (src->section != NULL) {
+        dst->section = strdup(src->section);
+        if (dst->section == NULL) {
+            cleanup_field_pattern(dst);
+            return RS_RET_OUT_OF_MEMORY;
+        }
+    }
+    dst->value_type = src->value_type;
+    dst->priority = src->priority;
+    dst->sensitivity = src->sensitivity;
+    return RS_RET_OK;
+}
+
+static rsRetVal copy_event_mapping(event_mapping_t *dst, const event_mapping_t *src) {
+    if (dst == NULL || src == NULL) return RS_RET_INVALID_PARAMS;
+    memset(dst, 0, sizeof(*dst));
+    dst->event_id = src->event_id;
+    if (src->category != NULL) {
+        dst->category = strdup(src->category);
+        if (dst->category == NULL) return RS_RET_OUT_OF_MEMORY;
+    }
+    if (src->subtype != NULL) {
+        dst->subtype = strdup(src->subtype);
+        if (dst->subtype == NULL) {
+            cleanup_event_mapping(dst);
+            return RS_RET_OUT_OF_MEMORY;
+        }
+    }
+    if (src->outcome != NULL) {
+        dst->outcome = strdup(src->outcome);
+        if (dst->outcome == NULL) {
+            cleanup_event_mapping(dst);
+            return RS_RET_OUT_OF_MEMORY;
+        }
+    }
+    return RS_RET_OK;
+}
+
+static rsRetVal copy_event_field_mapping(event_field_mapping_t *dst, const event_field_mapping_t *src) {
+    if (dst == NULL || src == NULL) return RS_RET_INVALID_PARAMS;
+    memset(dst, 0, sizeof(*dst));
+    dst->event_id = src->event_id;
+    dst->required_flags = src->required_flags;
+    if (src->pattern_count == 0) return RS_RET_OK;
+    dst->patterns = calloc(src->pattern_count, sizeof(field_pattern_t));
+    if (dst->patterns == NULL) return RS_RET_OUT_OF_MEMORY;
+    dst->pattern_count = src->pattern_count;
+    for (size_t i = 0; i < src->pattern_count; ++i) {
+        rsRetVal r = copy_field_pattern(&dst->patterns[i], &src->patterns[i]);
+        if (r != RS_RET_OK) {
+            dst->pattern_count = i;
+            cleanup_event_field_mapping(dst);
+            return r;
+        }
+    }
+    return RS_RET_OK;
+}
+
+static rsRetVal append_section_descriptor_owned(section_descriptor_t **array, size_t *count,
+                                                section_descriptor_t *desc) {
+    section_descriptor_t *tmp;
+    if (array == NULL || count == NULL || desc == NULL) return RS_RET_INVALID_PARAMS;
+    tmp = realloc(*array, (*count + 1) * sizeof(section_descriptor_t));
+    if (tmp == NULL) {
+        cleanup_section_descriptor(desc);
+        return RS_RET_OUT_OF_MEMORY;
+    }
+    tmp[*count] = *desc;
+    *array = tmp;
+    ++(*count);
+    memset(desc, 0, sizeof(*desc));
+    return RS_RET_OK;
+}
+
+static rsRetVal append_field_pattern_owned(field_pattern_t **array, size_t *count, field_pattern_t *pattern) {
+    field_pattern_t *tmp;
+    if (array == NULL || count == NULL || pattern == NULL) return RS_RET_INVALID_PARAMS;
+    tmp = realloc(*array, (*count + 1) * sizeof(field_pattern_t));
+    if (tmp == NULL) {
+        cleanup_field_pattern(pattern);
+        return RS_RET_OUT_OF_MEMORY;
+    }
+    tmp[*count] = *pattern;
+    *array = tmp;
+    ++(*count);
+    memset(pattern, 0, sizeof(*pattern));
+    return RS_RET_OK;
+}
+
+static rsRetVal append_event_field_mapping_owned(event_field_mapping_t **array, size_t *count,
+                                                 event_field_mapping_t *mapping) {
+    event_field_mapping_t *tmp;
+    if (array == NULL || count == NULL || mapping == NULL) return RS_RET_INVALID_PARAMS;
+    tmp = realloc(*array, (*count + 1) * sizeof(event_field_mapping_t));
+    if (tmp == NULL) {
+        cleanup_event_field_mapping(mapping);
+        return RS_RET_OUT_OF_MEMORY;
+    }
+    tmp[*count] = *mapping;
+    *array = tmp;
+    ++(*count);
+    memset(mapping, 0, sizeof(*mapping));
+    return RS_RET_OK;
+}
+
+static rsRetVal append_event_mapping_owned(event_mapping_t **array, size_t *count, event_mapping_t *mapping) {
+    event_mapping_t *tmp;
+    if (array == NULL || count == NULL || mapping == NULL) return RS_RET_INVALID_PARAMS;
+    tmp = realloc(*array, (*count + 1) * sizeof(event_mapping_t));
+    if (tmp == NULL) {
+        cleanup_event_mapping(mapping);
+        return RS_RET_OUT_OF_MEMORY;
+    }
+    tmp[*count] = *mapping;
+    *array = tmp;
+    ++(*count);
+    memset(mapping, 0, sizeof(*mapping));
+    return RS_RET_OK;
+}
+
+static event_field_mapping_t *find_event_field_mapping(instanceData *pData, int eventId) {
+    if (pData == NULL) return NULL;
+    for (size_t i = 0; i < pData->eventFieldMappingCount; ++i) {
+        if (pData->eventFieldMappings[i].event_id == eventId) return &pData->eventFieldMappings[i];
     }
     return NULL;
+}
+
+static event_mapping_t *find_event_mapping(instanceData *pData, int eventId) {
+    if (pData == NULL) return NULL;
+    for (size_t i = 0; i < pData->eventMappingCount; ++i) {
+        if (pData->eventMappings[i].event_id == eventId) return &pData->eventMappings[i];
+    }
+    return NULL;
+}
+
+static rsRetVal append_field_pattern_to_mapping(event_field_mapping_t *mapping, field_pattern_t *pattern) {
+    field_pattern_t *tmp;
+    if (mapping == NULL || pattern == NULL) return RS_RET_INVALID_PARAMS;
+    tmp = realloc(mapping->patterns, (mapping->pattern_count + 1) * sizeof(field_pattern_t));
+    if (tmp == NULL) {
+        cleanup_field_pattern(pattern);
+        return RS_RET_OUT_OF_MEMORY;
+    }
+    tmp[mapping->pattern_count] = *pattern;
+    mapping->patterns = tmp;
+    ++mapping->pattern_count;
+    memset(pattern, 0, sizeof(*pattern));
+    return RS_RET_OK;
+}
+
+static rsRetVal merge_event_field_mapping(instanceData *pData, event_field_mapping_t *mapping) {
+    event_field_mapping_t *existing;
+    rsRetVal r;
+    if (pData == NULL || mapping == NULL) return RS_RET_INVALID_PARAMS;
+    existing = find_event_field_mapping(pData, mapping->event_id);
+    if (existing != NULL) {
+        if (mapping->required_flags != 0) existing->required_flags |= mapping->required_flags;
+        for (size_t i = 0; i < mapping->pattern_count; ++i) {
+            r = append_field_pattern_to_mapping(existing, &mapping->patterns[i]);
+            if (r != RS_RET_OK) {
+                for (size_t j = i; j < mapping->pattern_count; ++j) cleanup_field_pattern(&mapping->patterns[j]);
+                free(mapping->patterns);
+                mapping->patterns = NULL;
+                mapping->pattern_count = 0;
+                return r;
+            }
+        }
+        free(mapping->patterns);
+        mapping->patterns = NULL;
+        mapping->pattern_count = 0;
+        return RS_RET_OK;
+    }
+    return append_event_field_mapping_owned(&pData->eventFieldMappings, &pData->eventFieldMappingCount, mapping);
+}
+
+static rsRetVal merge_event_mapping(instanceData *pData, event_mapping_t *mapping) {
+    event_mapping_t *existing;
+    if (pData == NULL || mapping == NULL) return RS_RET_INVALID_PARAMS;
+    existing = find_event_mapping(pData, mapping->event_id);
+    if (existing != NULL) {
+        cleanup_event_mapping(existing);
+        *existing = *mapping;
+        memset(mapping, 0, sizeof(*mapping));
+        return RS_RET_OK;
+    }
+    return append_event_mapping_owned(&pData->eventMappings, &pData->eventMappingCount, mapping);
+}
+
+static rsRetVal initialize_runtime_tables(instanceData *pData) {
+    section_descriptor_t descCopy;
+    field_pattern_t patternCopy;
+    event_field_mapping_t mappingCopy;
+    event_mapping_t eventCopy;
+    rsRetVal r;
+    if (pData == NULL) return RS_RET_INVALID_PARAMS;
+    for (size_t i = 0; i < ARRAY_SIZE(g_builtinSectionDescriptors); ++i) {
+        r = copy_section_descriptor(&descCopy, &g_builtinSectionDescriptors[i]);
+        if (r != RS_RET_OK) {
+            free_runtime_tables(pData);
+            return r;
+        }
+        r = append_section_descriptor_owned(&pData->sectionDescriptors, &pData->sectionDescriptorCount, &descCopy);
+        if (r != RS_RET_OK) {
+            cleanup_section_descriptor(&descCopy);
+            free_runtime_tables(pData);
+            return r;
+        }
+    }
+    for (size_t i = 0; i < ARRAY_SIZE(g_coreFieldPatterns); ++i) {
+        r = copy_field_pattern(&patternCopy, &g_coreFieldPatterns[i]);
+        if (r != RS_RET_OK) {
+            free_runtime_tables(pData);
+            return r;
+        }
+        r = append_field_pattern_owned(&pData->corePatterns, &pData->corePatternCount, &patternCopy);
+        if (r != RS_RET_OK) {
+            cleanup_field_pattern(&patternCopy);
+            free_runtime_tables(pData);
+            return r;
+        }
+    }
+    for (size_t i = 0; i < ARRAY_SIZE(g_eventFieldMappings); ++i) {
+        r = copy_event_field_mapping(&mappingCopy, &g_eventFieldMappings[i]);
+        if (r != RS_RET_OK) {
+            free_runtime_tables(pData);
+            return r;
+        }
+        r = append_event_field_mapping_owned(&pData->eventFieldMappings, &pData->eventFieldMappingCount, &mappingCopy);
+        if (r != RS_RET_OK) {
+            cleanup_event_field_mapping(&mappingCopy);
+            free_runtime_tables(pData);
+            return r;
+        }
+    }
+    for (size_t i = 0; i < ARRAY_SIZE(g_eventMappings); ++i) {
+        r = copy_event_mapping(&eventCopy, &g_eventMappings[i]);
+        if (r != RS_RET_OK) {
+            free_runtime_tables(pData);
+            return r;
+        }
+        r = append_event_mapping_owned(&pData->eventMappings, &pData->eventMappingCount, &eventCopy);
+        if (r != RS_RET_OK) {
+            cleanup_event_mapping(&eventCopy);
+            free_runtime_tables(pData);
+            return r;
+        }
+    }
+    return RS_RET_OK;
+}
+
+static void free_runtime_tables(instanceData *pData) {
+    if (pData == NULL) return;
+    if (pData->sectionDescriptors != NULL) {
+        for (size_t i = 0; i < pData->sectionDescriptorCount; ++i) {
+            cleanup_section_descriptor(&pData->sectionDescriptors[i]);
+        }
+        free(pData->sectionDescriptors);
+        pData->sectionDescriptors = NULL;
+        pData->sectionDescriptorCount = 0;
+    }
+    if (pData->corePatterns != NULL) {
+        for (size_t i = 0; i < pData->corePatternCount; ++i) {
+            cleanup_field_pattern(&pData->corePatterns[i]);
+        }
+        free(pData->corePatterns);
+        pData->corePatterns = NULL;
+        pData->corePatternCount = 0;
+    }
+    if (pData->eventFieldMappings != NULL) {
+        for (size_t i = 0; i < pData->eventFieldMappingCount; ++i) {
+            cleanup_event_field_mapping(&pData->eventFieldMappings[i]);
+        }
+        free(pData->eventFieldMappings);
+        pData->eventFieldMappings = NULL;
+        pData->eventFieldMappingCount = 0;
+    }
+    if (pData->eventMappings != NULL) {
+        for (size_t i = 0; i < pData->eventMappingCount; ++i) {
+            cleanup_event_mapping(&pData->eventMappings[i]);
+        }
+        free(pData->eventMappings);
+        pData->eventMappings = NULL;
+        pData->eventMappingCount = 0;
+    }
+}
+
+static rsRetVal parse_validation_mode(const char *mode, sbool *strictOut) {
+    if (mode == NULL || strictOut == NULL) return RS_RET_INVALID_PARAMS;
+    if (!strcasecmp(mode, "strict")) {
+        *strictOut = 1;
+        return RS_RET_OK;
+    }
+    if (!strcasecmp(mode, "permissive") || !strcasecmp(mode, "lenient") || !strcasecmp(mode, "default")) {
+        *strictOut = 0;
+        return RS_RET_OK;
+    }
+    LogError(0, RS_RET_INVALID_PARAMS, "mmsnarewinsec: unknown validation.mode '%s'", mode);
+    return RS_RET_INVALID_PARAMS;
+}
+
+static rsRetVal set_validation_mode(instanceData *pData, const char *mode) {
+    rsRetVal r;
+    if (pData == NULL || mode == NULL) return RS_RET_INVALID_PARAMS;
+    r = parse_validation_mode(mode, &pData->strictValidation);
+    return r;
+}
+
+static rsRetVal read_text_file(const char *path, char **out) {
+    FILE *fp;
+    long len;
+    size_t readLen;
+    char *buf;
+    if (out == NULL || path == NULL) return RS_RET_INVALID_PARAMS;
+    *out = NULL;
+    fp = fopen(path, "rb");
+    if (fp == NULL) {
+        LogError(errno, RS_RET_IO_ERROR, "mmsnarewinsec: failed to open definition file '%s'", path);
+        return RS_RET_IO_ERROR;
+    }
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        LogError(errno, RS_RET_IO_ERROR, "mmsnarewinsec: failed to seek definition file '%s'", path);
+        fclose(fp);
+        return RS_RET_IO_ERROR;
+    }
+    len = ftell(fp);
+    if (len < 0) {
+        LogError(errno, RS_RET_IO_ERROR, "mmsnarewinsec: failed to determine size of definition file '%s'", path);
+        fclose(fp);
+        return RS_RET_IO_ERROR;
+    }
+    if (fseek(fp, 0, SEEK_SET) != 0) {
+        LogError(errno, RS_RET_IO_ERROR, "mmsnarewinsec: failed to rewind definition file '%s'", path);
+        fclose(fp);
+        return RS_RET_IO_ERROR;
+    }
+    buf = malloc((size_t)len + 1u);
+    if (buf == NULL) {
+        fclose(fp);
+        return RS_RET_OUT_OF_MEMORY;
+    }
+    readLen = fread(buf, 1, (size_t)len, fp);
+    if (readLen != (size_t)len) {
+        if (ferror(fp)) {
+            LogError(errno, RS_RET_IO_ERROR, "mmsnarewinsec: error reading definition file '%s'", path);
+        } else {
+            LogError(0, RS_RET_IO_ERROR, "mmsnarewinsec: unexpected end of file reading definition file '%s'", path);
+        }
+        free(buf);
+        fclose(fp);
+        return RS_RET_IO_ERROR;
+    }
+    buf[len] = '\0';
+    fclose(fp);
+    *out = buf;
+    return RS_RET_OK;
+}
+
+static rsRetVal report_validation_issue(instanceData *pData, const char *source, const char *message) {
+    if (pData == NULL) return RS_RET_INVALID_PARAMS;
+    if (pData->strictValidation) {
+        LogError(0, RS_RET_INVALID_PARAMS, "mmsnarewinsec: %s rejected: %s", source, message);
+        return RS_RET_INVALID_PARAMS;
+    }
+    LogError(0, RS_RET_INVALID_PARAMS, "mmsnarewinsec: %s ignored (permissive mode): %s", source, message);
+    return RS_RET_OK;
+}
+
+static sbool parse_section_behavior_string(const char *text, section_behavior_t *behavior) {
+    if (text == NULL || behavior == NULL) return 0;
+    if (!strcasecmp(text, "standard")) {
+        *behavior = sectionBehaviorStandard;
+        return 1;
+    }
+    if (!strcasecmp(text, "inline") || !strcasecmp(text, "inline_value") || !strcasecmp(text, "inline-value")) {
+        *behavior = sectionBehaviorInlineValue;
+        return 1;
+    }
+    if (!strcasecmp(text, "semicolon") || !strcasecmp(text, "kv")) {
+        *behavior = sectionBehaviorSemicolon;
+        return 1;
+    }
+    if (!strcasecmp(text, "list")) {
+        *behavior = sectionBehaviorList;
+        return 1;
+    }
+    return 0;
+}
+
+static sbool parse_field_value_type_string(const char *text, field_value_type_t *type) {
+    if (text == NULL || type == NULL) return 0;
+    if (!strcasecmp(text, "string")) {
+        *type = fieldValueString;
+        return 1;
+    }
+    if (!strcasecmp(text, "int64") || !strcasecmp(text, "integer")) {
+        *type = fieldValueInt64;
+        return 1;
+    }
+    if (!strcasecmp(text, "int64_with_raw") || !strcasecmp(text, "int64-with-raw")) {
+        *type = fieldValueInt64WithRaw;
+        return 1;
+    }
+    if (!strcasecmp(text, "bool") || !strcasecmp(text, "boolean")) {
+        *type = fieldValueBool;
+        return 1;
+    }
+    if (!strcasecmp(text, "json")) {
+        *type = fieldValueJson;
+        return 1;
+    }
+    if (!strcasecmp(text, "logon_type") || !strcasecmp(text, "logon-type")) {
+        *type = fieldValueLogonType;
+        return 1;
+    }
+    if (!strcasecmp(text, "remote_credential_guard") || !strcasecmp(text, "remote-credential-guard")) {
+        *type = fieldValueRemoteCredentialGuard;
+        return 1;
+    }
+    if (!strcasecmp(text, "privilege_list") || !strcasecmp(text, "privilege-list")) {
+        *type = fieldValuePrivilegeList;
+        return 1;
+    }
+    return 0;
+}
+
+static sbool parse_field_sensitivity_string(const char *text, field_pattern_sensitivity_t *sensitivity) {
+    if (text == NULL || sensitivity == NULL) return 0;
+    if (!strcasecmp(text, "canonical")) {
+        *sensitivity = fieldSensitivityCanonical;
+        return 1;
+    }
+    if (!strcasecmp(text, "case_sensitive") || !strcasecmp(text, "case-sensitive") || !strcasecmp(text, "sensitive")) {
+        *sensitivity = fieldSensitivityCaseSensitive;
+        return 1;
+    }
+    if (!strcasecmp(text, "case_insensitive") || !strcasecmp(text, "case-insensitive") || !strcasecmp(text, "insensitive")) {
+        *sensitivity = fieldSensitivityCaseInsensitive;
+        return 1;
+    }
+    return 0;
+}
+
+static uint32_t parse_section_flags_array(struct json_object *value, sbool *ok) {
+    uint32_t flags = SECTION_FLAG_NONE;
+    if (ok != NULL) *ok = 1;
+    if (value == NULL) return flags;
+    if (!json_object_is_type(value, json_type_array)) {
+        if (ok != NULL) *ok = 0;
+        return SECTION_FLAG_NONE;
+    }
+    size_t len = json_object_array_length(value);
+    for (size_t i = 0; i < len; ++i) {
+        struct json_object *entry = json_object_array_get_idx(value, (int)i);
+        const char *flag = json_object_get_string(entry);
+        if (flag == NULL) continue;
+        if (!strcasecmp(flag, "network"))
+            flags |= SECTION_FLAG_NETWORK;
+        else if (!strcasecmp(flag, "laps"))
+            flags |= SECTION_FLAG_LAPS;
+        else if (!strcasecmp(flag, "tls"))
+            flags |= SECTION_FLAG_TLS;
+        else if (!strcasecmp(flag, "wdac"))
+            flags |= SECTION_FLAG_WDAC;
+        else if (ok != NULL)
+            *ok = 0;
+    }
+    return flags;
+}
+
+static rsRetVal load_section_definitions(instanceData *pData, struct json_object *array, const char *source) {
+    size_t len;
+    if (array == NULL) return RS_RET_OK;
+    if (!json_object_is_type(array, json_type_array))
+        return report_validation_issue(pData, source, "sections must be an array");
+    len = json_object_array_length(array);
+    for (size_t i = 0; i < len; ++i) {
+        struct json_object *entry = json_object_array_get_idx(array, (int)i);
+        section_descriptor_t desc;
+        struct json_object *value;
+        const char *pattern;
+        const char *canonical = NULL;
+        char context[128];
+        rsRetVal r;
+        snprintf(context, sizeof(context), "%s sections[%zu]", source, i);
+        if (!json_object_is_type(entry, json_type_object)) {
+            r = report_validation_issue(pData, context, "entry must be an object");
+            if (r != RS_RET_OK) return r;
+            continue;
+        }
+        memset(&desc, 0, sizeof(desc));
+        desc.behavior = sectionBehaviorStandard;
+        desc.priority = SECTION_PRIORITY_DEFAULT;
+        desc.sensitivity = fieldSensitivityCaseSensitive;
+        if (!json_object_object_get_ex(entry, "pattern", &value) ||
+            !json_object_is_type(value, json_type_string)) {
+            r = report_validation_issue(pData, context, "missing pattern");
+            if (r != RS_RET_OK) return r;
+            continue;
+        }
+        pattern = json_object_get_string(value);
+        desc.pattern = strdup(pattern);
+        if (desc.pattern == NULL) return RS_RET_OUT_OF_MEMORY;
+        if (json_object_object_get_ex(entry, "canonical", &value) && json_object_is_type(value, json_type_string)) {
+            canonical = json_object_get_string(value);
+        }
+        if (canonical != NULL) {
+            desc.canonical = strdup(canonical);
+            if (desc.canonical == NULL) {
+                cleanup_section_descriptor(&desc);
+                return RS_RET_OUT_OF_MEMORY;
+            }
+        } else {
+            char *normalized = normalize_label(pattern);
+            if (normalized == NULL) {
+                cleanup_section_descriptor(&desc);
+                r = report_validation_issue(pData, context, "could not derive canonical name");
+                if (r != RS_RET_OK) return r;
+                continue;
+            }
+            desc.canonical = normalized;
+        }
+        if (json_object_object_get_ex(entry, "behavior", &value) && json_object_is_type(value, json_type_string)) {
+            const char *behaviorText = json_object_get_string(value);
+            if (!parse_section_behavior_string(behaviorText, &desc.behavior)) {
+                cleanup_section_descriptor(&desc);
+                r = report_validation_issue(pData, context, "unknown behavior");
+                if (r != RS_RET_OK) return r;
+                continue;
+            }
+        }
+        if (json_object_object_get_ex(entry, "priority", &value) && json_object_is_type(value, json_type_int)) {
+            desc.priority = json_object_get_int(value);
+        }
+        if (json_object_object_get_ex(entry, "sensitivity", &value) && json_object_is_type(value, json_type_string)) {
+            const char *sens = json_object_get_string(value);
+            if (!parse_field_sensitivity_string(sens, &desc.sensitivity)) {
+                cleanup_section_descriptor(&desc);
+                r = report_validation_issue(pData, context, "unknown sensitivity");
+                if (r != RS_RET_OK) return r;
+                continue;
+            }
+        }
+        if (json_object_object_get_ex(entry, "flags", &value)) {
+            sbool ok = 0;
+            desc.flags = parse_section_flags_array(value, &ok);
+            if (!ok) {
+                cleanup_section_descriptor(&desc);
+                r = report_validation_issue(pData, context, "unknown flag value");
+                if (r != RS_RET_OK) return r;
+                continue;
+            }
+        }
+        r = append_section_descriptor_owned(&pData->sectionDescriptors, &pData->sectionDescriptorCount, &desc);
+        if (r != RS_RET_OK) {
+            cleanup_section_descriptor(&desc);
+            return r;
+        }
+    }
+    return RS_RET_OK;
+}
+
+static rsRetVal load_field_definitions(instanceData *pData, struct json_object *array, const char *source) {
+    size_t len;
+    if (array == NULL) return RS_RET_OK;
+    if (!json_object_is_type(array, json_type_array))
+        return report_validation_issue(pData, source, "fields must be an array");
+    len = json_object_array_length(array);
+    for (size_t i = 0; i < len; ++i) {
+        struct json_object *entry = json_object_array_get_idx(array, (int)i);
+        struct json_object *value;
+        field_pattern_t pattern;
+        const char *patternText;
+        const char *canonical = NULL;
+        const char *section = NULL;
+        char context[128];
+        rsRetVal r;
+        snprintf(context, sizeof(context), "%s fields[%zu]", source, i);
+        if (!json_object_is_type(entry, json_type_object)) {
+            r = report_validation_issue(pData, context, "entry must be an object");
+            if (r != RS_RET_OK) return r;
+            continue;
+        }
+        memset(&pattern, 0, sizeof(pattern));
+        pattern.value_type = fieldValueString;
+        pattern.priority = FIELD_PRIORITY_BASE;
+        pattern.sensitivity = fieldSensitivityCaseSensitive;
+        if (!json_object_object_get_ex(entry, "pattern", &value) ||
+            !json_object_is_type(value, json_type_string)) {
+            r = report_validation_issue(pData, context, "missing pattern");
+            if (r != RS_RET_OK) return r;
+            continue;
+        }
+        patternText = json_object_get_string(value);
+        pattern.pattern = strdup(patternText);
+        if (pattern.pattern == NULL) return RS_RET_OUT_OF_MEMORY;
+        if (json_object_object_get_ex(entry, "canonical", &value) && json_object_is_type(value, json_type_string))
+            canonical = json_object_get_string(value);
+        if (canonical != NULL) {
+            pattern.canonical = strdup(canonical);
+            if (pattern.canonical == NULL) {
+                cleanup_field_pattern(&pattern);
+                return RS_RET_OUT_OF_MEMORY;
+            }
+        } else {
+            char *normalized = normalize_label(patternText);
+            if (normalized == NULL) {
+                cleanup_field_pattern(&pattern);
+                r = report_validation_issue(pData, context, "could not derive canonical name");
+                if (r != RS_RET_OK) return r;
+                continue;
+            }
+            pattern.canonical = normalized;
+        }
+        if (json_object_object_get_ex(entry, "section", &value) && json_object_is_type(value, json_type_string)) {
+            section = json_object_get_string(value);
+            if (section != NULL) {
+                pattern.section = strdup(section);
+                if (pattern.section == NULL) {
+                    cleanup_field_pattern(&pattern);
+                    return RS_RET_OUT_OF_MEMORY;
+                }
+            }
+        }
+        if (json_object_object_get_ex(entry, "priority", &value) && json_object_is_type(value, json_type_int))
+            pattern.priority = json_object_get_int(value);
+        if (json_object_object_get_ex(entry, "value_type", &value) && json_object_is_type(value, json_type_string)) {
+            const char *typeText = json_object_get_string(value);
+            if (!parse_field_value_type_string(typeText, &pattern.value_type)) {
+                cleanup_field_pattern(&pattern);
+                r = report_validation_issue(pData, context, "unknown value_type");
+                if (r != RS_RET_OK) return r;
+                continue;
+            }
+        }
+        if (json_object_object_get_ex(entry, "sensitivity", &value) && json_object_is_type(value, json_type_string)) {
+            const char *sens = json_object_get_string(value);
+            if (!parse_field_sensitivity_string(sens, &pattern.sensitivity)) {
+                cleanup_field_pattern(&pattern);
+                r = report_validation_issue(pData, context, "unknown sensitivity");
+                if (r != RS_RET_OK) return r;
+                continue;
+            }
+        }
+        r = append_field_pattern_owned(&pData->corePatterns, &pData->corePatternCount, &pattern);
+        if (r != RS_RET_OK) {
+            cleanup_field_pattern(&pattern);
+            return r;
+        }
+    }
+    return RS_RET_OK;
+}
+
+static rsRetVal load_event_field_definitions(instanceData *pData, struct json_object *array, const char *source) {
+    size_t len;
+    if (array == NULL) return RS_RET_OK;
+    if (!json_object_is_type(array, json_type_array))
+        return report_validation_issue(pData, source, "eventFields must be an array");
+    len = json_object_array_length(array);
+    for (size_t i = 0; i < len; ++i) {
+        struct json_object *entry = json_object_array_get_idx(array, (int)i);
+        struct json_object *value;
+        event_field_mapping_t mapping;
+        char context[128];
+        rsRetVal r;
+        snprintf(context, sizeof(context), "%s eventFields[%zu]", source, i);
+        if (!json_object_is_type(entry, json_type_object)) {
+            r = report_validation_issue(pData, context, "entry must be an object");
+            if (r != RS_RET_OK) return r;
+            continue;
+        }
+        memset(&mapping, 0, sizeof(mapping));
+        if (!json_object_object_get_ex(entry, "event_id", &value) || !json_object_is_type(value, json_type_int)) {
+            r = report_validation_issue(pData, context, "missing event_id");
+            if (r != RS_RET_OK) return r;
+            continue;
+        }
+        mapping.event_id = json_object_get_int(value);
+        if (json_object_object_get_ex(entry, "required_flags", &value)) {
+            sbool ok = 0;
+            mapping.required_flags = parse_section_flags_array(value, &ok);
+            if (!ok) {
+                r = report_validation_issue(pData, context, "unknown required flag");
+                if (r != RS_RET_OK) return r;
+                continue;
+            }
+        }
+        if (!json_object_object_get_ex(entry, "patterns", &value) || !json_object_is_type(value, json_type_array)) {
+            r = report_validation_issue(pData, context, "patterns must be an array");
+            if (r != RS_RET_OK) return r;
+            continue;
+        }
+        size_t plen = json_object_array_length(value);
+        for (size_t j = 0; j < plen; ++j) {
+            struct json_object *patternObj = json_object_array_get_idx(value, (int)j);
+            field_pattern_t patternEntry;
+            const char *patternText;
+            const char *canonical = NULL;
+            struct json_object *pv;
+            char itemContext[160];
+            snprintf(itemContext, sizeof(itemContext), "%s patterns[%zu]", context, j);
+            if (!json_object_is_type(patternObj, json_type_object)) {
+                r = report_validation_issue(pData, itemContext, "entry must be an object");
+                if (r != RS_RET_OK) return r;
+                continue;
+            }
+            memset(&patternEntry, 0, sizeof(patternEntry));
+            patternEntry.value_type = fieldValueString;
+            patternEntry.priority = FIELD_PRIORITY_EVENT_OVERRIDE;
+            patternEntry.sensitivity = fieldSensitivityCaseSensitive;
+            if (!json_object_object_get_ex(patternObj, "pattern", &pv) ||
+                !json_object_is_type(pv, json_type_string)) {
+                r = report_validation_issue(pData, itemContext, "missing pattern");
+                if (r != RS_RET_OK) return r;
+                continue;
+            }
+            patternText = json_object_get_string(pv);
+            patternEntry.pattern = strdup(patternText);
+            if (patternEntry.pattern == NULL) {
+                cleanup_event_field_mapping(&mapping);
+                return RS_RET_OUT_OF_MEMORY;
+            }
+            if (json_object_object_get_ex(patternObj, "canonical", &pv) && json_object_is_type(pv, json_type_string))
+                canonical = json_object_get_string(pv);
+            if (canonical != NULL) {
+                patternEntry.canonical = strdup(canonical);
+                if (patternEntry.canonical == NULL) {
+                    cleanup_field_pattern(&patternEntry);
+                    cleanup_event_field_mapping(&mapping);
+                    return RS_RET_OUT_OF_MEMORY;
+                }
+            } else {
+                char *normalized = normalize_label(patternText);
+                if (normalized == NULL) {
+                    cleanup_field_pattern(&patternEntry);
+                    r = report_validation_issue(pData, itemContext, "could not derive canonical name");
+                    if (r != RS_RET_OK) {
+                        cleanup_event_field_mapping(&mapping);
+                        return r;
+                    }
+                    continue;
+                }
+                patternEntry.canonical = normalized;
+            }
+            if (json_object_object_get_ex(patternObj, "section", &pv) && json_object_is_type(pv, json_type_string)) {
+                const char *section = json_object_get_string(pv);
+                if (section != NULL) {
+                    patternEntry.section = strdup(section);
+                    if (patternEntry.section == NULL) {
+                        cleanup_field_pattern(&patternEntry);
+                        cleanup_event_field_mapping(&mapping);
+                        return RS_RET_OUT_OF_MEMORY;
+                    }
+                }
+            }
+            if (json_object_object_get_ex(patternObj, "priority", &pv) && json_object_is_type(pv, json_type_int))
+                patternEntry.priority = json_object_get_int(pv);
+            if (json_object_object_get_ex(patternObj, "value_type", &pv) && json_object_is_type(pv, json_type_string)) {
+                const char *typeText = json_object_get_string(pv);
+                if (!parse_field_value_type_string(typeText, &patternEntry.value_type)) {
+                    cleanup_field_pattern(&patternEntry);
+                    r = report_validation_issue(pData, itemContext, "unknown value_type");
+                    if (r != RS_RET_OK) {
+                        cleanup_event_field_mapping(&mapping);
+                        return r;
+                    }
+                    continue;
+                }
+            }
+            if (json_object_object_get_ex(patternObj, "sensitivity", &pv) && json_object_is_type(pv, json_type_string)) {
+                const char *sens = json_object_get_string(pv);
+                if (!parse_field_sensitivity_string(sens, &patternEntry.sensitivity)) {
+                    cleanup_field_pattern(&patternEntry);
+                    r = report_validation_issue(pData, itemContext, "unknown sensitivity");
+                    if (r != RS_RET_OK) {
+                        cleanup_event_field_mapping(&mapping);
+                        return r;
+                    }
+                    continue;
+                }
+            }
+            r = append_field_pattern_owned(&mapping.patterns, &mapping.pattern_count, &patternEntry);
+            if (r != RS_RET_OK) {
+                cleanup_field_pattern(&patternEntry);
+                cleanup_event_field_mapping(&mapping);
+                return r;
+            }
+        }
+        r = merge_event_field_mapping(pData, &mapping);
+        if (r != RS_RET_OK) {
+            cleanup_event_field_mapping(&mapping);
+            return r;
+        }
+    }
+    return RS_RET_OK;
+}
+
+static rsRetVal load_event_metadata_definitions(instanceData *pData, struct json_object *array, const char *source) {
+    size_t len;
+    if (array == NULL) return RS_RET_OK;
+    if (!json_object_is_type(array, json_type_array))
+        return report_validation_issue(pData, source, "events must be an array");
+    len = json_object_array_length(array);
+    for (size_t i = 0; i < len; ++i) {
+        struct json_object *entry = json_object_array_get_idx(array, (int)i);
+        struct json_object *value;
+        event_mapping_t mapping;
+        char context[128];
+        rsRetVal r;
+        snprintf(context, sizeof(context), "%s events[%zu]", source, i);
+        if (!json_object_is_type(entry, json_type_object)) {
+            r = report_validation_issue(pData, context, "entry must be an object");
+            if (r != RS_RET_OK) return r;
+            continue;
+        }
+        memset(&mapping, 0, sizeof(mapping));
+        if (!json_object_object_get_ex(entry, "event_id", &value) || !json_object_is_type(value, json_type_int)) {
+            r = report_validation_issue(pData, context, "missing event_id");
+            if (r != RS_RET_OK) return r;
+            continue;
+        }
+        mapping.event_id = json_object_get_int(value);
+        if (json_object_object_get_ex(entry, "category", &value) && json_object_is_type(value, json_type_string)) {
+            mapping.category = strdup(json_object_get_string(value));
+            if (mapping.category == NULL) {
+                cleanup_event_mapping(&mapping);
+                return RS_RET_OUT_OF_MEMORY;
+            }
+        }
+        if (json_object_object_get_ex(entry, "subtype", &value) && json_object_is_type(value, json_type_string)) {
+            mapping.subtype = strdup(json_object_get_string(value));
+            if (mapping.subtype == NULL) {
+                cleanup_event_mapping(&mapping);
+                return RS_RET_OUT_OF_MEMORY;
+            }
+        }
+        if (json_object_object_get_ex(entry, "outcome", &value) && json_object_is_type(value, json_type_string)) {
+            mapping.outcome = strdup(json_object_get_string(value));
+            if (mapping.outcome == NULL) {
+                cleanup_event_mapping(&mapping);
+                return RS_RET_OUT_OF_MEMORY;
+            }
+        }
+        r = merge_event_mapping(pData, &mapping);
+        if (r != RS_RET_OK) {
+            cleanup_event_mapping(&mapping);
+            return r;
+        }
+    }
+    return RS_RET_OK;
+}
+
+static rsRetVal load_custom_definition_text(instanceData *pData, const char *jsonText, const char *sourceLabel) {
+    struct json_tokener *tokener;
+    struct json_object *root;
+    enum json_tokener_error err;
+    rsRetVal r = RS_RET_OK;
+    if (jsonText == NULL || pData == NULL) return RS_RET_INVALID_PARAMS;
+    tokener = json_tokener_new();
+    if (tokener == NULL) return RS_RET_OUT_OF_MEMORY;
+    root = json_tokener_parse_ex(tokener, jsonText, (int)strlen(jsonText));
+    err = fjson_tokener_get_error(tokener);
+    json_tokener_free(tokener);
+    if (err != fjson_tokener_success || root == NULL) {
+        return report_validation_issue(pData, sourceLabel, "invalid JSON definitions");
+    }
+    if (!json_object_is_type(root, json_type_object)) {
+        r = report_validation_issue(pData, sourceLabel, "definition root must be an object");
+        json_object_put(root);
+        return r;
+    }
+    if (json_object_object_length(root) == 0) {
+        json_object_put(root);
+        return RS_RET_OK;
+    }
+    struct json_object *sections;
+    struct json_object *fields;
+    struct json_object *eventFields;
+    struct json_object *events;
+    if (json_object_object_get_ex(root, "sections", &sections)) {
+        r = load_section_definitions(pData, sections, sourceLabel);
+        if (r != RS_RET_OK) {
+            json_object_put(root);
+            return r;
+        }
+    }
+    if (json_object_object_get_ex(root, "fields", &fields)) {
+        r = load_field_definitions(pData, fields, sourceLabel);
+        if (r != RS_RET_OK) {
+            json_object_put(root);
+            return r;
+        }
+    }
+    if (json_object_object_get_ex(root, "eventFields", &eventFields)) {
+        r = load_event_field_definitions(pData, eventFields, sourceLabel);
+        if (r != RS_RET_OK) {
+            json_object_put(root);
+            return r;
+        }
+    }
+    if (json_object_object_get_ex(root, "events", &events)) {
+        r = load_event_metadata_definitions(pData, events, sourceLabel);
+        if (r != RS_RET_OK) {
+            json_object_put(root);
+            return r;
+        }
+    }
+    json_object_put(root);
+    return RS_RET_OK;
+}
+
+static rsRetVal load_custom_definition_file(instanceData *pData, const char *path) {
+    char *content = NULL;
+    rsRetVal r;
+    if (path == NULL) return RS_RET_INVALID_PARAMS;
+    r = read_text_file(path, &content);
+    if (r != RS_RET_OK) return r;
+    r = load_custom_definition_text(pData, content, path);
+    free(content);
+    return r;
+}
+
+static sbool wildcard_match(const char *pattern, const char *text, sbool caseInsensitive) {
+    const char *p = pattern;
+    const char *t = text;
+    const char *star = NULL;
+    const char *backup = NULL;
+    if (pattern == NULL || text == NULL) return 0;
+    while (*t != '\0') {
+        char pc;
+        char tc;
+        if (*p == '*') {
+            star = p++;
+            backup = t;
+            continue;
+        }
+        pc = *p;
+        tc = *t;
+        if (caseInsensitive) {
+            pc = (char)tolower((unsigned char)pc);
+            tc = (char)tolower((unsigned char)tc);
+        }
+        if (pc == tc || (pc == '?' && *t != '\0')) {
+            ++p;
+            ++t;
+            continue;
+        }
+        if (star != NULL) {
+            p = star + 1;
+            t = ++backup;
+            continue;
+        }
+        return 0;
+    }
+    while (*p == '*') ++p;
+    return *p == '\0';
+}
+
+static size_t pattern_specificity(const char *pattern) {
+    size_t score = 0;
+    if (pattern == NULL) return 0;
+    while (*pattern != '\0') {
+        if (*pattern != '*' && *pattern != '?') ++score;
+        ++pattern;
+    }
+    return score;
+}
+
+static sbool section_pattern_matches(const section_descriptor_t *desc, const char *label) {
+    const char *subject = label;
+    char *normalized = NULL;
+    sbool matched;
+    if (desc == NULL || label == NULL || desc->pattern == NULL) return 0;
+    switch (desc->sensitivity) {
+        case fieldSensitivityCanonical:
+            normalized = normalize_label(label);
+            subject = normalized;
+            matched = wildcard_match(desc->pattern, subject ? subject : label, 0);
+            free(normalized);
+            return matched;
+        case fieldSensitivityCaseInsensitive:
+            return wildcard_match(desc->pattern, label, 1);
+        case fieldSensitivityCaseSensitive:
+        default:
+            return wildcard_match(desc->pattern, label, 0);
+    }
+}
+
+static inline int section_is_enabled(const instanceData *pData, uint32_t flags);
+
+static const section_descriptor_t *select_section_descriptor(const instanceData *inst, const char *label) {
+    const section_descriptor_t *best = NULL;
+    int bestPriority = INT_MIN;
+    size_t bestSpecificity = 0;
+    if (inst == NULL || label == NULL) return NULL;
+    for (size_t i = 0; i < inst->sectionDescriptorCount; ++i) {
+        const section_descriptor_t *candidate = &inst->sectionDescriptors[i];
+        if (!section_is_enabled(inst, candidate->flags)) continue;
+        if (!section_pattern_matches(candidate, label)) continue;
+        size_t specificity = pattern_specificity(candidate->pattern);
+        if (candidate->priority > bestPriority ||
+            (candidate->priority == bestPriority && specificity > bestSpecificity)) {
+            best = candidate;
+            bestPriority = candidate->priority;
+            bestSpecificity = specificity;
+        }
+    }
+    return best;
 }
 
 static inline int section_is_enabled(const instanceData *pData, uint32_t flags) {
@@ -393,9 +1523,11 @@ static inline const char *lookup_logon_description(int logonType) {
     return NULL;
 }
 
-static inline const event_mapping_t *lookup_event_mapping(int eventId) {
-    for (size_t i = 0; i < ARRAY_SIZE(g_eventMappings); ++i) {
-        if (g_eventMappings[i].event_id == eventId) return &g_eventMappings[i];
+static inline const event_mapping_t *lookup_event_mapping(const instanceData *inst, int eventId) {
+    if (inst != NULL && inst->eventMappings != NULL) {
+        for (size_t i = 0; i < inst->eventMappingCount; ++i) {
+            if (inst->eventMappings[i].event_id == eventId) return &inst->eventMappings[i];
+        }
     }
     return NULL;
 }
@@ -748,14 +1880,16 @@ static void ensure_event_patterns(parse_context_t *ctx) {
     ctx->eventPatterns = NULL;
     ctx->eventPatternCount = 0;
     ctx->patternEventId = ctx->eventId;
-    for (size_t i = 0; i < ARRAY_SIZE(g_eventFieldMappings); ++i) {
-        const event_field_mapping_t *mapping = &g_eventFieldMappings[i];
-        if (mapping->event_id == ctx->eventId) {
-            if (section_is_enabled(ctx->inst, mapping->required_flags)) {
-                ctx->eventPatterns = mapping->patterns;
-                ctx->eventPatternCount = mapping->pattern_count;
+    if (ctx->inst->eventFieldMappings != NULL) {
+        for (size_t i = 0; i < ctx->inst->eventFieldMappingCount; ++i) {
+            const event_field_mapping_t *mapping = &ctx->inst->eventFieldMappings[i];
+            if (mapping->event_id == ctx->eventId) {
+                if (section_is_enabled(ctx->inst, mapping->required_flags)) {
+                    ctx->eventPatterns = mapping->patterns;
+                    ctx->eventPatternCount = mapping->pattern_count;
+                }
+                break;
             }
-            break;
         }
     }
     ctx->patternsPrepared = 1;
@@ -940,7 +2074,7 @@ static void apply_event_mapping(parse_context_t *ctx, const char *auditResult) {
     const event_mapping_t *mapping;
     const char *outcome = NULL;
     if (ctx->event == NULL) return;
-    mapping = lookup_event_mapping(ctx->eventId);
+    mapping = lookup_event_mapping(ctx->inst, ctx->eventId);
     if (mapping != NULL) {
         if (mapping->category != NULL) json_add_string(ctx->event, "Category", mapping->category);
         if (mapping->subtype != NULL) json_add_string(ctx->event, "Subtype", mapping->subtype);
@@ -1281,9 +2415,10 @@ static void parse_line(parse_context_t *ctx, char *line) {
 
     dbgprintf("[mmsnarewinsec DEBUG] parse_line: label='%s', rest='%s'\n", label, rest);
 
-    desc = lookup_section(label);
-    if (desc != NULL && section_is_enabled(ctx->inst, desc->flags)) {
-        dbgprintf("[mmsnarewinsec DEBUG] parse_line: found section '%s' -> '%s'\n", label, desc->canonical);
+    desc = select_section_descriptor(ctx->inst, label);
+    if (desc != NULL) {
+        dbgprintf("[mmsnarewinsec DEBUG] parse_line: matched section pattern '%s' -> '%s'\n", desc->pattern,
+                  desc->canonical);
         switch (desc->behavior) {
             case sectionBehaviorStandard:
                 sectionObj = ensure_object(ctx->root, desc->canonical);
@@ -1479,7 +2614,10 @@ static void populate_event_metadata(parse_context_t *ctx, char **tokens, size_t 
             if (timeObj != NULL) json_add_string(timeObj, "Normalized", normalized);
         }
     }
-    if (tokenCount > 10) apply_event_mapping(ctx, tokens[10]);
+    const char *auditResult = NULL;
+    if (tokenCount > eventTypeIdx && !is_placeholder(tokens[eventTypeIdx]))
+        auditResult = tokens[eventTypeIdx];
+    apply_event_mapping(ctx, auditResult);
 }
 
 /**
@@ -1503,8 +2641,8 @@ static rsRetVal parse_snare_text(
     memset(&ctx, 0, sizeof(ctx));
     ctx.inst = pData;
     ctx.msg = pMsg;
-    ctx.corePatterns = g_coreFieldPatterns;
-    ctx.corePatternCount = ARRAY_SIZE(g_coreFieldPatterns);
+    ctx.corePatterns = pData->corePatterns;
+    ctx.corePatternCount = pData->corePatternCount;
     ctx.eventPatterns = NULL;
     ctx.eventPatternCount = 0;
     ctx.patternEventId = -1;
@@ -1607,8 +2745,8 @@ static rsRetVal parse_snare_json(instanceData *pData, smsg_t *pMsg, const char *
     memset(&ctx, 0, sizeof(ctx));
     ctx.inst = pData;
     ctx.msg = pMsg;
-    ctx.corePatterns = g_coreFieldPatterns;
-    ctx.corePatternCount = ARRAY_SIZE(g_coreFieldPatterns);
+    ctx.corePatterns = pData->corePatterns;
+    ctx.corePatternCount = pData->corePatternCount;
     ctx.eventPatterns = NULL;
     ctx.eventPatternCount = 0;
     ctx.patternEventId = -1;
@@ -1755,17 +2893,78 @@ static rsRetVal process_message(instanceData *pData, smsg_t *pMsg, uchar *msgTex
 
 DEF_OMOD_STATIC_DATA;
 
-static struct cnfparamdescr actpdescr[] = {{"container", eCmdHdlrString, 0},     {"enable.network", eCmdHdlrBinary, 0},
-                                           {"enable.laps", eCmdHdlrBinary, 0},   {"enable.tls", eCmdHdlrBinary, 0},
-                                           {"enable.wdac", eCmdHdlrBinary, 0},   {"emit.rawpayload", eCmdHdlrBinary, 0},
-                                           {"emit.debugjson", eCmdHdlrBinary, 0}};
+static struct cnfparamdescr modpdescr[] = {{"definition.file", eCmdHdlrString, 0},
+                                           {"definition.json", eCmdHdlrString, 0},
+                                           {"validation.mode", eCmdHdlrString, 0}};
+static struct cnfparamblk modpblk = {CNFPARAMBLK_VERSION, ARRAY_SIZE(modpdescr), modpdescr};
+
+static struct cnfparamdescr actpdescr[] = {
+    {"container", eCmdHdlrString, 0},     {"enable.network", eCmdHdlrBinary, 0},
+    {"enable.laps", eCmdHdlrBinary, 0},   {"enable.tls", eCmdHdlrBinary, 0},
+    {"enable.wdac", eCmdHdlrBinary, 0},   {"emit.rawpayload", eCmdHdlrBinary, 0},
+    {"emit.debugjson", eCmdHdlrBinary, 0}, {"definition.file", eCmdHdlrString, 0},
+    {"definition.json", eCmdHdlrString, 0}, {"validation.mode", eCmdHdlrString, 0}};
 static struct cnfparamblk actpblk = {CNFPARAMBLK_VERSION, ARRAY_SIZE(actpdescr), actpdescr};
 
 BEGINbeginCnfLoad
     CODESTARTbeginCnfLoad;
     loadModConf = pModConf;
     pModConf->pConf = pConf;
+    free(pModConf->definitionFile);
+    pModConf->definitionFile = NULL;
+    free(pModConf->definitionJson);
+    pModConf->definitionJson = NULL;
+    pModConf->strictValidation = 0;
 ENDbeginCnfLoad
+
+BEGINsetModCnf
+    struct cnfparamvals *pvals = NULL;
+    int i;
+    CODESTARTsetModCnf;
+    pvals = nvlstGetParams(lst, &modpblk, NULL);
+    if (pvals == NULL) {
+        LogError(0, RS_RET_MISSING_CNFPARAMS,
+                 "mmsnarewinsec: error processing module config parameters [module(...)]");
+        ABORT_FINALIZE(RS_RET_MISSING_CNFPARAMS);
+    }
+    if (Debug) {
+        dbgprintf("module (global) param blk for mmsnarewinsec:\n");
+        cnfparamsPrint(&modpblk, pvals);
+    }
+    for (i = 0; i < (int)modpblk.nParams; ++i) {
+        if (!pvals[i].bUsed) continue;
+        if (!strcmp(modpblk.descr[i].name, "definition.file")) {
+            char *value = es_str2cstr(pvals[i].val.d.estr, NULL);
+            if (value == NULL) {
+                ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+            }
+            free(loadModConf->definitionFile);
+            loadModConf->definitionFile = value;
+        } else if (!strcmp(modpblk.descr[i].name, "definition.json")) {
+            char *value = es_str2cstr(pvals[i].val.d.estr, NULL);
+            if (value == NULL) {
+                ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+            }
+            free(loadModConf->definitionJson);
+            loadModConf->definitionJson = value;
+        } else if (!strcmp(modpblk.descr[i].name, "validation.mode")) {
+            char *mode = es_str2cstr(pvals[i].val.d.estr, NULL);
+            rsRetVal r;
+            if (mode == NULL) {
+                ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+            }
+            r = parse_validation_mode(mode, &loadModConf->strictValidation);
+            free(mode);
+            if (r != RS_RET_OK) {
+                ABORT_FINALIZE(r);
+            }
+        } else {
+            dbgprintf("mmsnarewinsec: unhandled module parameter '%s'\n", modpblk.descr[i].name);
+        }
+    }
+finalize_it:
+    if (pvals != NULL) cnfparamvalsDestruct(pvals, &modpblk);
+ENDsetModCnf
 
 BEGINendCnfLoad
     CODESTARTendCnfLoad;
@@ -1782,6 +2981,12 @@ ENDactivateCnf
 
 BEGINfreeCnf
     CODESTARTfreeCnf;
+    if (pModConf != NULL) {
+        free(pModConf->definitionFile);
+        pModConf->definitionFile = NULL;
+        free(pModConf->definitionJson);
+        pModConf->definitionJson = NULL;
+    }
 ENDfreeCnf
 
 BEGINcreateInstance
@@ -1799,6 +3004,7 @@ ENDisCompatibleWithFeature
 BEGINfreeInstance
     CODESTARTfreeInstance;
     free(pData->container);
+    free_runtime_tables(pData);
 ENDfreeInstance
 
 BEGINfreeWrkrInstance
@@ -1816,11 +3022,22 @@ static inline void setInstParamDefaults(instanceData *pData) {
     pData->enableWdac = 1;
     pData->emitRawPayload = 1;
     pData->emitDebugJson = 0;
+    pData->strictValidation = 0;
+    pData->sectionDescriptors = NULL;
+    pData->sectionDescriptorCount = 0;
+    pData->corePatterns = NULL;
+    pData->corePatternCount = 0;
+    pData->eventFieldMappings = NULL;
+    pData->eventFieldMappingCount = 0;
+    pData->eventMappings = NULL;
+    pData->eventMappingCount = 0;
 }
 
 BEGINnewActInst
     struct cnfparamvals *pvals;
     int i;
+    char *definitionFile = NULL;
+    char *definitionJson = NULL;
     CODESTARTnewActInst;
     if ((pvals = nvlstGetParams(lst, &actpblk, NULL)) == NULL) {
         LogError(0, RS_RET_MISSING_CNFPARAMS, "mmsnarewinsec: missing configuration parameters");
@@ -1830,6 +3047,9 @@ BEGINnewActInst
     CHKiRet(OMSRsetEntry(*ppOMSR, 0, NULL, OMSR_TPL_AS_MSG));
     CHKiRet(createInstance(&pData));
     setInstParamDefaults(pData);
+    if (loadModConf != NULL) {
+        pData->strictValidation = loadModConf->strictValidation;
+    }
     for (i = 0; i < (int)actpblk.nParams; ++i) {
         if (!pvals[i].bUsed) continue;
         if (!strcmp(actpblk.descr[i].name, "container")) {
@@ -1849,6 +3069,19 @@ BEGINnewActInst
             pData->emitRawPayload = (sbool)pvals[i].val.d.n;
         } else if (!strcmp(actpblk.descr[i].name, "emit.debugjson")) {
             pData->emitDebugJson = (sbool)pvals[i].val.d.n;
+        } else if (!strcmp(actpblk.descr[i].name, "definition.file")) {
+            free(definitionFile);
+            definitionFile = es_str2cstr(pvals[i].val.d.estr, NULL);
+        } else if (!strcmp(actpblk.descr[i].name, "definition.json")) {
+            free(definitionJson);
+            definitionJson = es_str2cstr(pvals[i].val.d.estr, NULL);
+        } else if (!strcmp(actpblk.descr[i].name, "validation.mode")) {
+            char *mode = es_str2cstr(pvals[i].val.d.estr, NULL);
+            if (mode == NULL) {
+                ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+            }
+            CHKiRet(set_validation_mode(pData, mode));
+            free(mode);
         }
     }
     if (pData->container == NULL) {
@@ -1857,8 +3090,25 @@ BEGINnewActInst
             LogError(0, RS_RET_OUT_OF_MEMORY, "mmsnarewinsec: failed to allocate default container name");
         }
     }
+    CHKiRet(initialize_runtime_tables(pData));
+    if (loadModConf != NULL) {
+        if (loadModConf->definitionFile != NULL) {
+            CHKiRet(load_custom_definition_file(pData, loadModConf->definitionFile));
+        }
+        if (loadModConf->definitionJson != NULL) {
+            CHKiRet(load_custom_definition_text(pData, loadModConf->definitionJson, "module definition.json"));
+        }
+    }
+    if (definitionFile != NULL) {
+        CHKiRet(load_custom_definition_file(pData, definitionFile));
+    }
+    if (definitionJson != NULL) {
+        CHKiRet(load_custom_definition_text(pData, definitionJson, "inline definitions"));
+    }
     CODE_STD_FINALIZERnewActInst;
     cnfparamvalsDestruct(pvals, &actpblk);
+    free(definitionFile);
+    free(definitionJson);
 ENDnewActInst
 
 BEGINdbgPrintInstInfo
@@ -1893,6 +3143,7 @@ BEGINqueryEtryPt
     CODEqueryEtryPt_STD_OMOD_QUERIES;
     CODEqueryEtryPt_STD_OMOD8_QUERIES;
     CODEqueryEtryPt_STD_CONF2_OMOD_QUERIES;
+    CODEqueryEtryPt_STD_CONF2_setModCnf_QUERIES;
     CODEqueryEtryPt_STD_CONF2_QUERIES;
 ENDqueryEtryPt
 
