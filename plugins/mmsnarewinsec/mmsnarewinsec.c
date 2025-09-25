@@ -459,7 +459,10 @@ static char *trim_whitespace_enhanced(const char *input) {
     if (input == NULL) return NULL;
     
     size_t len = strlen(input);
-    if (len == 0) return strdup("");
+    if (len == 0) {
+        char *empty = strdup("");
+        return empty;
+    }
     
     const char *start = input;
     const char *end = input + len - 1;
@@ -490,8 +493,9 @@ static char *trim_whitespace_enhanced(const char *input) {
 static bool is_guid_format(const char *value) {
     if (value == NULL) return false;
     
+    size_t len = strlen(value);
     // Simple GUID format check: {XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}
-    if (strlen(value) == 38 && value[0] == '{' && value[37] == '}') {
+    if (len == 38 && value[0] == '{' && value[37] == '}') {
         return true;
     }
     
@@ -551,12 +555,15 @@ static bool is_timestamp_format(const char *value) {
 static bool is_json_format(const char *value) {
     if (value == NULL) return false;
     
+    size_t len = strlen(value);
+    if (len == 0) return false;
+    
     // Simple JSON format check
-    if (value[0] == '{' && value[strlen(value) - 1] == '}') {
+    if (value[0] == '{' && value[len - 1] == '}') {
         return true;
     }
     
-    if (value[0] == '[' && value[strlen(value) - 1] == ']') {
+    if (value[0] == '[' && value[len - 1] == ']') {
         return true;
     }
     
@@ -690,10 +697,19 @@ static rsRetVal parse_field_value_enhanced(
                 json_add_string(target, key, trimmed);
             } else {
                 // Invalid GUID format, store as string with prefix
-                char *prefixed = malloc(strlen(trimmed) + 10);
-                snprintf(prefixed, strlen(trimmed) + 10, "INVALID_GUID:%s", trimmed);
-                json_add_string(target, key, prefixed);
-                free(prefixed);
+                size_t trimmed_len = strlen(trimmed);
+                if (trimmed_len > SIZE_MAX - 15) {
+                    json_add_string(target, key, "INVALID_GUID:TOO_LONG");
+                } else {
+                    char *prefixed = malloc(trimmed_len + 15);
+                    if (prefixed != NULL) {
+                        snprintf(prefixed, trimmed_len + 15, "INVALID_GUID:%s", trimmed);
+                        json_add_string(target, key, prefixed);
+                        free(prefixed);
+                    } else {
+                        json_add_string(target, key, "INVALID_GUID:ALLOC_FAILED");
+                    }
+                }
             }
             break;
             
@@ -703,10 +719,19 @@ static rsRetVal parse_field_value_enhanced(
                 json_add_string(target, key, trimmed);
             } else {
                 // Invalid IP format, store as string with prefix
-                char *prefixed = malloc(strlen(trimmed) + 10);
-                snprintf(prefixed, strlen(trimmed) + 10, "INVALID_IP:%s", trimmed);
-                json_add_string(target, key, prefixed);
-                free(prefixed);
+                size_t trimmed_len = strlen(trimmed);
+                if (trimmed_len > SIZE_MAX - 15) {
+                    json_add_string(target, key, "INVALID_IP:TOO_LONG");
+                } else {
+                    char *prefixed = malloc(trimmed_len + 15);
+                    if (prefixed != NULL) {
+                        snprintf(prefixed, trimmed_len + 15, "INVALID_IP:%s", trimmed);
+                        json_add_string(target, key, prefixed);
+                        free(prefixed);
+                    } else {
+                        json_add_string(target, key, "INVALID_IP:ALLOC_FAILED");
+                    }
+                }
             }
             break;
             
@@ -716,10 +741,19 @@ static rsRetVal parse_field_value_enhanced(
                 json_add_string(target, key, trimmed);
             } else {
                 // Invalid timestamp format, store as string with prefix
-                char *prefixed = malloc(strlen(trimmed) + 15);
-                snprintf(prefixed, strlen(trimmed) + 15, "INVALID_TIMESTAMP:%s", trimmed);
-                json_add_string(target, key, prefixed);
-                free(prefixed);
+                size_t trimmed_len = strlen(trimmed);
+                if (trimmed_len > SIZE_MAX - 20) {
+                    json_add_string(target, key, "INVALID_TIMESTAMP:TOO_LONG");
+                } else {
+                    char *prefixed = malloc(trimmed_len + 20);
+                    if (prefixed != NULL) {
+                        snprintf(prefixed, trimmed_len + 20, "INVALID_TIMESTAMP:%s", trimmed);
+                        json_add_string(target, key, prefixed);
+                        free(prefixed);
+                    } else {
+                        json_add_string(target, key, "INVALID_TIMESTAMP:ALLOC_FAILED");
+                    }
+                }
             }
             break;
             
@@ -730,10 +764,19 @@ static rsRetVal parse_field_value_enhanced(
                 json_add_string(target, key, trimmed);
             } else {
                 // Invalid JSON format, store as string with prefix
-                char *prefixed = malloc(strlen(trimmed) + 15);
-                snprintf(prefixed, strlen(trimmed) + 15, "INVALID_JSON:%s", trimmed);
-                json_add_string(target, key, prefixed);
-                free(prefixed);
+                size_t trimmed_len = strlen(trimmed);
+                if (trimmed_len > SIZE_MAX - 20) {
+                    json_add_string(target, key, "INVALID_JSON:TOO_LONG");
+                } else {
+                    char *prefixed = malloc(trimmed_len + 20);
+                    if (prefixed != NULL) {
+                        snprintf(prefixed, trimmed_len + 20, "INVALID_JSON:%s", trimmed);
+                        json_add_string(target, key, prefixed);
+                        free(prefixed);
+                    } else {
+                        json_add_string(target, key, "INVALID_JSON:ALLOC_FAILED");
+                    }
+                }
             }
             break;
         default:
@@ -784,7 +827,10 @@ static inline void trim_inplace(char *s) {
     if (s == NULL) return;
     start = s;
     while (*start && isspace((unsigned char)*start)) ++start;
-    if (start != s) memmove(s, start, strlen(start) + 1);
+    if (start != s) {
+        size_t remaining_len = strlen(start) + 1;
+        memmove(s, start, remaining_len);
+    }
     len = strlen(s);
     end = s + len;
     while (end > s && isspace((unsigned char)*(end - 1))) --end;
@@ -808,6 +854,7 @@ static void unescape_hash_sequences(char *s) {
 }
 
 static inline char *normalize_label(const char *label) {
+    if (label == NULL) return NULL;
     size_t len = strlen(label);
     char *out = malloc(len + 1);
     size_t j = 0;
@@ -2337,8 +2384,10 @@ BEGINnewActInst
         if (!strcmp(actpblk.descr[i].name, "container")) {
             free(pData->container);
             pData->container = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
-            if (pData->container != NULL && pData->container[0] == '$')
-                memmove(pData->container, pData->container + 1, strlen((char *)pData->container));
+            if (pData->container != NULL && pData->container[0] == '$') {
+                size_t container_len = strlen((char *)pData->container);
+                memmove(pData->container, pData->container + 1, container_len);
+            }
         } else if (!strcmp(actpblk.descr[i].name, "enable.network")) {
             pData->enableNetwork = (sbool)pvals[i].val.d.n;
         } else if (!strcmp(actpblk.descr[i].name, "enable.laps")) {
