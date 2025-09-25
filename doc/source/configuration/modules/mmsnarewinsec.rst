@@ -18,6 +18,10 @@ Highlights
   (``4624``, ``4625``, ``4672``, ``4688``, ``4768``, ``4769``, ``4771``,
   ``5140``, ``5157``, ``6281``, ``1102``, ``1243``) while populating derived
   ``Category``, ``Subtype``, and ``Outcome`` fields.
+* Normalizes free-form keys through priority-ordered pattern tables that apply
+  type-aware writers (integer, boolean, JSON block) and event-specific
+  overrides so fields such as WDAC PID values or WUFB policy identifiers land
+  in the correct JSON section without bespoke conditionals.
 * Interprets well-known sections (Subject, Logon Information, New Logon,
   Network Information, Process Information, Detailed Authentication
   Information, Account For Which Logon Failed, Failure Information, Application
@@ -31,9 +35,10 @@ Highlights
   * **TLS Inspection** -> ``!win!TLSInspection!Reason``,
     ``!win!TLSInspection!Policy``
   * **WDAC Enforcement** -> ``!win!WDAC!PolicyName``,
-    ``!win!WDAC!PolicyVersion``, ``!win!WDAC!EnforcementMode``
+    ``!win!WDAC!PolicyVersion``, ``!win!WDAC!EnforcementMode``,
+    ``!win!WDAC!User``, ``!win!WDAC!PID`` (with numeric promotion)
   * **WUFB Deployment** -> ``!win!WUFB!PolicyID``, ``!win!WUFB!Ring``,
-    ``!win!WUFB!EnforcementResult``
+    ``!win!WUFB!FromService``, ``!win!WUFB!EnforcementResult``
   * Remote Credential Guard surface (``!win!Logon!RemoteCredentialGuard``)
 
 * Performs lookup translation for logon type codes, deriving
@@ -60,6 +65,8 @@ nodes include:
 
 * ``Event`` — Record metadata (log, record number, event ID, computer, timestamps,
   audit outcome, mapping category/subtype).
+* ``EventData`` — General key/value pairs emitted outside named sections,
+  including logon/process/network helpers that benefit from the typed matcher.
 * ``Subject``, ``Logon``, ``NewLogon`` — Authentication identity details.
 * ``Network`` — Source/destination addresses and ports (supports client address
   fields in Kerberos events).
@@ -72,9 +79,10 @@ nodes include:
 * ``LAPS``, ``TLS``, ``WDAC``, ``WUFB`` — Dedicated blocks for modern telemetry
   (LAPS context, TLS inspection, Windows Defender Application Control, Windows
   Update for Business deployment events).
-* ``Payload.Raw`` — Original message body without the syslog header.
-* ``Payload.Unparsed`` — Catch-all array for any sections the module could not map
-  with the current release.
+* ``Raw`` / ``RawJSON`` — Optional copies of the original Snare payload when
+  ``emit.rawpayload="on"``.
+* ``Unparsed`` — Catch-all array for any sections the module could not map with
+  the current release (or an empty array when ``emit.debugjson="on"``).
 
 Event ID Mapping
 ----------------
@@ -109,12 +117,13 @@ and others are mapped to ``Event.Category``, ``Event.Subtype``, and
 Error Handling & Observability
 ------------------------------
 
-* Invalid or partial payloads are routed to ``Payload.Unparsed`` and flagged via
+* Invalid or partial payloads are routed to ``Unparsed`` and flagged via
   the ``partial`` counter in the instance's impstats object.
 * Parse failures increment the ``failed`` counter and can be redirected by a
   secondary action when ``$parsesuccess`` evaluates to anything other than ``OK``.
-* Enable ``debugjson="on"`` to capture the tokenizer output or JSON text for
-  troubleshooting.
+* Enable ``emit.debugjson="on"`` to force-create ``!win!Unparsed`` (even when
+  empty) so assertions and log collection pipelines can detect previously
+  unseen sections.
 
 Configuration
 -------------
@@ -293,7 +302,9 @@ A non-exhaustive list of notable properties exposed by the module:
 * ``!win!TLSInspection!Reason``, ``!win!TLSInspection!Policy``
 * ``!win!WDAC!PolicyName``, ``!win!WDAC!PolicyVersion``,
   ``!win!WDAC!EnforcementMode``, ``!win!WDAC!User``, ``!win!WDAC!PID``
-* ``!win!WUFB!PolicyID``, ``!win!WUFB!Ring``, ``!win!WUFB!EnforcementResult``
+  (and ``PIDRaw`` when Snare reports non-numeric values)
+* ``!win!WUFB!PolicyID``, ``!win!WUFB!Ring``, ``!win!WUFB!FromService``,
+  ``!win!WUFB!EnforcementResult``
 
 Unknown fragments are preserved under ``!win!Unparsed`` to aid future
 normalization efforts.
@@ -325,8 +336,9 @@ Extending mappings
 
 Event ID mappings and section recognition are driven by lookup tables at the
 beginning of ``plugins/mmsnarewinsec/mmsnarewinsec.c``. New telemetry blocks can
-be added by extending ``g_sectionDescriptors`` or by enhancing
-``handle_general_key()`` to capture additional key/value pairs.
+be added by extending ``g_sectionDescriptors`` or by adding ``field_pattern_t``
+entries to ``g_coreFieldPatterns``/``g_eventFieldMappings`` so the matcher routes
+keys to the desired section with the appropriate type coercion.
 
 
 Troubleshooting
@@ -334,7 +346,6 @@ Troubleshooting
 
 * Inspect ``$parsesuccess`` and the instance's impstats counters (``recordseen``,
   ``parsed``, ``partial``, ``failed``) to verify parsing behaviour.
-* Use ``debugjson="on"`` to capture the tokenized description when new Windows
-  releases add previously unknown sections; the raw block will appear under
-  ``!win!Payload!Debug``.
+* Use ``emit.debugjson="on"`` to guarantee an ``!win!Unparsed`` array is present
+  for assertions when new Windows releases add previously unknown sections.
 * Extend section handlers or lookup tables in ``plugins/mmsnarewinsec/mmsnarewinsec.c`` when Microsoft introduces additional telemetry fields.
