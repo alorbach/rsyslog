@@ -56,13 +56,13 @@ module(load=\"../plugins/mmsnarewinsec/.libs/mmsnarewinsec\" \
        validation.mode=\"strict\")
 
 template(name=\"customfmt\" type=\"list\") {
-    property(name=\"$!win!Event!Category\")
+    property(name=\"\\$!win!Event!Category\")
     constant(value=\",\")
-    property(name=\"$!win!CustomBlock!WidgetID\")
+    property(name=\"\\$!win!CustomBlock!WidgetID\")
     constant(value=\",\")
-    property(name=\"$!win!EventData!CustomEventTag\")
+    property(name=\"\\$!win!EventData!CustomEventTag\")
     constant(value=\",\")
-    property(name=\"$!win!Event!Outcome\")
+    property(name=\"\\$!win!Event!Outcome\")
     constant(value=\"\\n\")
 }
 
