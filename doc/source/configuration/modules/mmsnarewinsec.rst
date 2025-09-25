@@ -326,10 +326,11 @@ Testing
 
 The regression suite (``tests/mmsnarewinsec-basic.sh``,
 ``tests/mmsnarewinsec-json.sh``, ``tests/mmsnarewinsec-syslog.sh``,
-``tests/mmsnarewinsec-comprehensive.sh``) replays canonical Windows Security
-samples across Snare text, Snare JSON, and TCP/syslog delivery to ensure
-extracted fields remain stable (for example, 4624 with LAPS, 5157 TLS
-inspection, 6281 WDAC enforcement, and 1243 WUFB deployment).
+``tests/mmsnarewinsec-comprehensive.sh``, ``tests/mmsnarewinsec-custom.sh``)
+replays canonical Windows Security samples and injects custom JSON overrides
+to verify extracted fields remain stable (for example, 4624 with LAPS, 5157 TLS
+inspection, 6281 WDAC enforcement, 1243 WUFB deployment, and bespoke
+definitions supplied at runtime).
 
 Extending Pattern Tables at Runtime
 -----------------------------------
@@ -340,7 +341,7 @@ organisation-specific extensions. The module can import supplemental
 definitions at startup using declarative JSON descriptors.
 
 New module parameters
-^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~
 
 ``definition.file``
     Absolute or relative path to a JSON file that contains custom definitions.
@@ -349,14 +350,17 @@ New module parameters
 ``definition.json``
     Inline JSON string with the same schema as ``definition.file``. This is
     convenient for smaller overrides delivered directly in the rsyslog config.
+    The value is parsed after ``definition.file`` so inline snippets can adjust
+    or replace objects loaded from disk.
 
 ``validation.mode``
     Controls how the loader reacts to malformed entries. ``permissive`` (the
-    default) logs warnings and skips invalid objects, while ``strict`` aborts the
-    instance configuration when a definition cannot be parsed.
+    default; aliases: ``lenient``, ``default``) logs warnings and skips invalid
+    objects, while ``strict`` aborts the instance configuration when a
+    definition cannot be parsed.
 
 Definition schema
-^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~
 
 The JSON document accepts the following top-level arrays:
 
@@ -372,8 +376,8 @@ The JSON document accepts the following top-level arrays:
     Declares global field patterns. Fields map a ``pattern`` to a ``canonical``
     name, optionally assign a ``section`` (``EventData``, ``Logon``, custom),
     override ``priority``, and set ``value_type`` (``string``, ``int64``,
-    ``bool``, ``json``, ``logon_type``, ``remote_credential_guard``,
-    ``privilege_list``) and ``sensitivity``.
+    ``int64_with_raw``, ``bool``, ``json``, ``logon_type``,
+    ``remote_credential_guard``, ``privilege_list``) and ``sensitivity``.
 
 ``eventFields``
     Supplies event-specific field matchers. Each object requires an
@@ -386,7 +390,7 @@ The JSON document accepts the following top-level arrays:
     ``Event.Outcome`` for specific Windows event IDs.
 
 Example: merging custom sections and fields
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: json
 
