@@ -72,6 +72,12 @@ typedef enum section_behavior {
  * @var section_descriptor::behavior Parsing behavior applied to the section.
  * @var section_descriptor::flags Feature flags gating optional sections.
  */
+typedef enum field_pattern_sensitivity {
+    fieldSensitivityCanonical = 0,
+    fieldSensitivityCaseSensitive,
+    fieldSensitivityCaseInsensitive
+} field_pattern_sensitivity_t;
+
 typedef struct section_descriptor {
     const char *pattern;
     const char *canonical;
@@ -119,12 +125,6 @@ typedef enum field_value_type {
     fieldValuePrivilegeList
 } field_value_type_t;
 
-typedef enum field_pattern_sensitivity {
-    fieldSensitivityCanonical = 0,
-    fieldSensitivityCaseSensitive,
-    fieldSensitivityCaseInsensitive
-} field_pattern_sensitivity_t;
-
 typedef struct field_pattern {
     const char *pattern;
     const char *canonical;
@@ -136,7 +136,7 @@ typedef struct field_pattern {
 
 typedef struct event_field_mapping {
     int event_id;
-    const field_pattern_t *patterns;
+    field_pattern_t *patterns;
     size_t pattern_count;
     uint32_t required_flags;
 } event_field_mapping_t;
@@ -184,7 +184,7 @@ static const field_pattern_t g_coreFieldPatterns[] = {
     {"Privileges", "Privileges", fieldValuePrivilegeList, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
 };
 
-static const field_pattern_t g_event6281FieldPatterns[] = {
+static field_pattern_t g_event6281FieldPatterns[] = {
     {"PolicyName", "PolicyName", fieldValueString, "WDAC", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
     {"PolicyVersion", "PolicyVersion", fieldValueString, "WDAC", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
     {"EnforcementMode", "EnforcementMode", fieldValueString, "WDAC", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
@@ -192,7 +192,7 @@ static const field_pattern_t g_event6281FieldPatterns[] = {
     {"PID", "PID", fieldValueInt64WithRaw, "WDAC", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
 };
 
-static const field_pattern_t g_event1243FieldPatterns[] = {
+static field_pattern_t g_event1243FieldPatterns[] = {
     {"PolicyID", "PolicyID", fieldValueString, "WUFB", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
     {"Ring", "Ring", fieldValueString, "WUFB", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
     {"FromService", "FromService", fieldValueString, "WUFB", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
@@ -252,6 +252,8 @@ typedef struct _instanceData {
     event_mapping_t *eventMappings;
     size_t eventMappingCount;
 } instanceData;
+
+static void free_runtime_tables(instanceData *pData);
 
 /** worker data */
 typedef struct wrkrInstanceData {
@@ -1455,6 +1457,8 @@ static sbool section_pattern_matches(const section_descriptor_t *desc, const cha
             return wildcard_match(desc->pattern, label, 0);
     }
 }
+
+static inline int section_is_enabled(const instanceData *pData, uint32_t flags);
 
 static const section_descriptor_t *select_section_descriptor(const instanceData *inst, const char *label) {
     const section_descriptor_t *best = NULL;
