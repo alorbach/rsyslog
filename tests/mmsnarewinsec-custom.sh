@@ -26,7 +26,7 @@ cat >"$DEF_FILE" <<'JSON'
   ],
   "eventFields": [
     {
-      "event_id": 4001,
+      "event_id": 9999,
       "patterns": [
         {
           "pattern": "WidgetID",
@@ -39,7 +39,7 @@ cat >"$DEF_FILE" <<'JSON'
   ],
   "events": [
     {
-      "event_id": 4001,
+      "event_id": 9999,
       "category": "Custom",
       "subtype": "Injected",
       "outcome": "success"

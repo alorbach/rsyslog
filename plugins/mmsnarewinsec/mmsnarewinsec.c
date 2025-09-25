@@ -2614,7 +2614,10 @@ static void populate_event_metadata(parse_context_t *ctx, char **tokens, size_t 
             if (timeObj != NULL) json_add_string(timeObj, "Normalized", normalized);
         }
     }
-    if (tokenCount > 10) apply_event_mapping(ctx, tokens[10]);
+    const char *auditResult = NULL;
+    if (tokenCount > eventTypeIdx && !is_placeholder(tokens[eventTypeIdx]))
+        auditResult = tokens[eventTypeIdx];
+    apply_event_mapping(ctx, auditResult);
 }
 
 /**
