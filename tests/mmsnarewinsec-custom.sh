@@ -1,5 +1,5 @@
 #!/bin/bash
-# Validate custom pattern loading and section detection for mmsnarewinsec.
+## Validate custom pattern loading and section detection for mmsnarewinsec.
 unset RSYSLOG_DYNNAME
 . ${srcdir:=.}/diag.sh init
 
@@ -50,6 +50,7 @@ JSON
 
 generate_conf
 add_conf "
+module(load=\"../plugins/imtcp/.libs/imtcp\")
 module(load=\"../plugins/mmsnarewinsec/.libs/mmsnarewinsec\" \
        definition.file=\"${PWD}/${DEF_FILE}\" \
        validation.mode=\"strict\")
@@ -67,13 +68,14 @@ template(name=\"customfmt\" type=\"list\") {
 
 action(type=\"mmsnarewinsec\")
 action(type=\"omfile\" file=\"$RSYSLOG_OUT_LOG\" template=\"customfmt\")
+
+input(type=\"imtcp\" port=\"0\" listenPortFileName=\"'$RSYSLOG_DYNNAME'.tcpflood_port\")
 "
 
 startup
 
-printf '%s\n' $'<13>1 2025-02-18T08:00:00.000000Z CUSTOMHOST - - - - MSWinEventLog\t1\tSecurity\t4001\tTue Feb 18 08:00:00 2025\t9999\tCustom-Provider\tN/A\tN/A\tSuccess Audit\tCUSTOMHOST\tCustomCategory\t\tCustom audit event triggered.    Custom Block Delta:   WidgetID:  ZX-42   CustomEventTag:  Demo      -4001' > "${RSYSLOG_DYNNAME}.input"
-
-injectmsg_file "${RSYSLOG_DYNNAME}.input"
+assign_tcpflood_port "$RSYSLOG_DYNNAME.tcpflood_port"
+tcpflood -m 1 -I "${srcdir}/testsuites/mmsnarewinsec/sample-custom-pattern.data"
 
 shutdown_when_empty
 wait_shutdown
