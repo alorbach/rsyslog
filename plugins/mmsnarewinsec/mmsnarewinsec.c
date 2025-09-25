@@ -841,7 +841,11 @@ static rsRetVal read_text_file(const char *path, char **out) {
     }
     readLen = fread(buf, 1, (size_t)len, fp);
     if (readLen != (size_t)len) {
-        LogError(errno, RS_RET_IO_ERROR, "mmsnarewinsec: failed to read definition file '%s'", path);
+        if (ferror(fp)) {
+            LogError(errno, RS_RET_IO_ERROR, "mmsnarewinsec: error reading definition file '%s'", path);
+        } else {
+            LogError(0, RS_RET_IO_ERROR, "mmsnarewinsec: unexpected end of file reading definition file '%s'", path);
+        }
         free(buf);
         fclose(fp);
         return RS_RET_IO_ERROR;
@@ -1002,6 +1006,10 @@ static rsRetVal load_section_definitions(instanceData *pData, struct json_object
         }
         if (canonical != NULL) {
             desc.canonical = strdup(canonical);
+            if (desc.canonical == NULL) {
+                cleanup_section_descriptor(&desc);
+                return RS_RET_OUT_OF_MEMORY;
+            }
         } else {
             char *normalized = normalize_label(pattern);
             if (normalized == NULL) {
@@ -1090,6 +1098,10 @@ static rsRetVal load_field_definitions(instanceData *pData, struct json_object *
             canonical = json_object_get_string(value);
         if (canonical != NULL) {
             pattern.canonical = strdup(canonical);
+            if (pattern.canonical == NULL) {
+                cleanup_field_pattern(&pattern);
+                return RS_RET_OUT_OF_MEMORY;
+            }
         } else {
             char *normalized = normalize_label(patternText);
             if (normalized == NULL) {
@@ -1212,6 +1224,11 @@ static rsRetVal load_event_field_definitions(instanceData *pData, struct json_ob
                 canonical = json_object_get_string(pv);
             if (canonical != NULL) {
                 patternEntry.canonical = strdup(canonical);
+                if (patternEntry.canonical == NULL) {
+                    cleanup_field_pattern(&patternEntry);
+                    cleanup_event_field_mapping(&mapping);
+                    return RS_RET_OUT_OF_MEMORY;
+                }
             } else {
                 char *normalized = normalize_label(patternText);
                 if (normalized == NULL) {
@@ -1488,20 +1505,6 @@ static const section_descriptor_t *select_section_descriptor(const instanceData 
             bestSpecificity = specificity;
         }
     }
-    if (best == NULL) {
-        for (size_t i = 0; i < ARRAY_SIZE(g_builtinSectionDescriptors); ++i) {
-            const section_descriptor_t *candidate = &g_builtinSectionDescriptors[i];
-            if (!section_is_enabled(inst, candidate->flags)) continue;
-            if (!section_pattern_matches(candidate, label)) continue;
-            size_t specificity = pattern_specificity(candidate->pattern);
-            if (candidate->priority > bestPriority ||
-                (candidate->priority == bestPriority && specificity > bestSpecificity)) {
-                best = candidate;
-                bestPriority = candidate->priority;
-                bestSpecificity = specificity;
-            }
-        }
-    }
     return best;
 }
 
@@ -1525,9 +1528,6 @@ static inline const event_mapping_t *lookup_event_mapping(const instanceData *in
         for (size_t i = 0; i < inst->eventMappingCount; ++i) {
             if (inst->eventMappings[i].event_id == eventId) return &inst->eventMappings[i];
         }
-    }
-    for (size_t i = 0; i < ARRAY_SIZE(g_eventMappings); ++i) {
-        if (g_eventMappings[i].event_id == eventId) return &g_eventMappings[i];
     }
     return NULL;
 }
