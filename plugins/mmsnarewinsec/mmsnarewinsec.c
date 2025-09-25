@@ -733,7 +733,7 @@ static struct json_object *try_parse_json_block(const char *value) {
     parsed = json_tokener_parse_ex(tokener, value, (int)strlen(value));
     err = fjson_tokener_get_error(tokener);
     json_tokener_free(tokener);
-    if (err != json_tokener_success || parsed == NULL) {
+    if (err != fjson_tokener_success || parsed == NULL) {
         if (parsed != NULL) json_object_put(parsed);
         return NULL;
     }
