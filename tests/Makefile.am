@@ -506,9 +506,10 @@ TESTS +=  \
 if ENABLE_MMSNAREWINSEC
 TESTS += \
     mmsnarewinsec-basic.sh\
-	mmsnarewinsec-json.sh\
-	mmsnarewinsec-syslog.sh\
-	mmsnarewinsec-comprehensive.sh
+    mmsnarewinsec-json.sh\
+    mmsnarewinsec-syslog.sh\
+    mmsnarewinsec-custom.sh\
+    mmsnarewinsec-comprehensive.sh
 endif
 
 if ENABLE_OMSENDERTRACK

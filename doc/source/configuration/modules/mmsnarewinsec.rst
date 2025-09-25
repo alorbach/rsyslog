@@ -331,14 +331,114 @@ samples across Snare text, Snare JSON, and TCP/syslog delivery to ensure
 extracted fields remain stable (for example, 4624 with LAPS, 5157 TLS
 inspection, 6281 WDAC enforcement, and 1243 WUFB deployment).
 
-Extending mappings
-------------------
+Extending Pattern Tables at Runtime
+-----------------------------------
 
-Event ID mappings and section recognition are driven by lookup tables at the
-beginning of ``plugins/mmsnarewinsec/mmsnarewinsec.c``. New telemetry blocks can
-be added by extending ``g_sectionDescriptors`` or by adding ``field_pattern_t``
-entries to ``g_coreFieldPatterns``/``g_eventFieldMappings`` so the matcher routes
-keys to the desired section with the appropriate type coercion.
+``mmsnarewinsec`` ships with curated defaults for section detection, field
+normalisation and event metadata, but environments frequently contain
+organisation-specific extensions. The module can import supplemental
+definitions at startup using declarative JSON descriptors.
+
+New module parameters
+^^^^^^^^^^^^^^^^^^^^^
+
+``definition.file``
+    Absolute or relative path to a JSON file that contains custom definitions.
+    The file is loaded during activation and merged with the built-in tables.
+
+``definition.json``
+    Inline JSON string with the same schema as ``definition.file``. This is
+    convenient for smaller overrides delivered directly in the rsyslog config.
+
+``validation.mode``
+    Controls how the loader reacts to malformed entries. ``permissive`` (the
+    default) logs warnings and skips invalid objects, while ``strict`` aborts the
+    instance configuration when a definition cannot be parsed.
+
+Definition schema
+^^^^^^^^^^^^^^^^^
+
+The JSON document accepts the following top-level arrays:
+
+``sections``
+    Adds or overrides description section matchers. Each entry supports the
+    keys ``pattern`` (required, literal with optional ``*`` wildcard),
+    ``canonical`` (default: auto-generated CamelCase), ``behavior`` (``standard``,
+    ``inline``, ``semicolon`` or ``list``), ``priority`` (integer, higher wins),
+    ``sensitivity`` (``case_sensitive``, ``case_insensitive``, ``canonical``) and
+    ``flags`` (array of ``network``, ``laps``, ``tls``, ``wdac``).
+
+``fields``
+    Declares global field patterns. Fields map a ``pattern`` to a ``canonical``
+    name, optionally assign a ``section`` (``EventData``, ``Logon``, custom),
+    override ``priority``, and set ``value_type`` (``string``, ``int64``,
+    ``bool``, ``json``, ``logon_type``, ``remote_credential_guard``,
+    ``privilege_list``) and ``sensitivity``.
+
+``eventFields``
+    Supplies event-specific field matchers. Each object requires an
+    ``event_id`` and a ``patterns`` array containing the same keys as ``fields``.
+    Optional ``required_flags`` gate the override on module toggles (for example
+    only when TLS inspection is enabled).
+
+``events``
+    Defines or updates the derived ``Event.Category``, ``Event.Subtype`` and
+    ``Event.Outcome`` for specific Windows event IDs.
+
+Example: merging custom sections and fields
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. code-block:: json
+
+   {
+     "sections": [
+       {
+         "pattern": "Custom Block*",
+         "canonical": "CustomBlock",
+         "behavior": "standard",
+         "priority": 250
+       }
+     ],
+     "fields": [
+       {
+         "pattern": "CustomEventTag",
+         "section": "EventData",
+         "value_type": "string"
+       }
+     ],
+     "eventFields": [
+       {
+         "event_id": 9999,
+         "patterns": [
+           {
+             "pattern": "WidgetID",
+             "section": "CustomBlock",
+             "value_type": "string"
+           }
+         ]
+       }
+     ],
+     "events": [
+       {
+         "event_id": 9999,
+         "category": "Custom",
+         "subtype": "Injected",
+         "outcome": "success"
+       }
+     ]
+   }
+
+To activate the overrides:
+
+.. code-block:: none
+
+   module(load="mmsnarewinsec"
+          definition.file="/etc/rsyslog.d/custom-winsec.json"
+          validation.mode="strict")
+
+At runtime the module evaluates built-in and custom matchers in priority order
+and picks the best fit. The definitions become immutable once the action is
+activated, ensuring worker threads share a consistent view.
 
 
 Troubleshooting
