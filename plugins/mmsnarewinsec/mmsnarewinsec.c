@@ -2992,8 +2992,9 @@ static rsRetVal process_message(instanceData *pData, smsg_t *pMsg, uchar *msgTex
     rsRetVal iRet = RS_RET_COULD_NOT_PARSE;
     char *mutableMsg;
     char *cursor;
-    char *tokens[32];
+    char **tokens = NULL;
     size_t tokenCount = 0;
+    size_t tokenCapacity = 32;
     const char *rawMsg;
     const char *payloadStart;
     if (msgText == NULL) return RS_RET_COULD_NOT_PARSE;
@@ -3007,8 +3008,31 @@ static rsRetVal process_message(instanceData *pData, smsg_t *pMsg, uchar *msgTex
     }
     unescape_hash_sequences(mutableMsg);
     dbgprintf("[mmsnarewinsec DEBUG] After unescaping: '%s'\n", mutableMsg);
+    
+    // Allocate initial token array
+    tokens = malloc(tokenCapacity * sizeof(char*));
+    if (tokens == NULL) {
+        LogError(0, RS_RET_OUT_OF_MEMORY, "mmsnarewinsec: failed to allocate token array");
+        free(mutableMsg);
+        return RS_RET_OUT_OF_MEMORY;
+    }
+    
     cursor = mutableMsg;
-    while (cursor != NULL && tokenCount < ARRAY_SIZE(tokens)) {
+    while (cursor != NULL) {
+        // Resize token array if needed
+        if (tokenCount >= tokenCapacity) {
+            size_t newCapacity = tokenCapacity * 2;
+            char **newTokens = realloc(tokens, newCapacity * sizeof(char*));
+            if (newTokens == NULL) {
+                LogError(0, RS_RET_OUT_OF_MEMORY, "mmsnarewinsec: failed to resize token array");
+                free(tokens);
+                free(mutableMsg);
+                return RS_RET_OUT_OF_MEMORY;
+            }
+            tokens = newTokens;
+            tokenCapacity = newCapacity;
+        }
+        
         tokens[tokenCount++] = cursor;
         char *tab = strchr(cursor, '\t');
         if (tab == NULL) break;
@@ -3030,6 +3054,7 @@ static rsRetVal process_message(instanceData *pData, smsg_t *pMsg, uchar *msgTex
     } else if (tokenCount >= 2) {
         iRet = parse_snare_text(pData, pMsg, rawMsg, tokens, tokenCount);
     }
+    free(tokens);
     free(mutableMsg);
     return iRet;
 }
