@@ -2392,6 +2392,14 @@ static rsRetVal tokenize_on_multispace(const char *str, size_t len, token_callba
     if (callback == NULL) return RS_RET_INVALID_PARAMS;
     if (str == NULL || len == 0) return RS_RET_OK;
     while (i < len) {
+        if (str[i] == '\n' || str[i] == '\r' || str[i] == '\f' || str[i] == '\v') {
+            if (in_token) {
+                callback(str + start, i - start, user_data);
+                in_token = false;
+            }
+            ++i;
+            continue;
+        }
         if (str[i] == ' ' || str[i] == '\t') {
             size_t j = i;
             while (j < len && (str[j] == ' ' || str[j] == '\t')) ++j;
