@@ -3075,8 +3075,9 @@ static rsRetVal parse_field_value_enhanced(const char *value,
         return RS_RET_OK;
     }
     if (is_placeholder_value(trimmed)) {
-        free(trimmed);
+        json_add_string(target, key, trimmed);
         if (storedOut != NULL) *storedOut = -1;
+        free(trimmed);
         return RS_RET_OK;
     }
 
