@@ -563,6 +563,25 @@ static inline void trim_inplace(char *s) {
     *end = '\0';
 }
 
+static inline bool looks_like_label_start(const char *p, const char *end) {
+    const char *cursor = p;
+    bool hasAlpha = false;
+    if (cursor == NULL || cursor >= end) return false;
+
+    /* Labels usually begin with an uppercase letter (e.g. "Security ID:"). */
+    if (!isupper((unsigned char)*cursor)) return false;
+
+    while (cursor < end) {
+        unsigned char c = (unsigned char)*cursor;
+        if (c == ':') return hasAlpha;
+        if (isalnum(c)) hasAlpha = true;
+        if (!(isalnum(c) || c == ' ' || c == '-' || c == '/' || c == '(' || c == ')' || c == '#'))
+            return false;
+        ++cursor;
+    }
+    return false;
+}
+
 static rsRetVal tokenize_on_multispace(
     const char *str, size_t len, token_callback_t callback, void *user_data) {
     if (callback == NULL) return RS_RET_INVALID_PARAMS;
@@ -574,33 +593,42 @@ static rsRetVal tokenize_on_multispace(
     size_t start = 0;
 
     while (i < len) {
-        if (ptr[i] == ' ') {
+        if (ptr[i] == ' ' || ptr[i] == '\t') {
             size_t j = i;
-            while (j < len && ptr[j] == ' ') ++j;
+            while (j < len && (ptr[j] == ' ' || ptr[j] == '\t')) ++j;
             size_t spaces = j - i;
 
-            if (spaces >= 2) {
+            if (spaces >= 2 || ptr[i] == '\t') {
                 if (in_token) {
                     callback(ptr + start, i - start, user_data);
                     in_token = false;
                 }
                 i = j;
                 continue;
-            } else {
-                if (!in_token) {
-                    start = i;
-                    in_token = true;
+            }
+
+            if (looks_like_label_start(ptr + j, ptr + len)) {
+                if (in_token) {
+                    callback(ptr + start, i - start, user_data);
+                    in_token = false;
                 }
                 i = j;
                 continue;
             }
-        } else {
+
             if (!in_token) {
                 start = i;
                 in_token = true;
             }
-            ++i;
+            i = j;
+            continue;
         }
+
+        if (!in_token) {
+            start = i;
+            in_token = true;
+        }
+        ++i;
     }
 
     if (in_token) {
