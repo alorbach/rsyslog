@@ -190,7 +190,7 @@ typedef struct _instanceData instanceData;
 static void runtime_config_init(runtime_config_t *config);
 static void runtime_config_free(runtime_config_t *config);
 static rsRetVal load_configuration(runtime_config_t *config, const char *config_file);
-static rsRetVal save_configuration(const runtime_config_t *config, const char *config_file);
+static inline rsRetVal save_configuration(const runtime_config_t *config, const char *config_file);
 static rsRetVal apply_runtime_configuration(instanceData *pData, runtime_config_t *config);
 static rsRetVal tokenize_on_multispace(const char *str, size_t len, token_callback_t callback, void *user_data);
 static char *trim_whitespace_enhanced(const char *input);
@@ -200,11 +200,17 @@ static bool is_ip_address(const char *value);
 static bool is_timestamp_format(const char *value);
 static bool is_json_format(const char *value);
 static rsRetVal parse_field_value_enhanced(const char *value,
-                                           field_value_type_t type,
-                                           struct json_object *target,
-                                           const char *key,
-                                           const char *section_context,
-                                           int event_id);
+    field_value_type_t type,
+    struct json_object *target,
+    const char *key,
+    const char *section_context,
+    int event_id);
+static rsRetVal read_text_file(const char *path, char **out);
+static rsRetVal load_custom_definition_text(instanceData *pData, const char *jsonText, const char *sourceLabel);
+static struct json_object *ensure_object(struct json_object *parent, const char *name);
+static sbool try_parse_int64(const char *value, long long *outVal);
+static sbool try_parse_bool(const char *value, sbool *outVal);
+static struct json_object *try_parse_json_block(const char *value);
 
 #define FIELD_PRIORITY_BASE 10
 #define FIELD_PRIORITY_EVENT_OVERRIDE 100
@@ -1298,7 +1304,7 @@ static rsRetVal load_configuration(runtime_config_t *config, const char *config_
     return RS_RET_OK;
 }
 
-static rsRetVal save_configuration(const runtime_config_t *config, const char *config_file) {
+static inline rsRetVal save_configuration(const runtime_config_t *config, const char *config_file) {
     if (config == NULL || config_file == NULL) return RS_RET_OK;
     struct json_object *root = json_object_new_object();
     if (root == NULL) return RS_RET_OUT_OF_MEMORY;
@@ -2560,10 +2566,10 @@ static rsRetVal parse_field_value_enhanced(const char *value,
                 json_add_string(target, key, trimmed);
             break;
         }
-        case fieldValueBool: {
-            sbool bool_val;
-            if (try_parse_bool(trimmed, &bool_val))
-                json_add_bool(target, key, bool_val);
+        case fieldValueInt64WithRaw: {
+            long long num;
+            if (try_parse_int64(trimmed, &num))
+                json_add_int64(target, key, num);
             else
                 json_add_string(target, key, trimmed);
             break;
@@ -2587,6 +2593,16 @@ static rsRetVal parse_field_value_enhanced(const char *value,
                 json_add_string(target, key, trimmed);
             break;
         }
+        case fieldValueRemoteCredentialGuard:
+        case fieldValueBool: {
+            sbool bool_val;
+            if (try_parse_bool(trimmed, &bool_val))
+                json_add_bool(target, key, bool_val);
+            else
+                json_add_string(target, key, trimmed);
+            break;
+        }
+        case fieldValuePrivilegeList:
         case fieldValueString:
         default:
             if (is_json_format(trimmed)) {
@@ -2596,6 +2612,10 @@ static rsRetVal parse_field_value_enhanced(const char *value,
                     free(trimmed);
                     return RS_RET_OK;
                 }
+            }
+            if (is_guid_format(trimmed) || is_ip_address(trimmed) || is_timestamp_format(trimmed)) {
+                json_add_string(target, key, trimmed);
+                break;
             }
             json_add_string(target, key, trimmed);
             break;
@@ -2833,7 +2853,7 @@ static void write_field_value(parse_context_t *ctx,
                 json_add_int64(dest, fieldName, numVal);
             else
                 add_raw_string(dest, fieldName, value);
-            break;
+            return;
         case fieldValueRemoteCredentialGuard:
             if (try_parse_bool(value, &boolVal)) {
                 json_add_bool(dest, fieldName, boolVal);
@@ -2844,22 +2864,27 @@ static void write_field_value(parse_context_t *ctx,
                 parseResult = RS_RET_COULD_NOT_PARSE;
                 handle_parsing_error(&ctx->detection, "failed to parse Remote Credential Guard", fieldName);
             }
-            break;
+            return;
         case fieldValuePrivilegeList:
             parse_privilege_sequence(ctx, value);
-            break;
-        default:
-            if (pattern->value_type == fieldValueJson) {
-                jsonBlock = try_parse_json_block(value);
-                if (jsonBlock != NULL) {
-                    json_object_object_add(dest, fieldName, jsonBlock);
-                    ctx->detection.successful_parses++;
-                    return;
-                }
+            return;
+        case fieldValueJson:
+            jsonBlock = try_parse_json_block(value);
+            if (jsonBlock != NULL) {
+                json_object_object_add(dest, fieldName, jsonBlock);
+                ctx->detection.successful_parses++;
+                return;
             }
-            parseResult = parse_field_value_enhanced(value, pattern->value_type, dest, fieldName, sectionName, ctx->eventId);
+            break;
+        case fieldValueString:
+        case fieldValueInt64:
+        case fieldValueBool:
+        case fieldValueLogonType:
+        default:
             break;
     }
+
+    parseResult = parse_field_value_enhanced(value, pattern->value_type, dest, fieldName, sectionName, ctx->eventId);
     if (pattern->value_type != fieldValuePrivilegeList && pattern->value_type != fieldValueRemoteCredentialGuard &&
         pattern->value_type != fieldValueInt64WithRaw) {
         if (parseResult == RS_RET_OK) {
