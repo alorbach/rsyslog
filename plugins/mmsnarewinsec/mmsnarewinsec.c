@@ -186,9 +186,110 @@ static const field_pattern_t g_coreFieldPatterns[] = {
     {"ImpersonationLevel", "ImpersonationLevel", fieldValueString, NULL, FIELD_PRIORITY_BASE,
      fieldSensitivityCanonical},
     {"KeyLength", "KeyLength", fieldValueInt64, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
-    {"RemoteCredentialGuard", "RemoteCredentialGuard", fieldValueRemoteCredentialGuard, NULL, FIELD_PRIORITY_BASE,
+    {"RemoteCredentialGuard", "RemoteCredentialGuard", fieldValueRemoteCredentialGuard, "Logon", FIELD_PRIORITY_BASE,
      fieldSensitivityCanonical},
     {"Privileges", "Privileges", fieldValuePrivilegeList, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    
+    // Additional Subject fields
+    {"Subject:", "Subject", fieldValueString, "Subject", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Security ID:", "SecurityID", fieldValueString, "Subject", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Account Name:", "AccountName", fieldValueString, "Subject", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Account Domain:", "AccountDomain", fieldValueString, "Subject", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Logon ID:", "LogonID", fieldValueString, "Subject", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    
+    // Additional Logon Information fields
+    {"Logon Information:", "LogonInformation", fieldValueString, "Logon", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Logon Type:", "LogonType", fieldValueLogonType, "Logon", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Restricted Admin Mode:", "RestrictedAdminMode", fieldValueString, "Logon", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Virtual Account:", "VirtualAccount", fieldValueString, "Logon", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Elevated Token:", "ElevatedToken", fieldValueString, "Logon", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Impersonation Level:", "ImpersonationLevel", fieldValueString, "Logon", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    
+    // Additional New Logon fields
+    {"New Logon:", "NewLogon", fieldValueString, "NewLogon", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Linked Logon ID:", "LinkedLogonID", fieldValueString, "NewLogon", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Network Account Name:", "NetworkAccountName", fieldValueString, "NewLogon", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Network Account Domain:", "NetworkAccountDomain", fieldValueString, "NewLogon", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Logon GUID:", "LogonGUID", fieldValueString, "NewLogon", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    
+    // Additional Network Information fields
+    {"Network Information:", "NetworkInformation", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Workstation Name:", "WorkstationName", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Source Network Address:", "SourceNetworkAddress", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Source Port:", "SourcePort", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Network Address:", "NetworkAddress", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Client Address:", "ClientAddress", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Client Port:", "ClientPort", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Destination Address:", "DestinationAddress", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Destination Port:", "DestinationPort", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Protocol:", "Protocol", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Direction:", "Direction", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    
+    // Additional Process Information fields
+    {"Process Information:", "ProcessInformation", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Caller Process ID:", "CallerProcessID", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Caller Process Name:", "CallerProcessName", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"New Process ID:", "NewProcessID", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"New Process Name:", "NewProcessName", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Creator Process ID:", "CreatorProcessID", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Creator Process Name:", "CreatorProcessName", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Process Command Line:", "ProcessCommandLine", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    
+    // Additional Authentication fields
+    {"Detailed Authentication Information:", "DetailedAuthenticationInformation", fieldValueString, "Authentication", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Logon Process:", "LogonProcess", fieldValueString, "Authentication", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Authentication Package:", "AuthenticationPackage", fieldValueString, "Authentication", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Transited Services:", "TransitedServices", fieldValueString, "Authentication", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Package Name (NTLM only):", "PackageName", fieldValueString, "Authentication", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Key Length:", "KeyLength", fieldValueInt64, "Authentication", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Remote Credential Guard:", "RemoteCredentialGuard", fieldValueRemoteCredentialGuard, "Logon", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    
+    // Additional Failure Information fields
+    {"Failure Information:", "FailureInformation", fieldValueString, "Failure", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Failure Reason:", "FailureReason", fieldValueString, "Failure", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Status:", "Status", fieldValueString, "Failure", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Sub Status:", "SubStatus", fieldValueString, "Failure", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    
+    // Additional WDAC fields (Event ID 6281)
+    {"Policy Name:", "PolicyName", fieldValueString, "WDAC", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Policy Version:", "PolicyVersion", fieldValueString, "WDAC", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Enforcement Mode:", "EnforcementMode", fieldValueString, "WDAC", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"User:", "User", fieldValueString, "WDAC", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"PID:", "ProcessID", fieldValueString, "WDAC", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    
+    // Additional WUFB fields (Event ID 1243)
+    {"Policy ID:", "PolicyID", fieldValueString, "WUFB", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Ring:", "Ring", fieldValueString, "WUFB", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"From Service:", "FromService", fieldValueString, "WUFB", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Enforcement Result:", "EnforcementResult", fieldValueString, "WUFB", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    
+    // Additional Kerberos fields
+    {"Service Name:", "ServiceName", fieldValueString, "Kerberos", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Service ID:", "ServiceID", fieldValueString, "Kerberos", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Ticket Options:", "TicketOptions", fieldValueString, "Kerberos", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Result Code:", "ResultCode", fieldValueString, "Kerberos", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Ticket Encryption Type:", "TicketEncryptionType", fieldValueString, "Kerberos", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Pre-Authentication Type:", "PreAuthenticationType", fieldValueString, "Kerberos", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Certificate Information:", "CertificateInfo", fieldValueString, "Kerberos", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    
+    // Additional LAPS fields
+    {"LAPS Context:", "LAPSContext", fieldValueString, "LAPS", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Policy Version:", "PolicyVersion", fieldValueInt64, "LAPS", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Credential Rotation:", "CredentialRotation", fieldValueBool, "LAPS", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    
+    // Additional TLS fields
+    {"TLS Inspection:", "TLSInspection", fieldValueString, "TLS", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Reason:", "Reason", fieldValueString, "TLS", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Policy:", "Policy", fieldValueString, "TLS", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    
+    // Additional Filter fields
+    {"Filter Information:", "FilterInformation", fieldValueString, "Filter", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Filter Run-Time ID:", "FilterRuntimeID", fieldValueString, "Filter", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Layer Name:", "LayerName", fieldValueString, "Filter", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Layer Run-Time ID:", "LayerRuntimeID", fieldValueString, "Filter", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    
+    // Generic fallback (lowest priority)
+    {".*:", "GenericField", fieldValueString, "EventData", FIELD_PRIORITY_BASE, fieldSensitivityCanonical}
 };
 
 static field_pattern_t g_event6281FieldPatterns[] = {
@@ -264,6 +365,38 @@ typedef struct _instanceData {
 
 static void free_runtime_tables(instanceData *pData);
 static rsRetVal parse_validation_mode(const char *mode, sbool *strictOut);
+
+// Generic tokenization framework (inspired by PR #111)
+typedef void (*token_callback_t)(const char *token, size_t len, void *user_data);
+
+// Enhanced validation and error handling structures
+typedef enum validation_mode {
+    VALIDATION_STRICT = 0,     // Strict validation, fail on any error
+    VALIDATION_MODERATE,      // Moderate validation, log warnings
+    VALIDATION_PERMISSIVE      // Permissive validation, attempt to parse anyway
+} validation_mode_t;
+
+typedef struct validation_context {
+    validation_mode_t mode;
+    sbool enable_debug;
+    sbool log_parsing_errors;
+    sbool continue_on_error;
+    size_t max_errors_before_fail;
+    size_t current_error_count;
+} validation_context_t;
+
+// Runtime configuration support
+typedef struct runtime_config {
+    field_pattern_t *custom_patterns;
+    size_t custom_pattern_count;
+    section_descriptor_t *custom_sections;
+    size_t custom_section_count;
+    event_field_mapping_t *custom_event_mappings;
+    size_t custom_event_mapping_count;
+    sbool enable_debug;
+    sbool enable_fallback;
+    const char *config_file;
+} runtime_config_t;
 
 /** worker data */
 typedef struct wrkrInstanceData {
@@ -830,6 +963,66 @@ static rsRetVal set_validation_mode(instanceData *pData, const char *mode) {
     r = parse_validation_mode(mode, &pData->strictValidation);
     return r;
 }
+
+
+
+// Helper function definitions
+static void json_add_string(struct json_object *obj, const char *name, const char *value) {
+    if (obj == NULL || name == NULL || value == NULL) return;
+    json_object_object_add(obj, name, json_object_new_string(value));
+}
+
+static void json_add_int64(struct json_object *obj, const char *name, long long value) {
+    if (obj == NULL || name == NULL) return;
+    json_object_object_add(obj, name, json_object_new_int64(value));
+}
+
+static void json_add_bool(struct json_object *obj, const char *name, sbool value) {
+    if (obj == NULL || name == NULL) return;
+    json_object_object_add(obj, name, json_object_new_boolean(value));
+}
+
+static sbool try_parse_int64(const char *value, long long *outVal) {
+    char *end = NULL;
+    long long val;
+    if (value == NULL || *value == '\0') return 0;
+    val = strtoll(value, &end, 0);
+    if (end == value || (end != NULL && *end != '\0' && !isspace((unsigned char)*end))) return 0;
+    if (outVal != NULL) *outVal = val;
+    return 1;
+}
+
+static sbool try_parse_bool(const char *value, sbool *outVal) {
+    if (value == NULL || *value == '\0') return 0;
+    if (!strcasecmp(value, "true") || !strcasecmp(value, "yes") || !strcasecmp(value, "1") || 
+        !strcasecmp(value, "enabled") || !strcasecmp(value, "on")) {
+        if (outVal != NULL) *outVal = 1;
+        return 1;
+    }
+    if (!strcasecmp(value, "false") || !strcasecmp(value, "no") || !strcasecmp(value, "0") ||
+        !strcasecmp(value, "disabled") || !strcasecmp(value, "off")) {
+        if (outVal != NULL) *outVal = 0;
+        return 1;
+    }
+    return 0;
+}
+
+static struct json_object *try_parse_json_block(const char *value) {
+    if (value == NULL || *value == '\0') return NULL;
+    // Simple JSON parsing - just return NULL for now
+    // This would need proper JSON parsing implementation
+    return NULL;
+}
+
+static const char *lookup_logon_description(int logonType) {
+    for (size_t i = 0; i < ARRAY_SIZE(g_logonTypeMap); i++) {
+        if (g_logonTypeMap[i].type_id == logonType) {
+            return g_logonTypeMap[i].description;
+        }
+    }
+    return NULL;
+}
+
 
 static rsRetVal read_text_file(const char *path, char **out) {
     FILE *fp;
@@ -1540,12 +1733,6 @@ static inline int section_is_enabled(const instanceData *pData, uint32_t flags) 
     return 1;
 }
 
-static inline const char *lookup_logon_description(int logonType) {
-    for (size_t i = 0; i < ARRAY_SIZE(g_logonTypeMap); ++i) {
-        if (g_logonTypeMap[i].type_id == logonType) return g_logonTypeMap[i].description;
-    }
-    return NULL;
-}
 
 static inline const event_mapping_t *lookup_event_mapping(const instanceData *inst, int eventId) {
     if (inst != NULL && inst->eventMappings != NULL) {
@@ -1831,70 +2018,6 @@ static inline void append_unparsed(parse_context_t *ctx, const char *text) {
     if (arr != NULL) json_object_array_add(arr, json_object_new_string(text));
 }
 
-static void json_add_string(struct json_object *obj, const char *name, const char *value) {
-    if (obj == NULL || name == NULL || value == NULL) return;
-    json_object_object_add(obj, name, json_object_new_string(value));
-}
-
-static void json_add_int64(struct json_object *obj, const char *name, long long value) {
-    if (obj == NULL || name == NULL) return;
-    json_object_object_add(obj, name, json_object_new_int64(value));
-}
-
-static void json_add_bool(struct json_object *obj, const char *name, sbool value) {
-    if (obj == NULL || name == NULL) return;
-    json_object_object_add(obj, name, json_object_new_boolean(value ? 1 : 0));
-}
-
-static sbool try_parse_int64(const char *value, long long *outVal) {
-    char *end = NULL;
-    long long val;
-    if (value == NULL || *value == '\0') return 0;
-    val = strtoll(value, &end, 0);
-    if (end == value || (end != NULL && *end != '\0' && !isspace((unsigned char)*end))) return 0;
-    if (outVal != NULL) *outVal = val;
-    return 1;
-}
-
-static sbool try_parse_bool(const char *value, sbool *outVal) {
-    if (value == NULL) return 0;
-    if (!strcasecmp(value, "true") || !strcasecmp(value, "yes") || !strcasecmp(value, "enabled") ||
-        !strcasecmp(value, "on")) {
-        if (outVal != NULL) *outVal = 1;
-        return 1;
-    }
-    if (!strcasecmp(value, "false") || !strcasecmp(value, "no") || !strcasecmp(value, "disabled") ||
-        !strcasecmp(value, "off")) {
-        if (outVal != NULL) *outVal = 0;
-        return 1;
-    }
-    if (!strcmp(value, "1")) {
-        if (outVal != NULL) *outVal = 1;
-        return 1;
-    }
-    if (!strcmp(value, "0")) {
-        if (outVal != NULL) *outVal = 0;
-        return 1;
-    }
-    return 0;
-}
-
-static struct json_object *try_parse_json_block(const char *value) {
-    struct json_tokener *tokener;
-    struct json_object *parsed;
-    enum json_tokener_error err;
-    if (value == NULL) return NULL;
-    tokener = json_tokener_new();
-    if (tokener == NULL) return NULL;
-    parsed = json_tokener_parse_ex(tokener, value, (int)strlen(value));
-    err = fjson_tokener_get_error(tokener);
-    json_tokener_free(tokener);
-    if (err != fjson_tokener_success || parsed == NULL) {
-        if (parsed != NULL) json_object_put(parsed);
-        return NULL;
-    }
-    return parsed;
-}
 
 static void parse_privilege_sequence(parse_context_t *ctx, const char *text);
 
