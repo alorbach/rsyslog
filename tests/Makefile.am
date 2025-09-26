@@ -507,7 +507,11 @@ TESTS += \
     mmsnarewinsec-basic.sh\
     mmsnarewinsec-json.sh\
     mmsnarewinsec-syslog.sh\
-    mmsnarewinsec-comprehensive.sh
+    mmsnarewinsec-comprehensive.sh\
+    mmsnarewinsec-generic-tokenization.sh\
+    mmsnarewinsec-runtime-config.sh\
+    mmsnarewinsec-enhanced-parsing.sh\
+    mmsnarewinsec-custom.sh
 endif
 
 if ENABLE_OMSENDERTRACK
