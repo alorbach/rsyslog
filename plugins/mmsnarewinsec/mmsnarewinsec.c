@@ -420,8 +420,20 @@ typedef struct _instanceData {
 
 static void free_runtime_tables(instanceData *pData);
 static rsRetVal parse_validation_mode(const char *mode, validation_mode_t *modeOut);
+static void cleanup_event_field_mapping(event_field_mapping_t *mapping);
+static sbool parse_section_behavior_string(const char *text, section_behavior_t *behavior);
+static sbool parse_field_value_type_string(const char *text, field_value_type_t *type);
+static sbool parse_field_sensitivity_string(const char *text, field_pattern_sensitivity_t *sensitivity);
+static uint32_t parse_section_flags_array(struct json_object *value, sbool *ok);
+static bool is_guid_format(const char *value) ATTR_UNUSED;
+static bool is_ip_address(const char *value) ATTR_UNUSED;
+static bool is_timestamp_format(const char *value) ATTR_UNUSED;
+static const char *section_behavior_to_string(section_behavior_t behavior) ATTR_UNUSED;
+static const char *field_value_type_to_string(field_value_type_t type) ATTR_UNUSED;
+static const char *field_sensitivity_to_string(field_pattern_sensitivity_t sensitivity) ATTR_UNUSED;
+static struct json_object *serialize_section_flags(uint32_t flags) ATTR_UNUSED;
 static rsRetVal load_configuration(runtime_config_t *config, const char *config_file);
-static rsRetVal save_configuration(const runtime_config_t *config, const char *config_file);
+static rsRetVal save_configuration(const runtime_config_t *config, const char *config_file) ATTR_UNUSED;
 static rsRetVal apply_runtime_configuration(instanceData *pData, const runtime_config_t *config);
 static rsRetVal handle_parsing_error(field_detection_context_t *ctx, const char *error_message, const char *context);
 
@@ -3215,8 +3227,9 @@ static rsRetVal handle_parsing_error(field_detection_context_t *ctx, const char 
     }
 
     if (ctx->validation->mode == VALIDATION_STRICT) {
-        if (!ctx->validation->continue_on_error) return RS_RET_PARSE_ERR;
-        if (ctx->validation->current_error_count >= ctx->validation->max_errors_before_fail) return RS_RET_PARSE_ERR;
+        if (!ctx->validation->continue_on_error) return RS_RET_INVALID_VALUE;
+        if (ctx->validation->current_error_count >= ctx->validation->max_errors_before_fail)
+            return RS_RET_INVALID_VALUE;
     }
 
     return RS_RET_OK;
@@ -3232,11 +3245,11 @@ static rsRetVal validate_field_count(
                       expected_count,
                       actual_count,
                       message != NULL ? message : "<n/a>");
-        return RS_RET_PARSE_ERR;
+        return RS_RET_INVALID_VALUE;
     }
     if (ctx->mode == VALIDATION_MODERATE && ctx->log_parsing_errors) {
         LogError(0,
-                 RS_RET_INVALID_STATE,
+                 RS_RET_INVALID_VALUE,
                  "mmsnarewinsec: field count mismatch - expected %zu, got %zu",
                  expected_count,
                  actual_count);
@@ -3256,10 +3269,10 @@ static rsRetVal validate_required_fields(const char *message,
             if (ctx->mode == VALIDATION_STRICT) {
                 if (ctx->enable_debug)
                     dbgprintf("mmsnarewinsec: missing required field '%s'\n", required_fields[i]);
-                return RS_RET_PARSE_ERR;
+                return RS_RET_INVALID_VALUE;
             }
             if (ctx->mode == VALIDATION_MODERATE && ctx->log_parsing_errors) {
-                LogError(0, RS_RET_INVALID_STATE, "mmsnarewinsec: missing required field '%s'", required_fields[i]);
+                LogError(0, RS_RET_INVALID_VALUE, "mmsnarewinsec: missing required field '%s'", required_fields[i]);
             }
         }
     }
