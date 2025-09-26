@@ -216,22 +216,22 @@ static const field_pattern_t g_coreFieldPatterns[] = {
     {"Network Information:", "NetworkInformation", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     {"Workstation Name:", "WorkstationName", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     {"Source Network Address:", "SourceNetworkAddress", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
-    {"Source Port:", "SourcePort", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Source Port:", "SourcePort", fieldValueInt64, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     {"Network Address:", "NetworkAddress", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     {"Client Address:", "ClientAddress", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
-    {"Client Port:", "ClientPort", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Client Port:", "ClientPort", fieldValueInt64, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     {"Destination Address:", "DestinationAddress", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
-    {"Destination Port:", "DestinationPort", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Destination Port:", "DestinationPort", fieldValueInt64, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     {"Protocol:", "Protocol", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     {"Direction:", "Direction", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     
     // Additional Process Information fields
     {"Process Information:", "ProcessInformation", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
-    {"Caller Process ID:", "CallerProcessID", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Caller Process ID:", "CallerProcessID", fieldValueInt64, "Process", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     {"Caller Process Name:", "CallerProcessName", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
-    {"New Process ID:", "NewProcessID", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"New Process ID:", "NewProcessID", fieldValueInt64, "Process", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     {"New Process Name:", "NewProcessName", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
-    {"Creator Process ID:", "CreatorProcessID", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Creator Process ID:", "CreatorProcessID", fieldValueInt64, "Process", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     {"Creator Process Name:", "CreatorProcessName", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     {"Process Command Line:", "ProcessCommandLine", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     
@@ -255,7 +255,7 @@ static const field_pattern_t g_coreFieldPatterns[] = {
     {"Policy Version:", "PolicyVersion", fieldValueString, "WDAC", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     {"Enforcement Mode:", "EnforcementMode", fieldValueString, "WDAC", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     {"User:", "User", fieldValueString, "WDAC", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
-    {"PID:", "ProcessID", fieldValueString, "WDAC", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"PID:", "ProcessID", fieldValueInt64, "WDAC", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     
     // Additional WUFB fields (Event ID 1243)
     {"Policy ID:", "PolicyID", fieldValueString, "WUFB", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
@@ -276,6 +276,7 @@ static const field_pattern_t g_coreFieldPatterns[] = {
     {"LAPS Context:", "LAPSContext", fieldValueString, "LAPS", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     {"Policy Version:", "PolicyVersion", fieldValueInt64, "LAPS", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     {"Credential Rotation:", "CredentialRotation", fieldValueBool, "LAPS", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"PolicyVersion", "PolicyVersion", fieldValueInt64, "LAPS", FIELD_PRIORITY_BASE + 10, fieldSensitivityCaseInsensitive},
     
     // Additional TLS fields
     {"TLS Inspection:", "TLSInspection", fieldValueString, "TLS", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
@@ -2397,13 +2398,48 @@ static void parse_semicolon_sequence(parse_context_t *ctx, struct json_object *s
         if (*key == '\0') continue;
         char *canon = normalize_label(key);
         if (canon == NULL) continue;
-        if (!strcmp(canon, "CredentialRotation")) {
-            sbool boolVal = 0;
-            if (try_parse_bool(val, &boolVal))
-                json_add_bool(sectionObj, canon, boolVal);
-            else
-                json_add_string(sectionObj, canon, val);
+        // Use type-aware field pattern system for all fields
+        const field_pattern_t *pattern = select_field_pattern(ctx, canon, canon);
+        if (pattern != NULL) {
+            // Use the field pattern's value type for proper parsing
+            switch (pattern->value_type) {
+                case fieldValueString:
+                    json_add_string(sectionObj, canon, val);
+                    break;
+                case fieldValueInt64: {
+                    long long intVal = 0;
+                    if (try_parse_int64(val, &intVal))
+                        json_add_int64(sectionObj, canon, intVal);
+                    else
+                        json_add_string(sectionObj, canon, val);
+                    break;
+                }
+                case fieldValueBool: {
+                    sbool boolVal = 0;
+                    if (try_parse_bool(val, &boolVal))
+                        json_add_bool(sectionObj, canon, boolVal);
+                    else
+                        json_add_string(sectionObj, canon, val);
+                    break;
+                }
+                case fieldValueJson: {
+                    struct json_object *jsonObj = try_parse_json_block(val);
+                    if (jsonObj != NULL)
+                        json_object_object_add(sectionObj, canon, jsonObj);
+                    else
+                        json_add_string(sectionObj, canon, val);
+                    break;
+                }
+                case fieldValueLogonType:
+                case fieldValueRemoteCredentialGuard:
+                case fieldValuePrivilegeList:
+                case fieldValueInt64WithRaw:
+                default:
+                    json_add_string(sectionObj, canon, val);
+                    break;
+            }
         } else {
+            // Fallback to string if no pattern found
             json_add_string(sectionObj, canon, val);
         }
         free(canon);

@@ -52,10 +52,10 @@ wait_shutdown
 content_check '"eventid":"4624"' $RSYSLOG_OUT_LOG
 content_check '"logon_type":"2"' $RSYSLOG_OUT_LOG
 content_check '"logon_type_name":"Interactive"' $RSYSLOG_OUT_LOG
-content_check '"laps_policy_version":"2"' $RSYSLOG_OUT_LOG
+content_check '"laps_policy_version":2' $RSYSLOG_OUT_LOG
 content_check '"laps_credential_rotation":"true"' $RSYSLOG_OUT_LOG
 content_check '"remote_credential_guard":"true"' $RSYSLOG_OUT_LOG
-content_check '"source_port":"59122"' $RSYSLOG_OUT_LOG
+content_check '"source_port":59122' $RSYSLOG_OUT_LOG
 
 # Validate WDAC fields
 content_check '"eventid":"6281"' $RSYSLOG_OUT_LOG
