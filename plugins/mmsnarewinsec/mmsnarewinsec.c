@@ -3034,16 +3034,21 @@ static rsRetVal parse_field_value_enhanced(const char *value,
                                            sbool *storedOut) {
     if (storedOut != NULL) *storedOut = 0;
     if (target == NULL || key == NULL || fdCtx == NULL || fdCtx->validation == NULL) return RS_RET_INVALID_PARAMS;
-    if (value == NULL || *value == '\0') return RS_RET_OK;
+    if (value == NULL || *value == '\0') {
+        if (storedOut != NULL) *storedOut = -1;
+        return RS_RET_OK;
+    }
 
     char *trimmed = trim_whitespace_enhanced(value);
     if (trimmed == NULL) return RS_RET_OUT_OF_MEMORY;
     if (*trimmed == '\0') {
         free(trimmed);
+        if (storedOut != NULL) *storedOut = -1;
         return RS_RET_OK;
     }
     if (is_placeholder_value(trimmed)) {
         free(trimmed);
+        if (storedOut != NULL) *storedOut = -1;
         return RS_RET_OK;
     }
 
@@ -3161,7 +3166,6 @@ static void dispatch_field(
     if (dest == NULL) dest = ensure_event_data(ctx);
 
     if (dest != NULL) {
-        ctx->totalFields++;
         sbool stored = 0;
         rsRetVal r;
         if (pattern != NULL) {
@@ -3186,9 +3190,10 @@ static void dispatch_field(
         }
         if (r != RS_RET_OK) {
             ctx->failedParses++;
-        } else if (stored) {
+        } else if (stored > 0) {
+            ctx->totalFields++;
             ctx->successfulParses++;
-        } else {
+        } else if (stored == 0) {
             ctx->failedParses++;
         }
     }

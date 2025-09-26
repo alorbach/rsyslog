@@ -135,6 +135,8 @@ Error Handling & Observability
 * ``!win!Validation!Errors`` captures parse-time warnings when ``validation.mode``
   is ``moderate`` or ``strict`` and ``!win!Stats!ParsingStats`` exposes
   ``total_fields``, ``successful_parses`` and ``failed_parses`` for telemetry.
+* Placeholder values such as ``-`` or ``N/A`` are ignored and therefore neither
+  counted as stored fields nor as parse failures in the telemetry counters.
 
 Configuration
 -------------
