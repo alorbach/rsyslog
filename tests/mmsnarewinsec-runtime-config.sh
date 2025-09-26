@@ -21,7 +21,13 @@ template(name="runtime_config_json" type="list" option.jsonf="on") {
     property(outname="source_port" name="$!win!Network!SourcePort" format="jsonf")
 }
 
-action(type="mmsnarewinsec")
+action(type="mmsnarewinsec" 
+       container="!win"
+       enable.laps="on"
+       enable.network="on"
+       enable.tls="on"
+       enable.wdac="on"
+       validation.mode="permissive")
 action(type="omfile" file="'$RSYSLOG_OUT_LOG'" template="runtime_config_json")
 '
 
@@ -44,7 +50,7 @@ content_check '"eventid":"4624"' $RSYSLOG_OUT_LOG
 content_check '"logon_type":"2"' $RSYSLOG_OUT_LOG
 content_check '"logon_type_name":"Interactive"' $RSYSLOG_OUT_LOG
 content_check '"laps_policy_version":"2"' $RSYSLOG_OUT_LOG
-content_check '"laps_credential_rotation":"True"' $RSYSLOG_OUT_LOG
+content_check '"laps_credential_rotation":"true"' $RSYSLOG_OUT_LOG
 content_check '"remote_credential_guard":"true"' $RSYSLOG_OUT_LOG
 content_check '"source_port":"59122"' $RSYSLOG_OUT_LOG
 

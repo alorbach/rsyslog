@@ -73,7 +73,7 @@ template(name="custom_definitions_json" type="list" option.jsonf="on") {
 }
 
 input(type="imtcp" port="0" listenPortFileName="'$RSYSLOG_DYNNAME'.tcpflood_port")
-action(type="mmsnarewinsec")
+action(type="mmsnarewinsec" definition.file="'$DEF_FILE'")
 action(type="omfile" file="'$RSYSLOG_OUT_LOG'" template="custom_definitions_json")
 '
 

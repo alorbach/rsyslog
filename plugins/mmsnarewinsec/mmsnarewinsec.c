@@ -274,8 +274,7 @@ static const field_pattern_t g_coreFieldPatterns[] = {
     
     // Additional LAPS fields
     {"LAPS Context:", "LAPSContext", fieldValueString, "LAPS", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
-    {"Policy Version:", "PolicyVersion", fieldValueInt64, "LAPS", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
-    {"Credential Rotation:", "CredentialRotation", fieldValueBool, "LAPS", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"CredentialRotation", "CredentialRotation", fieldValueBool, "LAPS", FIELD_PRIORITY_BASE + 10, fieldSensitivityCaseInsensitive},
     {"PolicyVersion", "PolicyVersion", fieldValueInt64, "LAPS", FIELD_PRIORITY_BASE + 10, fieldSensitivityCaseInsensitive},
     
     // Additional TLS fields
@@ -528,7 +527,9 @@ static void unescape_hash_sequences(char *s) {
     char *src = s;
     char *dst = s;
     while (*src != '\0') {
-        if (src[0] == '#' && src[1] >= '0' && src[1] <= '7' && src[2] >= '0' && src[2] <= '7' && src[3] >= '0' &&
+        // Check if we have at least 4 characters remaining to avoid buffer overflow
+        if (src[0] == '#' && src[1] != '\0' && src[2] != '\0' && src[3] != '\0' &&
+            src[1] >= '0' && src[1] <= '7' && src[2] >= '0' && src[2] <= '7' && src[3] >= '0' &&
             src[3] <= '7') {
             int val = ((src[1] - '0') << 6) | ((src[2] - '0') << 3) | (src[3] - '0');
             *dst++ = (char)val;

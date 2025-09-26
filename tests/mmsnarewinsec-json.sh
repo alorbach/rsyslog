@@ -39,7 +39,7 @@ shutdown_when_empty
 wait_shutdown
 
 # Check JSON output format
-content_check '{"eventid":"4624", "logontype":"2", "logontypename":"Interactive", "lapspolicyversion":"2", "lapscredentialrotation":"True", "tlsreason":"", "wdacpolicyversion":"", "wdacpid":"", "wufbpolicyid":"", "remotecredentialguard":"true", "networksourceport":"59122"}' $RSYSLOG_OUT_LOG
+content_check '{"eventid":"4624", "logontype":"2", "logontypename":"Interactive", "lapspolicyversion":"2", "lapscredentialrotation":"true", "tlsreason":"", "wdacpolicyversion":"", "wdacpid":"", "wufbpolicyid":"", "remotecredentialguard":"true", "networksourceport":"59122"}' $RSYSLOG_OUT_LOG
 content_check '{"eventid":"5157", "logontype":"", "logontypename":"", "lapspolicyversion":"", "lapscredentialrotation":"", "tlsreason":"Unapproved Root Authority", "wdacpolicyversion":"", "wdacpid":"", "wufbpolicyid":"", "remotecredentialguard":"", "networksourceport":"57912"}' $RSYSLOG_OUT_LOG
 content_check '{"eventid":"6281", "logontype":"", "logontypename":"", "lapspolicyversion":"", "lapscredentialrotation":"", "tlsreason":"", "wdacpolicyversion":"3.2.0", "wdacpid":"4128", "wufbpolicyid":"", "remotecredentialguard":"", "networksourceport":""}' $RSYSLOG_OUT_LOG
 content_check '{"eventid":"1243", "logontype":"", "logontypename":"", "lapspolicyversion":"", "lapscredentialrotation":"", "tlsreason":"", "wdacpolicyversion":"", "wdacpid":"", "wufbpolicyid":"2f9c4414-3f71-4f2b-9a7e-cc98a6d96970", "remotecredentialguard":"", "networksourceport":""}' $RSYSLOG_OUT_LOG
