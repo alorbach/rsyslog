@@ -48,7 +48,7 @@ injectmsg_file ${RSYSLOG_DYNNAME}.input
 shutdown_when_empty
 wait_shutdown
 
-content_check '4624,2,Interactive,2,true,,,,,true,59122' $RSYSLOG_OUT_LOG
+content_check '4624,2,Interactive,2,True,,,,,true,59122' $RSYSLOG_OUT_LOG
 content_check '5157,,,,,Unapproved Root Authority,,,,,57912' $RSYSLOG_OUT_LOG
 content_check '6281,,,,,,3.2.0,4128,,,' $RSYSLOG_OUT_LOG
 content_check '1243,,,,,,,,2f9c4414-3f71-4f2b-9a7e-cc98a6d96970,,' $RSYSLOG_OUT_LOG
