@@ -263,6 +263,7 @@ Parameters
    "``enable.wdac``", "binary", "``on``", "Toggle WDAC enrichment (``Policy Name``, ``Policy Version``, etc.)."
    "``emit.rawpayload``", "binary", "``on``", "When enabled, stores the original payload in ``!win!Raw`` (or ``!win!RawJSON`` for Snare JSON records)."
    "``emit.debugjson``", "binary", "``off``", "Adds an empty ``Unparsed`` array even when all sections are recognized, simplifying downstream assertions."
+   "``runtime.config``", "string", "``-``", "Path to a JSON runtime configuration file that controls validation behaviour, optional fallbacks and inline definition extensions."
 
 Extracted fields
 ----------------
@@ -298,6 +299,9 @@ A non-exhaustive list of notable properties exposed by the module:
   ``!win!DetailedAuthentication!PackageName``,
   ``!win!DetailedAuthentication!KeyLength``
 * ``!win!Privileges`` (retains privilege enumerations for downstream review)
+* ``!win!Validation!Errors`` and ``!win!Stats!ParsingStats`` summarise parser
+  health, exposing the number of normalised fields and any validation messages
+  emitted while processing the event.
 * ``!win!LAPS!PolicyVersion``, ``!win!LAPS!CredentialRotation``
 * ``!win!TLSInspection!Reason``, ``!win!TLSInspection!Policy``
 * ``!win!WDAC!PolicyName``, ``!win!WDAC!PolicyVersion``,
@@ -352,6 +356,14 @@ New module parameters
     convenient for smaller overrides delivered directly in the rsyslog config.
     The value is parsed after ``definition.file`` so inline snippets can adjust
     or replace objects loaded from disk.
+
+``runtime.config``
+    Optional JSON document that combines feature toggles (for example
+    ``enable_debug`` and ``enable_fallback``), validation preferences and the
+    same ``sections``/``fields``/``eventFields``/``events`` blocks supported by
+    ``definition.file``. The runtime configuration is applied after any inline
+    or file-based definitions, making it ideal for per-environment overrides
+    without editing the main rsyslog configuration.
 
 ``validation.mode``
     Controls how the loader reacts to malformed entries. ``permissive`` (the
