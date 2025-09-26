@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <json.h>
 #include <json_object_iterator.h>
+#include <json_tokener.h>
 #include <limits.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -1615,7 +1616,7 @@ static rsRetVal load_event_metadata_definitions(instanceData *pData, struct json
 static rsRetVal load_custom_definition_text(instanceData *pData, const char *jsonText, const char *sourceLabel) {
     struct json_tokener *tokener;
     struct json_object *root;
-    enum json_tokener_error err;
+    enum fjson_tokener_error err;
     rsRetVal r = RS_RET_OK;
     if (jsonText == NULL || pData == NULL) return RS_RET_INVALID_PARAMS;
     tokener = json_tokener_new();
@@ -1685,45 +1686,64 @@ static rsRetVal load_custom_definition_file(instanceData *pData, const char *pat
 static rsRetVal load_configuration(runtime_config_t *config, const char *config_file) {
     struct json_tokener *tok = NULL;
     struct json_object *root = NULL;
+    struct json_object *options = NULL;
+    struct json_object *value = NULL;
+    enum fjson_tokener_error err;
     rsRetVal r;
     char *content = NULL;
-    if (config == NULL || config_file == NULL) return RS_RET_INVALID_PARAMS;
+
+    if (config == NULL) return RS_RET_INVALID_PARAMS;
+    if (config_file == NULL) return RS_RET_OK;
+
     free_runtime_config(config);
+
     r = read_text_file(config_file, &content);
     if (r != RS_RET_OK) return r;
-    config->config_file = strdup(config_file);
-    if (config->config_file == NULL) {
+
+    tok = json_tokener_new();
+    if (tok == NULL) {
         free(content);
         return RS_RET_OUT_OF_MEMORY;
     }
-    config->raw_text = content;
-    tok = json_tokener_new();
-    if (tok == NULL) return RS_RET_OUT_OF_MEMORY;
+
     root = json_tokener_parse_ex(tok, content, (int)strlen(content));
-    if (json_tokener_get_error(tok) != json_tokener_success || root == NULL) {
-        json_tokener_free(tok);
+    err = fjson_tokener_get_error(tok);
+    if (err != fjson_tokener_success || root == NULL || !json_object_is_type(root, json_type_object)) {
+        LogError(0, RS_RET_PARSE_ERR, "mmsnarewinsec: failed to parse runtime configuration '%s': %s", config_file,
+                 fjson_tokener_error_desc(err));
         if (root != NULL) json_object_put(root);
-        return RS_RET_OK;
+        json_tokener_free(tok);
+        free(content);
+        return RS_RET_PARSE_ERR;
     }
+
+    config->config_file = strdup(config_file);
+    if (config->config_file == NULL) {
+        json_object_put(root);
+        json_tokener_free(tok);
+        free(content);
+        return RS_RET_OUT_OF_MEMORY;
+    }
+
+    config->raw_text = content;
     config->enable_debug = false;
     config->enable_fallback = true;
-    if (json_object_is_type(root, json_type_object)) {
-        struct json_object *options = NULL;
-        struct json_object *value;
-        if (json_object_object_get_ex(root, "options", &options) && json_object_is_type(options, json_type_object)) {
-            if (json_object_object_get_ex(options, "enable_debug", &value) && json_object_is_type(value, json_type_boolean))
-                config->enable_debug = json_object_get_boolean(value) != 0;
-            if (json_object_object_get_ex(options, "enable_fallback", &value) &&
-                json_object_is_type(value, json_type_boolean))
-                config->enable_fallback = json_object_get_boolean(value) != 0;
-        }
-        if (json_object_object_get_ex(root, "enable_debug", &value) && json_object_is_type(value, json_type_boolean))
+
+    if (json_object_object_get_ex(root, "options", &options) && json_object_is_type(options, json_type_object)) {
+        if (json_object_object_get_ex(options, "enable_debug", &value) && json_object_is_type(value, json_type_boolean))
             config->enable_debug = json_object_get_boolean(value) != 0;
-        if (json_object_object_get_ex(root, "enable_fallback", &value) && json_object_is_type(value, json_type_boolean))
+        if (json_object_object_get_ex(options, "enable_fallback", &value) && json_object_is_type(value, json_type_boolean))
             config->enable_fallback = json_object_get_boolean(value) != 0;
     }
+
+    if (json_object_object_get_ex(root, "enable_debug", &value) && json_object_is_type(value, json_type_boolean))
+        config->enable_debug = json_object_get_boolean(value) != 0;
+    if (json_object_object_get_ex(root, "enable_fallback", &value) && json_object_is_type(value, json_type_boolean))
+        config->enable_fallback = json_object_get_boolean(value) != 0;
+
     json_object_put(root);
     json_tokener_free(tok);
+
     return RS_RET_OK;
 }
 
