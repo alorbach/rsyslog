@@ -4,7 +4,8 @@ on:
   pull_request:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || 
+    github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -13,7 +14,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Detect changed files
         id: code_changes
@@ -36,8 +37,8 @@ jobs:
             echo "::error ::Code style violations detected."
             echo "Contributors: to fix this, run './devtools/format-code.sh' locally"
             echo "and push the updated commit to your branch."
-            echo "Ensure 'Allow edits from maintainers' is enabled on this PR so maintainers"
+            echo "Ensure 'Allow edits from maintainers' is enabled on this PR so"
+            echo "maintainers"
             echo "can help apply formatting fixes if needed."
             exit 1
           fi
-

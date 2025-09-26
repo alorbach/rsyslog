@@ -42,6 +42,9 @@ jobs:
       env:
         # Define your available labels here, separated by commas
         AVAILABLE_LABELS: "bug,feature,documentation,question,enhancement,performance,security,configuration"
+        # Pass potentially untrusted data through environment variables
+        ISSUE_TITLE: ${{ github.event.issue.title }}
+        ISSUE_BODY: ${{ github.event.issue.body }}
       run: |
         # Initialize variables
         ISSUE_NUMBER=""
@@ -51,8 +54,8 @@ jobs:
         # Determine context based on trigger event
         if [[ "${{ github.event_name }}" == "issues" ]]; then
           ISSUE_NUMBER="${{ github.event.issue.number }}"
-          ISSUE_TITLE="${{ github.event.issue.title }}"
-          ISSUE_BODY="${{ github.event.issue.body }}"
+          ISSUE_TITLE="$ISSUE_TITLE"
+          ISSUE_BODY="$ISSUE_BODY"
           echo "Triggered by issue creation event."
         elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
           # For manual dispatch, use inputs
@@ -65,7 +68,6 @@ jobs:
         # Set output variables for use in subsequent steps using GITHUB_OUTPUT file
         echo "ISSUE_NUMBER=${ISSUE_NUMBER}" >> "$GITHUB_OUTPUT"
         echo "ISSUE_TITLE=${ISSUE_TITLE}" >> "$GITHUB_OUTPUT"
-        
         # --- FIX for multiline ISSUE_BODY using EOF delimiter ---
         echo "ISSUE_BODY<<EOF_BODY_TEXT" >> "$GITHUB_OUTPUT"
         echo "${ISSUE_BODY}" >> "$GITHUB_OUTPUT"
@@ -99,7 +101,7 @@ jobs:
 
         genai.configure(api_key=api_key)
         # Using gemini-2.0-flash as per your modification
-        model = genai.GenerativeModel('gemini-2.0-flash') 
+        model = genai.GenerativeModel('gemini-2.0-flash')
 
         issue_title = os.environ['ISSUE_TITLE']
         issue_body = os.environ['ISSUE_BODY']
@@ -156,12 +158,12 @@ jobs:
     - name: Add label to issue
       # Only attempt to add label if a valid one was suggested AND an issue number is available
       if: steps.gemini_call.outputs.SUGGESTED_LABEL != 'no label' && steps.get_issue_context.outputs.ISSUE_NUMBER != ''
-      uses: actions/github-script@v6
+      uses: actions/github-script@v7
       with:
         script: |
           // Access variables directly from process.env, as they are passed in the 'env' block
           const label = process.env.SUGGESTED_LABEL;
-          const issue_number = process.env.ISSUE_NUMBER; 
+          const issue_number = process.env.ISSUE_NUMBER;
 
           // These debug lines should now show the correct 'feature' label
           console.log(`DEBUG: Value of label (from process.env.SUGGESTED_LABEL): "${label}"`);
