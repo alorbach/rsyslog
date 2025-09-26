@@ -598,16 +598,21 @@ static rsRetVal tokenize_on_multispace(
             while (j < len && (ptr[j] == ' ' || ptr[j] == '\t')) ++j;
             size_t spaces = j - i;
 
-            if (spaces >= 2 || ptr[i] == '\t') {
-                if (in_token) {
-                    callback(ptr + start, i - start, user_data);
-                    in_token = false;
+            bool treat_as_delim = false;
+            if (ptr[i] == '\t') {
+                treat_as_delim = true;
+            } else if (spaces >= 2) {
+                bool colon_precedes = in_token && i > start && ptr[i - 1] == ':';
+                if (!colon_precedes) {
+                    treat_as_delim = true;
                 }
-                i = j;
-                continue;
             }
 
-            if (looks_like_label_start(ptr + j, ptr + len)) {
+            if (!treat_as_delim && looks_like_label_start(ptr + j, ptr + len)) {
+                treat_as_delim = true;
+            }
+
+            if (treat_as_delim) {
                 if (in_token) {
                     callback(ptr + start, i - start, user_data);
                     in_token = false;
