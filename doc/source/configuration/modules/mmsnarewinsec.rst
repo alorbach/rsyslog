@@ -282,6 +282,10 @@ while ``enable_fallback=false`` disables permissive recovery when
 ``validation.mode="permissive"`` is in use, allowing deployments to tighten
 parsing rules incrementally.
 
+If the referenced runtime configuration file is missing the module now emits a
+debug message and keeps operating with the compiled-in defaults so that rolling
+deployments do not fail during staged roll-outs.
+
 Validation Modes & Observability
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

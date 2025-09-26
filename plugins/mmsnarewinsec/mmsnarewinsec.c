@@ -28,6 +28,7 @@
 #include <string.h>
 #include <strings.h>
 #include <stdio.h>
+#include <sys/stat.h>
 
 #include "conf.h"
 #include "datetime.h"
@@ -1691,11 +1692,25 @@ static rsRetVal load_configuration(runtime_config_t *config, const char *config_
     enum fjson_tokener_error err;
     rsRetVal r;
     char *content = NULL;
+    struct stat st;
 
     if (config == NULL) return RS_RET_INVALID_PARAMS;
     if (config_file == NULL) return RS_RET_OK;
 
     free_runtime_config(config);
+
+    if (stat(config_file, &st) != 0) {
+        if (errno == ENOENT) {
+            dbgprintf("mmsnarewinsec: runtime configuration '%s' not found, continuing with defaults\n", config_file);
+            return RS_RET_OK;
+        }
+        LogError(errno, RS_RET_IO_ERROR, "mmsnarewinsec: failed to stat runtime configuration '%s'", config_file);
+        return RS_RET_IO_ERROR;
+    }
+    if (!S_ISREG(st.st_mode)) {
+        LogError(0, RS_RET_INVALID_PARAMS, "mmsnarewinsec: runtime configuration '%s' is not a regular file", config_file);
+        return RS_RET_INVALID_PARAMS;
+    }
 
     r = read_text_file(config_file, &content);
     if (r != RS_RET_OK) return r;
