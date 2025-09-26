@@ -140,6 +140,7 @@ content_check '"newlogonaccountname":"SYSTEM"' $RSYSLOG_OUT_LOG.json
 content_check '"newlogonaccountdomain":"NT AUTHORITY"' $RSYSLOG_OUT_LOG.json
 content_check '"logonprocess":"Advapi"' $RSYSLOG_OUT_LOG.json
 content_check '"authenticationpackage":"Negotiate"' $RSYSLOG_OUT_LOG.json
+content_check '"packagename":"-"' $RSYSLOG_OUT_LOG.json
 
 # Validate structured JSON extraction from Windows 2025 data
 content_check '"categorytext":"Audit Policy Change"' $RSYSLOG_OUT_LOG.json
