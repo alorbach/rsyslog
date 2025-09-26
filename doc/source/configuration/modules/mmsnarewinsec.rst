@@ -46,6 +46,12 @@ Highlights
   Credential Guard and LAPS credential rotation indicators.
 * Stores any unmapped segments in ``!win!Unparsed`` to ensure the payload is
   preserved for later review.
+* Supports runtime JSON overrides through the ``runtime.config`` parameter so
+  additional sections, field patterns, and event mappings can be loaded without
+  recompiling the module.
+* Emits ``Validation`` and ``Stats`` helper blocks that expose parsing errors
+  and field counters for monitoring pipelines when ``debugjson="on"`` or a
+  validation mode other than ``permissive`` is in use.
 
 Build & Runtime Requirements
 -----------------------------
@@ -242,8 +248,51 @@ This configuration demonstrates comprehensive field extraction using a ruleset a
    }
 
    ruleset(name="winsec") {
-       action(type="mmsnarewinsec")
-       action(type="omfile" file="/var/log/winsec.json" template="jsonfmt")
+   action(type="mmsnarewinsec")
+   action(type="omfile" file="/var/log/winsec.json" template="jsonfmt")
+
+Runtime Configuration Overrides
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The module can load supplemental field patterns, section descriptors and event
+metadata at runtime so that administrators do not need to rebuild rsyslog when
+new Windows telemetry appears.  The ``runtime.config`` parameter accepts a path
+to a JSON document that uses the same schema as the inline ``definition.json``
+payloads (``sections``, ``fields``, ``eventFields`` and ``events``).  A minimal
+example looks like this:
+
+.. code-block:: json
+
+   {
+     "options": {
+       "enable_debug": true,
+       "enable_fallback": false
+     },
+     "fields": {
+       "Custom Section": [
+         {"pattern": "Custom Field", "canonical": "CustomField", "section": "EventData"}
+       ]
+     }
+   }
+
+Module-level ``module(load="mmsnarewinsec" runtime.config="/etc/rsyslog.d/winsec.json")``
+definitions are applied first; action-level overrides are layered on top for
+fine-grained pipelines.  The ``enable_debug`` flag forces verbose diagnostics
+while ``enable_fallback=false`` disables permissive recovery when
+``validation.mode="permissive"`` is in use, allowing deployments to tighten
+parsing rules incrementally.
+
+Validation Modes & Observability
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``validation.mode`` parameter accepts ``strict``, ``moderate`` (default) or
+``permissive``.  Strict mode aborts parsing when required tokens are missing,
+moderate mode emits diagnostic entries in ``!win!Validation!Errors`` and
+permissive mode records errors while continuing unless a runtime configuration
+explicitly disables fallback.  When ``debugjson="on"`` or runtime validation is
+active, ``!win!Stats!ParsingStats`` is populated with ``total_fields``,
+``successful_parses`` and ``errors`` counters so monitoring pipelines can track
+parser quality.
    }
 
    input(type="imtcp" port="5514" ruleset="winsec")
