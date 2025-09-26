@@ -158,26 +158,33 @@ static const field_pattern_t g_coreFieldPatterns[] = {
     {"AccountDomain", "AccountDomain", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
     {"LogonID", "LogonID", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
     {"LinkedLogonID", "LinkedLogonID", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
-    {"NetworkAccountName", "NetworkAccountName", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"NetworkAccountName", "NetworkAccountName", fieldValueString, NULL, FIELD_PRIORITY_BASE,
+     fieldSensitivityCanonical},
     {"LogonGUID", "LogonGUID", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
     {"ProcessID", "ProcessID", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
     {"ProcessName", "ProcessName", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
-    {"ProcessCommandLine", "ProcessCommandLine", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
-    {"TokenElevationType", "TokenElevationType", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"ProcessCommandLine", "ProcessCommandLine", fieldValueString, NULL, FIELD_PRIORITY_BASE,
+     fieldSensitivityCanonical},
+    {"TokenElevationType", "TokenElevationType", fieldValueString, NULL, FIELD_PRIORITY_BASE,
+     fieldSensitivityCanonical},
     {"MandatoryLabel", "MandatoryLabel", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
     {"WorkstationName", "WorkstationName", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
-    {"SourceNetworkAddress", "SourceNetworkAddress", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"SourceNetworkAddress", "SourceNetworkAddress", fieldValueString, NULL, FIELD_PRIORITY_BASE,
+     fieldSensitivityCanonical},
     {"SourcePort", "SourcePort", fieldValueInt64, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
     {"ClientPort", "ClientPort", fieldValueInt64, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
     {"DestinationPort", "DestinationPort", fieldValueInt64, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
     {"LogonProcess", "LogonProcess", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
-    {"AuthenticationPackage", "AuthenticationPackage", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"AuthenticationPackage", "AuthenticationPackage", fieldValueString, NULL, FIELD_PRIORITY_BASE,
+     fieldSensitivityCanonical},
     {"TransitedServices", "TransitedServices", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
     {"PackageName", "PackageName", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
-    {"RestrictedAdminMode", "RestrictedAdminMode", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"RestrictedAdminMode", "RestrictedAdminMode", fieldValueString, NULL, FIELD_PRIORITY_BASE,
+     fieldSensitivityCanonical},
     {"VirtualAccount", "VirtualAccount", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
     {"ElevatedToken", "ElevatedToken", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
-    {"ImpersonationLevel", "ImpersonationLevel", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"ImpersonationLevel", "ImpersonationLevel", fieldValueString, NULL, FIELD_PRIORITY_BASE,
+     fieldSensitivityCanonical},
     {"KeyLength", "KeyLength", fieldValueInt64, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
     {"RemoteCredentialGuard", "RemoteCredentialGuard", fieldValueRemoteCredentialGuard, NULL, FIELD_PRIORITY_BASE,
      fieldSensitivityCanonical},
@@ -186,8 +193,10 @@ static const field_pattern_t g_coreFieldPatterns[] = {
 
 static field_pattern_t g_event6281FieldPatterns[] = {
     {"PolicyName", "PolicyName", fieldValueString, "WDAC", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
-    {"PolicyVersion", "PolicyVersion", fieldValueString, "WDAC", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
-    {"EnforcementMode", "EnforcementMode", fieldValueString, "WDAC", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
+    {"PolicyVersion", "PolicyVersion", fieldValueString, "WDAC", FIELD_PRIORITY_EVENT_OVERRIDE,
+     fieldSensitivityCanonical},
+    {"EnforcementMode", "EnforcementMode", fieldValueString, "WDAC", FIELD_PRIORITY_EVENT_OVERRIDE,
+     fieldSensitivityCanonical},
     {"User", "User", fieldValueString, "WDAC", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
     {"PID", "PID", fieldValueInt64WithRaw, "WDAC", FIELD_PRIORITY_EVENT_OVERRIDE, fieldSensitivityCanonical},
 };
@@ -402,9 +411,23 @@ static inline char *normalize_label(const char *label) {
     char *out = malloc(len + 1);
     size_t j = 0;
     sbool upperNext = 1;
+    unsigned int parenDepth = 0;
     if (out == NULL) return NULL;
     for (size_t i = 0; i < len; ++i) {
         unsigned char c = (unsigned char)label[i];
+        if (c == '(') {
+            ++parenDepth;
+            upperNext = 1;
+            continue;
+        }
+        if (c == ')' && parenDepth > 0) {
+            --parenDepth;
+            upperNext = 1;
+            continue;
+        }
+        if (parenDepth > 0) {
+            continue;
+        }
         if (isalnum(c)) {
             if (upperNext)
                 out[j++] = (char)toupper(c);
@@ -556,7 +579,8 @@ static rsRetVal copy_event_field_mapping(event_field_mapping_t *dst, const event
     return RS_RET_OK;
 }
 
-static rsRetVal append_section_descriptor_owned(section_descriptor_t **array, size_t *count,
+static rsRetVal append_section_descriptor_owned(section_descriptor_t **array,
+                                                size_t *count,
                                                 section_descriptor_t *desc) {
     section_descriptor_t *tmp;
     if (array == NULL || count == NULL || desc == NULL) return RS_RET_INVALID_PARAMS;
@@ -587,7 +611,8 @@ static rsRetVal append_field_pattern_owned(field_pattern_t **array, size_t *coun
     return RS_RET_OK;
 }
 
-static rsRetVal append_event_field_mapping_owned(event_field_mapping_t **array, size_t *count,
+static rsRetVal append_event_field_mapping_owned(event_field_mapping_t **array,
+                                                 size_t *count,
                                                  event_field_mapping_t *mapping) {
     event_field_mapping_t *tmp;
     if (array == NULL || count == NULL || mapping == NULL) return RS_RET_INVALID_PARAMS;
@@ -934,7 +959,8 @@ static sbool parse_field_sensitivity_string(const char *text, field_pattern_sens
         *sensitivity = fieldSensitivityCaseSensitive;
         return 1;
     }
-    if (!strcasecmp(text, "case_insensitive") || !strcasecmp(text, "case-insensitive") || !strcasecmp(text, "insensitive")) {
+    if (!strcasecmp(text, "case_insensitive") || !strcasecmp(text, "case-insensitive") ||
+        !strcasecmp(text, "insensitive")) {
         *sensitivity = fieldSensitivityCaseInsensitive;
         return 1;
     }
@@ -992,8 +1018,7 @@ static rsRetVal load_section_definitions(instanceData *pData, struct json_object
         desc.behavior = sectionBehaviorStandard;
         desc.priority = SECTION_PRIORITY_DEFAULT;
         desc.sensitivity = fieldSensitivityCaseSensitive;
-        if (!json_object_object_get_ex(entry, "pattern", &value) ||
-            !json_object_is_type(value, json_type_string)) {
+        if (!json_object_object_get_ex(entry, "pattern", &value) || !json_object_is_type(value, json_type_string)) {
             r = report_validation_issue(pData, context, "missing pattern");
             if (r != RS_RET_OK) return r;
             continue;
@@ -1085,8 +1110,7 @@ static rsRetVal load_field_definitions(instanceData *pData, struct json_object *
         pattern.value_type = fieldValueString;
         pattern.priority = FIELD_PRIORITY_BASE;
         pattern.sensitivity = fieldSensitivityCaseSensitive;
-        if (!json_object_object_get_ex(entry, "pattern", &value) ||
-            !json_object_is_type(value, json_type_string)) {
+        if (!json_object_object_get_ex(entry, "pattern", &value) || !json_object_is_type(value, json_type_string)) {
             r = report_validation_issue(pData, context, "missing pattern");
             if (r != RS_RET_OK) return r;
             continue;
@@ -1208,8 +1232,7 @@ static rsRetVal load_event_field_definitions(instanceData *pData, struct json_ob
             patternEntry.value_type = fieldValueString;
             patternEntry.priority = FIELD_PRIORITY_EVENT_OVERRIDE;
             patternEntry.sensitivity = fieldSensitivityCaseSensitive;
-            if (!json_object_object_get_ex(patternObj, "pattern", &pv) ||
-                !json_object_is_type(pv, json_type_string)) {
+            if (!json_object_object_get_ex(patternObj, "pattern", &pv) || !json_object_is_type(pv, json_type_string)) {
                 r = report_validation_issue(pData, itemContext, "missing pattern");
                 if (r != RS_RET_OK) return r;
                 continue;
@@ -1267,7 +1290,8 @@ static rsRetVal load_event_field_definitions(instanceData *pData, struct json_ob
                     continue;
                 }
             }
-            if (json_object_object_get_ex(patternObj, "sensitivity", &pv) && json_object_is_type(pv, json_type_string)) {
+            if (json_object_object_get_ex(patternObj, "sensitivity", &pv) &&
+                json_object_is_type(pv, json_type_string)) {
                 const char *sens = json_object_get_string(pv);
                 if (!parse_field_sensitivity_string(sens, &patternEntry.sensitivity)) {
                     cleanup_field_pattern(&patternEntry);
@@ -2031,11 +2055,8 @@ static void write_field_value(parse_context_t *ctx,
     }
 }
 
-static void dispatch_field(parse_context_t *ctx,
-                           struct json_object *target,
-                           const char *sectionName,
-                           const char *label,
-                           const char *value) {
+static void dispatch_field(
+    parse_context_t *ctx, struct json_object *target, const char *sectionName, const char *label, const char *value) {
     (void)sectionName;
     if (ctx == NULL || label == NULL) return;
     if (value == NULL) value = "";
@@ -2615,8 +2636,7 @@ static void populate_event_metadata(parse_context_t *ctx, char **tokens, size_t 
         }
     }
     const char *auditResult = NULL;
-    if (tokenCount > eventTypeIdx && !is_placeholder(tokens[eventTypeIdx]))
-        auditResult = tokens[eventTypeIdx];
+    if (tokenCount > eventTypeIdx && !is_placeholder(tokens[eventTypeIdx])) auditResult = tokens[eventTypeIdx];
     apply_event_mapping(ctx, auditResult);
 }
 
@@ -2899,10 +2919,10 @@ static struct cnfparamdescr modpdescr[] = {{"definition.file", eCmdHdlrString, 0
 static struct cnfparamblk modpblk = {CNFPARAMBLK_VERSION, ARRAY_SIZE(modpdescr), modpdescr};
 
 static struct cnfparamdescr actpdescr[] = {
-    {"container", eCmdHdlrString, 0},     {"enable.network", eCmdHdlrBinary, 0},
-    {"enable.laps", eCmdHdlrBinary, 0},   {"enable.tls", eCmdHdlrBinary, 0},
-    {"enable.wdac", eCmdHdlrBinary, 0},   {"emit.rawpayload", eCmdHdlrBinary, 0},
-    {"emit.debugjson", eCmdHdlrBinary, 0}, {"definition.file", eCmdHdlrString, 0},
+    {"container", eCmdHdlrString, 0},       {"enable.network", eCmdHdlrBinary, 0},
+    {"enable.laps", eCmdHdlrBinary, 0},     {"enable.tls", eCmdHdlrBinary, 0},
+    {"enable.wdac", eCmdHdlrBinary, 0},     {"emit.rawpayload", eCmdHdlrBinary, 0},
+    {"emit.debugjson", eCmdHdlrBinary, 0},  {"definition.file", eCmdHdlrString, 0},
     {"definition.json", eCmdHdlrString, 0}, {"validation.mode", eCmdHdlrString, 0}};
 static struct cnfparamblk actpblk = {CNFPARAMBLK_VERSION, ARRAY_SIZE(actpdescr), actpdescr};
 
@@ -2923,8 +2943,7 @@ BEGINsetModCnf
     CODESTARTsetModCnf;
     pvals = nvlstGetParams(lst, &modpblk, NULL);
     if (pvals == NULL) {
-        LogError(0, RS_RET_MISSING_CNFPARAMS,
-                 "mmsnarewinsec: error processing module config parameters [module(...)]");
+        LogError(0, RS_RET_MISSING_CNFPARAMS, "mmsnarewinsec: error processing module config parameters [module(...)]");
         ABORT_FINALIZE(RS_RET_MISSING_CNFPARAMS);
     }
     if (Debug) {
