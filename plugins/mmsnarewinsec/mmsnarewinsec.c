@@ -22,6 +22,7 @@
 #include <json.h>
 #include <json_object_iterator.h>
 #include <limits.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -141,6 +142,70 @@ typedef struct event_field_mapping {
     uint32_t required_flags;
 } event_field_mapping_t;
 
+#define MAX_PARSING_ERRORS 32u
+
+typedef enum validation_mode {
+    VALIDATION_STRICT = 0,
+    VALIDATION_MODERATE,
+    VALIDATION_PERMISSIVE
+} validation_mode_t;
+
+typedef struct validation_context {
+    validation_mode_t mode;
+    bool enable_debug;
+    bool log_parsing_errors;
+    bool continue_on_error;
+    size_t max_errors_before_fail;
+    size_t current_error_count;
+} validation_context_t;
+
+typedef struct field_detection_context {
+    validation_context_t validation;
+    bool enable_fallback;
+    size_t total_fields;
+    size_t successful_parses;
+    size_t parsing_errors;
+    struct json_object *error_array;
+} field_detection_context_t;
+
+typedef void (*token_callback_t)(const char *token, size_t len, void *user_data);
+
+typedef struct runtime_config {
+    field_pattern_t *custom_patterns;
+    size_t custom_pattern_count;
+    section_descriptor_t *custom_sections;
+    size_t custom_section_count;
+    event_field_mapping_t *custom_event_mappings;
+    size_t custom_event_mapping_count;
+    event_mapping_t *custom_event_metadata;
+    size_t custom_event_metadata_count;
+    bool enable_debug;
+    bool enable_fallback;
+    char *config_file;
+    validation_context_t validation_defaults;
+} runtime_config_t;
+
+typedef struct _instanceData instanceData;
+
+static void runtime_config_init(runtime_config_t *config);
+static void runtime_config_free(runtime_config_t *config);
+static rsRetVal load_configuration(runtime_config_t *config, const char *config_file);
+static rsRetVal save_configuration(const runtime_config_t *config, const char *config_file);
+static rsRetVal apply_runtime_configuration(instanceData *pData, runtime_config_t *config);
+static rsRetVal tokenize_on_multispace(const char *str, size_t len, token_callback_t callback, void *user_data);
+static char *trim_whitespace_enhanced(const char *input);
+static bool is_placeholder_value(const char *value);
+static bool is_guid_format(const char *value);
+static bool is_ip_address(const char *value);
+static bool is_timestamp_format(const char *value);
+static bool is_json_format(const char *value);
+static rsRetVal parse_field_value_enhanced(const char *value,
+                                           field_value_type_t type,
+                                           struct json_object *target,
+                                           const char *key,
+                                           const char *section_context,
+                                           int event_id);
+
 #define FIELD_PRIORITY_BASE 10
 #define FIELD_PRIORITY_EVENT_OVERRIDE 100
 
@@ -189,6 +254,119 @@ static const field_pattern_t g_coreFieldPatterns[] = {
     {"RemoteCredentialGuard", "RemoteCredentialGuard", fieldValueRemoteCredentialGuard, NULL, FIELD_PRIORITY_BASE,
      fieldSensitivityCanonical},
     {"Privileges", "Privileges", fieldValuePrivilegeList, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"Subject:", "Subject", fieldValueString, "Subject", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Security ID:", "SecurityID", fieldValueString, "Subject", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Account Name:", "AccountName", fieldValueString, "Subject", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Account Domain:", "AccountDomain", fieldValueString, "Subject", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Logon ID:", "LogonID", fieldValueString, "Subject", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Logon Information:", "LogonInformation", fieldValueString, "Logon", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Logon Type:", "LogonType", fieldValueLogonType, "Logon", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Restricted Admin Mode:", "RestrictedAdminMode", fieldValueString, "Logon", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Virtual Account:", "VirtualAccount", fieldValueString, "Logon", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Elevated Token:", "ElevatedToken", fieldValueString, "Logon", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Impersonation Level:", "ImpersonationLevel", fieldValueString, "Logon", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"New Logon:", "NewLogon", fieldValueString, "NewLogon", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Linked Logon ID:", "LinkedLogonID", fieldValueString, "NewLogon", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Network Account Name:", "NetworkAccountName", fieldValueString, "NewLogon", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Network Account Domain:", "NetworkAccountDomain", fieldValueString, "NewLogon", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Logon GUID:", "LogonGUID", fieldValueString, "NewLogon", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Network Information:", "NetworkInformation", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Workstation Name:", "WorkstationName", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Source Network Address:", "SourceNetworkAddress", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Source Port:", "SourcePort", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Network Address:", "NetworkAddress", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Client Address:", "ClientAddress", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Client Port:", "ClientPort", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Destination Address:", "DestinationAddress", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Destination Port:", "DestinationPort", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Protocol:", "Protocol", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Direction:", "Direction", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Process Information:", "ProcessInformation", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Caller Process ID:", "CallerProcessID", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Caller Process Name:", "CallerProcessName", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"New Process ID:", "NewProcessID", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"New Process Name:", "NewProcessName", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Creator Process ID:", "CreatorProcessID", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Creator Process Name:", "CreatorProcessName", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Process Command Line:", "ProcessCommandLine", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Detailed Authentication Information:", "DetailedAuthenticationInformation", fieldValueString, "Authentication",
+     FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Logon Process:", "LogonProcess", fieldValueString, "Authentication", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Authentication Package:", "AuthenticationPackage", fieldValueString, "Authentication", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Transited Services:", "TransitedServices", fieldValueString, "Authentication", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Package Name (NTLM only):", "PackageName", fieldValueString, "Authentication", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Key Length:", "KeyLength", fieldValueInt64, "Authentication", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Remote Credential Guard:", "RemoteCredentialGuard", fieldValueRemoteCredentialGuard, "Authentication",
+     FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Failure Information:", "FailureInformation", fieldValueString, "Failure", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Failure Reason:", "FailureReason", fieldValueString, "Failure", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Status:", "Status", fieldValueString, "Failure", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Sub Status:", "SubStatus", fieldValueString, "Failure", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Policy Name:", "PolicyName", fieldValueString, "WDAC", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Policy Version:", "PolicyVersion", fieldValueString, "WDAC", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Enforcement Mode:", "EnforcementMode", fieldValueString, "WDAC", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"User:", "User", fieldValueString, "WDAC", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"PID:", "ProcessID", fieldValueInt64WithRaw, "WDAC", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Policy ID:", "PolicyID", fieldValueString, "WUFB", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Ring:", "Ring", fieldValueString, "WUFB", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"From Service:", "FromService", fieldValueString, "WUFB", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Enforcement Result:", "EnforcementResult", fieldValueString, "WUFB", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Service Name:", "ServiceName", fieldValueString, "Kerberos", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Service ID:", "ServiceID", fieldValueString, "Kerberos", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Ticket Options:", "TicketOptions", fieldValueString, "Kerberos", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Result Code:", "ResultCode", fieldValueString, "Kerberos", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Ticket Encryption Type:", "TicketEncryptionType", fieldValueString, "Kerberos", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Pre-Authentication Type:", "PreAuthenticationType", fieldValueString, "Kerberos", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Certificate Information:", "CertificateInfo", fieldValueString, "Kerberos", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"LAPS Context:", "LAPSContext", fieldValueString, "LAPS", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Policy Version:", "PolicyVersion", fieldValueInt64, "LAPS", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Credential Rotation:", "CredentialRotation", fieldValueBool, "LAPS", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"TLS Inspection:", "TLSInspection", fieldValueString, "TLS", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Reason:", "Reason", fieldValueString, "TLS", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Policy:", "Policy", fieldValueString, "TLS", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Filter Information:", "FilterInformation", fieldValueString, "Filter", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Filter Run-Time ID:", "FilterRuntimeID", fieldValueString, "Filter", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"Layer Name:", "LayerName", fieldValueString, "Filter", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"Layer Run-Time ID:", "LayerRuntimeID", fieldValueString, "Filter", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {".*:", "GenericField", fieldValueString, "EventData", FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
 };
 
 static field_pattern_t g_event6281FieldPatterns[] = {
@@ -260,6 +438,8 @@ typedef struct _instanceData {
     size_t eventFieldMappingCount;
     event_mapping_t *eventMappings;
     size_t eventMappingCount;
+    runtime_config_t runtimeConfig;
+    validation_context_t validationDefaults;
 } instanceData;
 
 static void free_runtime_tables(instanceData *pData);
@@ -347,15 +527,6 @@ static const event_mapping_t g_eventMappings[] = {{4624, "Logon", "Success", "su
                                                   {1102, "Audit", "LogCleared", NULL},
                                                   {1243, "WindowsUpdate", "Deployment", NULL}};
 
-static int is_placeholder(const char *value) {
-    if (value == NULL) return 1;
-    while (*value && isspace((unsigned char)*value)) ++value;
-    if (*value == '\0') return 1;
-    if (!strcmp(value, "-")) return 1;
-    if (!strcasecmp(value, "N/A")) return 1;
-    return 0;
-}
-
 static inline char *strdup_range(const char *start, size_t len) {
     char *out;
     out = malloc(len + 1);
@@ -388,6 +559,161 @@ static inline void trim_inplace(char *s) {
     end = s + len;
     while (end > s && isspace((unsigned char)*(end - 1))) --end;
     *end = '\0';
+}
+
+static rsRetVal tokenize_on_multispace(const char *str, size_t len, token_callback_t callback, void *user_data) {
+    if (str == NULL || len == 0 || callback == NULL) return RS_RET_OK;
+    size_t i = 0;
+    size_t start = 0;
+    bool in_token = false;
+    while (i < len) {
+        unsigned char ch = (unsigned char)str[i];
+        if (ch == '\t') {
+            if (in_token) {
+                callback(str + start, i - start, user_data);
+                in_token = false;
+            }
+            do {
+                ++i;
+            } while (i < len && str[i] == '\t');
+            continue;
+        }
+        if (ch == ' ') {
+            size_t j = i;
+            size_t spaces = 0;
+            bool saw_tab = false;
+            while (j < len) {
+                if (str[j] == ' ') {
+                    ++spaces;
+                    ++j;
+                    continue;
+                }
+                if (str[j] == '\t') {
+                    saw_tab = true;
+                    ++j;
+                    continue;
+                }
+                break;
+            }
+            if (spaces >= 2 || saw_tab) {
+                if (in_token) {
+                    callback(str + start, i - start, user_data);
+                    in_token = false;
+                }
+                i = j;
+                continue;
+            }
+            if (!in_token) {
+                start = i;
+                in_token = true;
+            }
+            i = j;
+            continue;
+        }
+        if (isspace(ch)) {
+            if (in_token) {
+                callback(str + start, i - start, user_data);
+                in_token = false;
+            }
+            ++i;
+            continue;
+        }
+        if (!in_token) {
+            start = i;
+            in_token = true;
+        }
+        ++i;
+    }
+    if (in_token) callback(str + start, len - start, user_data);
+    return RS_RET_OK;
+}
+
+static char *trim_whitespace_enhanced(const char *input) {
+    if (input == NULL) return NULL;
+    size_t len = strlen(input);
+    if (len == 0) return strdup("");
+    const char *start = input;
+    const char *end = input + len - 1;
+    while (start <= end && isspace((unsigned char)*start)) ++start;
+    while (end >= start && isspace((unsigned char)*end)) --end;
+    size_t new_len = (start <= end) ? (size_t)(end - start + 1) : 0;
+    char *result = malloc(new_len + 1);
+    if (result == NULL) return NULL;
+    if (new_len > 0) memcpy(result, start, new_len);
+    result[new_len] = '\0';
+    return result;
+}
+
+static bool is_placeholder_value(const char *value) {
+    static const char *const placeholders[] = {"-",           "N/A",         "n/a",         "NULL",
+                                               "null",        "None",        "none",        "Not Available",
+                                               "not available", "Unknown",    "unknown",    "<never>",
+                                               "<value not set>", "<not set>", ""};
+    if (value == NULL) return true;
+    for (size_t i = 0; i < ARRAY_SIZE(placeholders); ++i) {
+        if (strcasecmp(value, placeholders[i]) == 0) return true;
+    }
+    return false;
+}
+
+static bool is_guid_format(const char *value) {
+    if (value == NULL) return false;
+    size_t len = strlen(value);
+    if (len == 38 && value[0] == '{' && value[len - 1] == '}') return true;
+    if (len == 36) {
+        for (size_t i = 0; i < len; ++i) {
+            if (value[i] == '-') continue;
+            if (!isxdigit((unsigned char)value[i])) return false;
+        }
+        return true;
+    }
+    return false;
+}
+
+static bool is_ip_address(const char *value) {
+    if (value == NULL) return false;
+    int dots = 0;
+    int digits = 0;
+    for (const char *p = value; *p; ++p) {
+        if (*p == '.') {
+            if (digits == 0) return false;
+            ++dots;
+            digits = 0;
+        } else if (isdigit((unsigned char)*p)) {
+            ++digits;
+        } else {
+            return false;
+        }
+    }
+    return dots == 3 && digits > 0;
+}
+
+static bool is_timestamp_format(const char *value) {
+    if (value == NULL) return false;
+    if (strstr(value, "T") != NULL && strstr(value, "Z") != NULL) return true;
+    if (strstr(value, "Mon ") != NULL || strstr(value, "Tue ") != NULL || strstr(value, "Wed ") != NULL ||
+        strstr(value, "Thu ") != NULL || strstr(value, "Fri ") != NULL || strstr(value, "Sat ") != NULL ||
+        strstr(value, "Sun ") != NULL)
+        return true;
+    return false;
+}
+
+static bool is_json_format(const char *value) {
+    if (value == NULL) return false;
+    size_t len = strlen(value);
+    if (len < 2) return false;
+    if ((value[0] == '{' && value[len - 1] == '}') || (value[0] == '[' && value[len - 1] == ']')) return true;
+    return false;
+}
+
+static int is_placeholder(const char *value) {
+    if (value == NULL) return 1;
+    char *trimmed = trim_whitespace_enhanced(value);
+    int result = 0;
+    if (trimmed == NULL) return 1;
+    result = is_placeholder_value(trimmed);
+    free(trimmed);
+    return result;
 }
 
 static void unescape_hash_sequences(char *s) {
@@ -808,8 +1134,310 @@ static void free_runtime_tables(instanceData *pData) {
         pData->eventMappings = NULL;
         pData->eventMappingCount = 0;
     }
+    runtime_config_free(&pData->runtimeConfig);
 }
 
+static void runtime_config_init(runtime_config_t *config) {
+    if (config == NULL) return;
+    memset(config, 0, sizeof(*config));
+    config->enable_debug = false;
+    config->enable_fallback = false;
+    config->validation_defaults.mode = VALIDATION_MODERATE;
+    config->validation_defaults.enable_debug = false;
+    config->validation_defaults.log_parsing_errors = true;
+    config->validation_defaults.continue_on_error = true;
+    config->validation_defaults.max_errors_before_fail = MAX_PARSING_ERRORS;
+    config->validation_defaults.current_error_count = 0;
+}
+
+static void runtime_config_free(runtime_config_t *config) {
+    if (config == NULL) return;
+    if (config->custom_sections != NULL) {
+        for (size_t i = 0; i < config->custom_section_count; ++i) cleanup_section_descriptor(&config->custom_sections[i]);
+        free(config->custom_sections);
+        config->custom_sections = NULL;
+        config->custom_section_count = 0;
+    }
+    if (config->custom_patterns != NULL) {
+        for (size_t i = 0; i < config->custom_pattern_count; ++i) cleanup_field_pattern(&config->custom_patterns[i]);
+        free(config->custom_patterns);
+        config->custom_patterns = NULL;
+        config->custom_pattern_count = 0;
+    }
+    if (config->custom_event_mappings != NULL) {
+        for (size_t i = 0; i < config->custom_event_mapping_count; ++i)
+            cleanup_event_field_mapping(&config->custom_event_mappings[i]);
+        free(config->custom_event_mappings);
+        config->custom_event_mappings = NULL;
+        config->custom_event_mapping_count = 0;
+    }
+    if (config->custom_event_metadata != NULL) {
+        for (size_t i = 0; i < config->custom_event_metadata_count; ++i)
+            cleanup_event_mapping(&config->custom_event_metadata[i]);
+        free(config->custom_event_metadata);
+        config->custom_event_metadata = NULL;
+        config->custom_event_metadata_count = 0;
+    }
+    free(config->config_file);
+    config->config_file = NULL;
+    runtime_config_init(config);
+}
+
+static rsRetVal load_configuration(runtime_config_t *config, const char *config_file) {
+    if (config == NULL) return RS_RET_INVALID_PARAMS;
+    runtime_config_free(config);
+    if (config_file == NULL) return RS_RET_OK;
+
+    char *content = NULL;
+    rsRetVal r = read_text_file(config_file, &content);
+    if (r != RS_RET_OK) return r;
+
+    struct json_tokener *tokener = json_tokener_new();
+    if (tokener == NULL) {
+        free(content);
+        return RS_RET_OUT_OF_MEMORY;
+    }
+    struct json_object *root = json_tokener_parse_ex(tokener, content, (int)strlen(content));
+    enum json_tokener_error err = fjson_tokener_get_error(tokener);
+    json_tokener_free(tokener);
+    free(content);
+    if (err != fjson_tokener_success || root == NULL) {
+        if (root != NULL) json_object_put(root);
+        LogError(0, RS_RET_COULD_NOT_PARSE, "mmsnarewinsec: failed to parse runtime config '%s'", config_file);
+        return RS_RET_COULD_NOT_PARSE;
+    }
+    if (!json_object_is_type(root, json_type_object)) {
+        json_object_put(root);
+        LogError(0, RS_RET_INVALID_PARAMS, "mmsnarewinsec: runtime config '%s' must be a JSON object", config_file);
+        return RS_RET_INVALID_PARAMS;
+    }
+
+    struct json_object *value;
+    if (json_object_object_get_ex(root, "enable_debug", &value) && json_object_is_type(value, json_type_boolean))
+        config->enable_debug = json_object_get_boolean(value) != 0;
+    if (json_object_object_get_ex(root, "enable_fallback", &value) && json_object_is_type(value, json_type_boolean))
+        config->enable_fallback = json_object_get_boolean(value) != 0;
+    if (json_object_object_get_ex(root, "validation", &value) && json_object_is_type(value, json_type_object)) {
+        struct json_object *entry;
+        if (json_object_object_get_ex(value, "mode", &entry) && json_object_is_type(entry, json_type_string)) {
+            const char *modeStr = json_object_get_string(entry);
+            if (!strcasecmp(modeStr, "strict"))
+                config->validation_defaults.mode = VALIDATION_STRICT;
+            else if (!strcasecmp(modeStr, "permissive"))
+                config->validation_defaults.mode = VALIDATION_PERMISSIVE;
+            else
+                config->validation_defaults.mode = VALIDATION_MODERATE;
+        }
+        if (json_object_object_get_ex(value, "log_parsing_errors", &entry) && json_object_is_type(entry, json_type_boolean))
+            config->validation_defaults.log_parsing_errors = json_object_get_boolean(entry) != 0;
+        if (json_object_object_get_ex(value, "continue_on_error", &entry) && json_object_is_type(entry, json_type_boolean))
+            config->validation_defaults.continue_on_error = json_object_get_boolean(entry) != 0;
+        if (json_object_object_get_ex(value, "max_errors_before_fail", &entry) && json_object_is_type(entry, json_type_int))
+            config->validation_defaults.max_errors_before_fail = (size_t)json_object_get_int(entry);
+        if (json_object_object_get_ex(value, "enable_debug", &entry) && json_object_is_type(entry, json_type_boolean))
+            config->validation_defaults.enable_debug = json_object_get_boolean(entry) != 0;
+    }
+
+    struct json_object *defsObj = json_object_new_object();
+    sbool haveDefinitions = 0;
+    if (json_object_object_get_ex(root, "sections", &value)) {
+        json_object_object_add(defsObj, "sections", json_object_get(value));
+        haveDefinitions = 1;
+    }
+    if (json_object_object_get_ex(root, "fields", &value)) {
+        json_object_object_add(defsObj, "fields", json_object_get(value));
+        haveDefinitions = 1;
+    }
+    if (json_object_object_get_ex(root, "eventFields", &value)) {
+        json_object_object_add(defsObj, "eventFields", json_object_get(value));
+        haveDefinitions = 1;
+    }
+    if (json_object_object_get_ex(root, "events", &value)) {
+        json_object_object_add(defsObj, "events", json_object_get(value));
+        haveDefinitions = 1;
+    }
+
+    if (haveDefinitions) {
+        const char *defsText = json_object_to_json_string_ext(defsObj, JSON_C_TO_STRING_PLAIN);
+        if (defsText != NULL) {
+            char *defsCopy = strdup(defsText);
+            if (defsCopy == NULL) {
+                json_object_put(defsObj);
+                json_object_put(root);
+                return RS_RET_OUT_OF_MEMORY;
+            }
+            instanceData temp;
+            memset(&temp, 0, sizeof(temp));
+            temp.strictValidation = (config->validation_defaults.mode == VALIDATION_STRICT);
+            rsRetVal dr = load_custom_definition_text(&temp, defsCopy, "runtime configuration");
+            free(defsCopy);
+            if (dr != RS_RET_OK) {
+                free_runtime_tables(&temp);
+                json_object_put(defsObj);
+                json_object_put(root);
+                return dr;
+            }
+            config->custom_sections = temp.sectionDescriptors;
+            config->custom_section_count = temp.sectionDescriptorCount;
+            config->custom_patterns = temp.corePatterns;
+            config->custom_pattern_count = temp.corePatternCount;
+            config->custom_event_mappings = temp.eventFieldMappings;
+            config->custom_event_mapping_count = temp.eventFieldMappingCount;
+            config->custom_event_metadata = temp.eventMappings;
+            config->custom_event_metadata_count = temp.eventMappingCount;
+            temp.sectionDescriptors = NULL;
+            temp.corePatterns = NULL;
+            temp.eventFieldMappings = NULL;
+            temp.eventMappings = NULL;
+        }
+    }
+    json_object_put(defsObj);
+
+    json_object_put(root);
+    config->config_file = strdup(config_file);
+    return RS_RET_OK;
+}
+
+static rsRetVal save_configuration(const runtime_config_t *config, const char *config_file) {
+    if (config == NULL || config_file == NULL) return RS_RET_OK;
+    struct json_object *root = json_object_new_object();
+    if (root == NULL) return RS_RET_OUT_OF_MEMORY;
+    json_object_object_add(root, "enable_debug", json_object_new_boolean(config->enable_debug));
+    json_object_object_add(root, "enable_fallback", json_object_new_boolean(config->enable_fallback));
+    struct json_object *validation = json_object_new_object();
+    if (validation != NULL) {
+        const char *modeStr = "moderate";
+        switch (config->validation_defaults.mode) {
+            case VALIDATION_STRICT:
+                modeStr = "strict";
+                break;
+            case VALIDATION_PERMISSIVE:
+                modeStr = "permissive";
+                break;
+            case VALIDATION_MODERATE:
+            default:
+                modeStr = "moderate";
+                break;
+        }
+        json_object_object_add(validation, "mode", json_object_new_string(modeStr));
+        json_object_object_add(validation, "log_parsing_errors",
+                               json_object_new_boolean(config->validation_defaults.log_parsing_errors));
+        json_object_object_add(validation, "continue_on_error",
+                               json_object_new_boolean(config->validation_defaults.continue_on_error));
+        json_object_object_add(validation, "max_errors_before_fail",
+                               json_object_new_int64((long long)config->validation_defaults.max_errors_before_fail));
+        json_object_object_add(validation, "enable_debug",
+                               json_object_new_boolean(config->validation_defaults.enable_debug));
+        json_object_object_add(root, "validation", validation);
+    }
+
+    struct json_object *sections = json_object_new_array();
+    if (sections != NULL) {
+        for (size_t i = 0; i < config->custom_section_count; ++i) {
+            const section_descriptor_t *desc = &config->custom_sections[i];
+            struct json_object *entry = json_object_new_object();
+            if (entry == NULL) continue;
+            if (desc->pattern != NULL) json_object_object_add(entry, "pattern", json_object_new_string(desc->pattern));
+            if (desc->canonical != NULL)
+                json_object_object_add(entry, "canonical", json_object_new_string(desc->canonical));
+            json_object_object_add(entry, "priority", json_object_new_int(desc->priority));
+            json_object_array_add(sections, entry);
+        }
+        if (json_object_array_length(sections) > 0) json_object_object_add(root, "sections", sections);
+        else json_object_put(sections);
+    }
+
+    struct json_object *fields = json_object_new_array();
+    if (fields != NULL) {
+        for (size_t i = 0; i < config->custom_pattern_count; ++i) {
+            const field_pattern_t *pattern = &config->custom_patterns[i];
+            struct json_object *entry = json_object_new_object();
+            if (entry == NULL) continue;
+            if (pattern->pattern != NULL) json_object_object_add(entry, "pattern", json_object_new_string(pattern->pattern));
+            if (pattern->canonical != NULL)
+                json_object_object_add(entry, "canonical", json_object_new_string(pattern->canonical));
+            if (pattern->section != NULL)
+                json_object_object_add(entry, "section", json_object_new_string(pattern->section));
+            json_object_object_add(entry, "priority", json_object_new_int(pattern->priority));
+            json_object_array_add(fields, entry);
+        }
+        if (json_object_array_length(fields) > 0) json_object_object_add(root, "fields", fields);
+        else json_object_put(fields);
+    }
+
+    const char *serialized = json_object_to_json_string_ext(root, JSON_C_TO_STRING_PRETTY);
+    FILE *fp = fopen(config_file, "wb");
+    if (fp == NULL) {
+        LogError(errno, RS_RET_IO_ERROR, "mmsnarewinsec: failed to write runtime config '%s'", config_file);
+        json_object_put(root);
+        return RS_RET_IO_ERROR;
+    }
+    size_t len = strlen(serialized);
+    size_t written = fwrite(serialized, 1, len, fp);
+    fclose(fp);
+    json_object_put(root);
+    if (written != len) return RS_RET_IO_ERROR;
+    return RS_RET_OK;
+}
+
+static rsRetVal apply_runtime_configuration(instanceData *pData, runtime_config_t *config) {
+    if (pData == NULL || config == NULL) return RS_RET_OK;
+    if (config->enable_debug) pData->emitDebugJson = 1;
+    if (config->enable_fallback) pData->emitRawPayload = 1;
+
+    pData->validationDefaults.mode = config->validation_defaults.mode;
+    pData->validationDefaults.log_parsing_errors = config->validation_defaults.log_parsing_errors;
+    pData->validationDefaults.continue_on_error = config->validation_defaults.continue_on_error;
+    pData->validationDefaults.max_errors_before_fail = config->validation_defaults.max_errors_before_fail;
+    pData->validationDefaults.enable_debug = config->validation_defaults.enable_debug;
+
+    rsRetVal r;
+    section_descriptor_t descCopy;
+    for (size_t i = 0; i < config->custom_section_count; ++i) {
+        r = copy_section_descriptor(&descCopy, &config->custom_sections[i]);
+        if (r != RS_RET_OK) return r;
+        r = append_section_descriptor_owned(&pData->sectionDescriptors, &pData->sectionDescriptorCount, &descCopy);
+        if (r != RS_RET_OK) {
+            cleanup_section_descriptor(&descCopy);
+            return r;
+        }
+    }
+
+    field_pattern_t patternCopy;
+    for (size_t i = 0; i < config->custom_pattern_count; ++i) {
+        r = copy_field_pattern(&patternCopy, &config->custom_patterns[i]);
+        if (r != RS_RET_OK) return r;
+        r = append_field_pattern_owned(&pData->corePatterns, &pData->corePatternCount, &patternCopy);
+        if (r != RS_RET_OK) {
+            cleanup_field_pattern(&patternCopy);
+            return r;
+        }
+    }
+
+    event_field_mapping_t mappingCopy;
+    for (size_t i = 0; i < config->custom_event_mapping_count; ++i) {
+        r = copy_event_field_mapping(&mappingCopy, &config->custom_event_mappings[i]);
+        if (r != RS_RET_OK) return r;
+        r = merge_event_field_mapping(pData, &mappingCopy);
+        if (r != RS_RET_OK) {
+            cleanup_event_field_mapping(&mappingCopy);
+            return r;
+        }
+    }
+
+    event_mapping_t eventCopy;
+    for (size_t i = 0; i < config->custom_event_metadata_count; ++i) {
+        r = copy_event_mapping(&eventCopy, &config->custom_event_metadata[i]);
+        if (r != RS_RET_OK) return r;
+        r = merge_event_mapping(pData, &eventCopy);
+        if (r != RS_RET_OK) {
+            cleanup_event_mapping(&eventCopy);
+            return r;
+        }
+    }
+
+    return RS_RET_OK;
+}
 static rsRetVal parse_validation_mode(const char *mode, sbool *strictOut) {
     if (mode == NULL || strictOut == NULL) return RS_RET_INVALID_PARAMS;
     if (!strcasecmp(mode, "strict")) {
@@ -1792,7 +2420,63 @@ typedef struct parse_context {
     size_t eventPatternCount;
     int patternEventId;
     sbool patternsPrepared;
+    field_detection_context_t detection;
+    struct json_object *validationErrors;
+    struct json_object *statsRoot;
 } parse_context_t;
+
+static void initialize_parse_detection(parse_context_t *ctx) {
+    if (ctx == NULL || ctx->inst == NULL) return;
+    ctx->detection.total_fields = 0;
+    ctx->detection.successful_parses = 0;
+    ctx->detection.parsing_errors = 0;
+    ctx->detection.enable_fallback = ctx->inst->runtimeConfig.enable_fallback;
+    ctx->detection.validation = ctx->inst->validationDefaults;
+
+    const runtime_config_t *runtime = &ctx->inst->runtimeConfig;
+    if (runtime->config_file != NULL) {
+        ctx->detection.validation.mode = runtime->validation_defaults.mode;
+        ctx->detection.validation.log_parsing_errors = runtime->validation_defaults.log_parsing_errors;
+        ctx->detection.validation.continue_on_error = runtime->validation_defaults.continue_on_error;
+        ctx->detection.validation.max_errors_before_fail = runtime->validation_defaults.max_errors_before_fail;
+        ctx->detection.validation.enable_debug =
+            runtime->validation_defaults.enable_debug || ctx->inst->validationDefaults.enable_debug;
+    }
+    if (runtime->enable_debug) ctx->detection.validation.enable_debug = true;
+    if (ctx->detection.validation.max_errors_before_fail == 0)
+        ctx->detection.validation.max_errors_before_fail = MAX_PARSING_ERRORS;
+    ctx->detection.validation.current_error_count = 0;
+    ctx->validationErrors = json_object_new_array();
+    ctx->detection.error_array = ctx->validationErrors;
+}
+
+static void finalize_detection_output(parse_context_t *ctx) {
+    if (ctx == NULL) return;
+    if (ctx->validationErrors == NULL) {
+        ctx->validationErrors = json_object_new_array();
+        ctx->detection.error_array = ctx->validationErrors;
+    }
+    if (ctx->validationErrors != NULL) {
+        struct json_object *validation = ensure_object(ctx->root, "Validation");
+        if (validation != NULL)
+            json_object_object_add(validation, "Errors", ctx->validationErrors);
+        else
+            json_object_put(ctx->validationErrors);
+        ctx->validationErrors = NULL;
+        ctx->detection.error_array = NULL;
+    }
+    struct json_object *stats = ensure_object(ctx->root, "Stats");
+    if (stats != NULL) {
+        struct json_object *parsing = json_object_new_object();
+        if (parsing != NULL) {
+            json_object_object_add(parsing, "total_fields",
+                                   json_object_new_int64((long long)ctx->detection.total_fields));
+            json_object_object_add(parsing, "successful_parses",
+                                   json_object_new_int64((long long)ctx->detection.successful_parses));
+            json_object_object_add(stats, "ParsingStats", parsing);
+        }
+    }
+}
 
 static struct json_object *ensure_object(struct json_object *parent, const char *name) {
     struct json_object *existing;
@@ -1844,6 +2528,145 @@ static void json_add_int64(struct json_object *obj, const char *name, long long 
 static void json_add_bool(struct json_object *obj, const char *name, sbool value) {
     if (obj == NULL || name == NULL) return;
     json_object_object_add(obj, name, json_object_new_boolean(value ? 1 : 0));
+}
+
+static rsRetVal parse_field_value_enhanced(const char *value,
+                                           field_value_type_t type,
+                                           struct json_object *target,
+                                           const char *key,
+                                           const char *section_context,
+                                           int event_id) {
+    (void)section_context;
+    (void)event_id;
+    if (value == NULL || target == NULL || key == NULL) return RS_RET_OK;
+
+    char *trimmed = trim_whitespace_enhanced(value);
+    if (trimmed == NULL) return RS_RET_OK;
+    if (*trimmed == '\0') {
+        free(trimmed);
+        return RS_RET_OK;
+    }
+    if (is_placeholder_value(trimmed)) {
+        free(trimmed);
+        return RS_RET_OK;
+    }
+
+    switch (type) {
+        case fieldValueInt64: {
+            long long num;
+            if (try_parse_int64(trimmed, &num))
+                json_add_int64(target, key, num);
+            else
+                json_add_string(target, key, trimmed);
+            break;
+        }
+        case fieldValueBool: {
+            sbool bool_val;
+            if (try_parse_bool(trimmed, &bool_val))
+                json_add_bool(target, key, bool_val);
+            else
+                json_add_string(target, key, trimmed);
+            break;
+        }
+        case fieldValueLogonType: {
+            long long num;
+            if (try_parse_int64(trimmed, &num)) {
+                json_add_int64(target, key, num);
+                const char *desc = lookup_logon_description((int)num);
+                if (desc != NULL) json_add_string(target, "LogonTypeName", desc);
+            } else {
+                json_add_string(target, key, trimmed);
+            }
+            break;
+        }
+        case fieldValueJson: {
+            struct json_object *jsonBlock = try_parse_json_block(trimmed);
+            if (jsonBlock != NULL)
+                json_object_object_add(target, key, jsonBlock);
+            else
+                json_add_string(target, key, trimmed);
+            break;
+        }
+        case fieldValueString:
+        default:
+            if (is_json_format(trimmed)) {
+                struct json_object *jsonBlock = try_parse_json_block(trimmed);
+                if (jsonBlock != NULL) {
+                    json_object_object_add(target, key, jsonBlock);
+                    free(trimmed);
+                    return RS_RET_OK;
+                }
+            }
+            json_add_string(target, key, trimmed);
+            break;
+    }
+
+    free(trimmed);
+    return RS_RET_OK;
+}
+
+static rsRetVal validate_field_count(const char *message,
+                                     size_t actual_count,
+                                     size_t expected_count,
+                                     validation_context_t *ctx) {
+    if (ctx == NULL) return RS_RET_OK;
+    if (actual_count == expected_count) return RS_RET_OK;
+    if (ctx->mode == VALIDATION_STRICT) {
+        return RS_RET_COULD_NOT_PARSE;
+    }
+    if (ctx->mode == VALIDATION_MODERATE && ctx->log_parsing_errors && message != NULL) {
+        dbgprintf("mmsnarewinsec: field count mismatch - expected %zu, got %zu (%s)\n", expected_count, actual_count,
+                  message);
+    }
+    return RS_RET_OK;
+}
+
+static rsRetVal validate_required_fields(const char *message,
+                                         const char *required_fields[],
+                                         size_t required_count,
+                                         validation_context_t *ctx) {
+    if (ctx == NULL || required_fields == NULL) return RS_RET_OK;
+    for (size_t i = 0; i < required_count; ++i) {
+        if (required_fields[i] == NULL) continue;
+        if (message == NULL || strstr(message, required_fields[i]) == NULL) {
+            if (ctx->mode == VALIDATION_STRICT) {
+                return RS_RET_COULD_NOT_PARSE;
+            }
+            if (ctx->mode == VALIDATION_MODERATE && ctx->log_parsing_errors) {
+                dbgprintf("mmsnarewinsec: missing required field '%s'\n", required_fields[i]);
+            }
+        }
+    }
+    return RS_RET_OK;
+}
+
+static rsRetVal handle_parsing_error(field_detection_context_t *ctx,
+                                     const char *error_message,
+                                     const char *context) {
+    if (ctx == NULL) return RS_RET_INVALID_PARAMS;
+    ctx->parsing_errors++;
+    ctx->validation.current_error_count++;
+    if (ctx->validation.enable_debug && error_message != NULL) {
+        dbgprintf("mmsnarewinsec: parsing error in %s: %s\n", context ? context : "<unknown>", error_message);
+    }
+    if (ctx->error_array != NULL && error_message != NULL) {
+        char buffer[256];
+        if (context != NULL) {
+            snprintf(buffer, sizeof(buffer), "%s: %s", context, error_message);
+            json_object_array_add(ctx->error_array, json_object_new_string(buffer));
+        } else {
+            json_object_array_add(ctx->error_array, json_object_new_string(error_message));
+        }
+    }
+    if (!ctx->validation.continue_on_error &&
+        ctx->validation.current_error_count >= ctx->validation.max_errors_before_fail) {
+        return RS_RET_COULD_NOT_PARSE;
+    }
+    if (ctx->validation.mode == VALIDATION_STRICT &&
+        ctx->validation.current_error_count >= ctx->validation.max_errors_before_fail) {
+        return RS_RET_COULD_NOT_PARSE;
+    }
+    return RS_RET_OK;
 }
 
 static sbool try_parse_int64(const char *value, long long *outVal) {
@@ -1994,64 +2817,56 @@ static void write_field_value(parse_context_t *ctx,
                               struct json_object *dest,
                               const field_pattern_t *pattern,
                               const char *canon,
-                              const char *value) {
+                              const char *value,
+                              const char *sectionName) {
     const char *fieldName;
     long long numVal;
     sbool boolVal;
     struct json_object *jsonBlock;
+    rsRetVal parseResult = RS_RET_OK;
     if (ctx == NULL || dest == NULL || pattern == NULL) return;
     fieldName = (pattern->canonical != NULL) ? pattern->canonical : canon;
     if (fieldName == NULL) return;
     switch (pattern->value_type) {
-        case fieldValueLogonType:
-            if (try_parse_int64(value, &numVal)) {
-                json_add_int64(dest, fieldName, numVal);
-                const char *desc = lookup_logon_description((int)numVal);
-                if (desc != NULL) json_add_string(dest, "LogonTypeName", desc);
-            } else {
-                add_raw_string(dest, fieldName, value);
-            }
-            break;
-        case fieldValueInt64:
-            if (try_parse_int64(value, &numVal))
-                json_add_int64(dest, fieldName, numVal);
-            else
-                json_add_string(dest, fieldName, value);
-            break;
         case fieldValueInt64WithRaw:
             if (try_parse_int64(value, &numVal))
                 json_add_int64(dest, fieldName, numVal);
             else
                 add_raw_string(dest, fieldName, value);
             break;
-        case fieldValueBool:
-            if (try_parse_bool(value, &boolVal))
-                json_add_bool(dest, fieldName, boolVal);
-            else
-                json_add_string(dest, fieldName, value);
-            break;
-        case fieldValueJson:
-            jsonBlock = try_parse_json_block(value);
-            if (jsonBlock != NULL)
-                json_object_object_add(dest, fieldName, jsonBlock);
-            else
-                json_add_string(dest, fieldName, value);
-            break;
         case fieldValueRemoteCredentialGuard:
             if (try_parse_bool(value, &boolVal)) {
                 json_add_bool(dest, fieldName, boolVal);
                 json_add_bool(ensure_logon_root(ctx), fieldName, boolVal);
+                ctx->detection.successful_parses++;
             } else {
                 json_add_string(dest, fieldName, value);
+                parseResult = RS_RET_COULD_NOT_PARSE;
+                handle_parsing_error(&ctx->detection, "failed to parse Remote Credential Guard", fieldName);
             }
             break;
         case fieldValuePrivilegeList:
             parse_privilege_sequence(ctx, value);
             break;
-        case fieldValueString:
         default:
-            json_add_string(dest, fieldName, value);
+            if (pattern->value_type == fieldValueJson) {
+                jsonBlock = try_parse_json_block(value);
+                if (jsonBlock != NULL) {
+                    json_object_object_add(dest, fieldName, jsonBlock);
+                    ctx->detection.successful_parses++;
+                    return;
+                }
+            }
+            parseResult = parse_field_value_enhanced(value, pattern->value_type, dest, fieldName, sectionName, ctx->eventId);
             break;
+    }
+    if (pattern->value_type != fieldValuePrivilegeList && pattern->value_type != fieldValueRemoteCredentialGuard &&
+        pattern->value_type != fieldValueInt64WithRaw) {
+        if (parseResult == RS_RET_OK) {
+            ctx->detection.successful_parses++;
+        } else {
+            handle_parsing_error(&ctx->detection, "failed to parse field", fieldName);
+        }
     }
 }
 
@@ -2071,10 +2886,13 @@ static void dispatch_field(
     if (dest == NULL && target != NULL) dest = target;
     if (dest == NULL) dest = ensure_event_data(ctx);
 
-    if (pattern != NULL && dest != NULL)
-        write_field_value(ctx, dest, pattern, canon, value);
-    else if (dest != NULL)
+    ctx->detection.total_fields++;
+    if (pattern != NULL && dest != NULL) {
+        write_field_value(ctx, dest, pattern, canon, value, sectionName);
+    } else if (dest != NULL) {
         json_add_string(dest, canon, value);
+        ctx->detection.successful_parses++;
+    }
 
     free(canon);
 }
@@ -2141,6 +2959,43 @@ static const char *find_next_token(const char *start, const char *end) {
 static void handle_key_value(
     parse_context_t *ctx, struct json_object *target, const char *sectionName, const char *label, const char *value);
 
+typedef struct key_value_token_context {
+    parse_context_t *ctx;
+    struct json_object *target;
+    const char *sectionName;
+} key_value_token_context_t;
+
+static void key_value_token_handler(const char *token, size_t len, void *user_data) {
+    key_value_token_context_t *kv = (key_value_token_context_t *)user_data;
+    if (kv == NULL || kv->ctx == NULL || token == NULL) return;
+    char *segment = strdup_range(token, len);
+    if (segment == NULL) return;
+    trim_inplace(segment);
+    if (*segment == '\0') {
+        free(segment);
+        return;
+    }
+    char *colon = strchr(segment, ':');
+    if (colon == NULL) {
+        handle_parsing_error(&kv->ctx->detection, "missing colon in condensed token", kv->sectionName);
+        append_unparsed(kv->ctx, segment);
+        free(segment);
+        return;
+    }
+    *colon = '\0';
+    char *key = segment;
+    char *val = colon + 1;
+    trim_inplace(key);
+    trim_inplace(val);
+    if (*key == '\0') {
+        free(segment);
+        return;
+    }
+    dbgprintf("[mmsnarewinsec DEBUG] parse_key_value_sequence: key='%s', value='%s'\n", key, val);
+    handle_key_value(kv->ctx, kv->target, kv->sectionName, key, val);
+    free(segment);
+}
+
 /**
  * @brief Parse a whitespace-delimited sequence of key-value pairs.
  *
@@ -2159,52 +3014,12 @@ static void parse_key_value_sequence(parse_context_t *ctx,
                                      struct json_object *target,
                                      const char *text,
                                      const char *sectionName) {
-    const char *cursor;
-    const char *end;
     if (text == NULL) return;
 
     dbgprintf("[mmsnarewinsec DEBUG] parse_key_value_sequence: text='%s', sectionName='%s'\n", text, sectionName);
 
-    cursor = text;
-    end = text + strlen(text);
-    while (cursor < end) {
-        const char *colon;
-        const char *valueStart;
-        const char *nextToken;
-        const char *valueEnd;
-        char *key;
-        char *value;
-        while (cursor < end && *cursor == ' ') ++cursor;
-        if (cursor >= end) break;
-        colon = memchr(cursor, ':', (size_t)(end - cursor));
-        if (colon == NULL) {
-            char *leftover = trim_copy(cursor, (size_t)(end - cursor));
-            if (leftover != NULL) {
-                dbgprintf("[mmsnarewinsec DEBUG] parse_key_value_sequence: no colon found, leftover='%s'\n", leftover);
-                append_unparsed(ctx, leftover);
-                free(leftover);
-            }
-            break;
-        }
-        key = trim_copy(cursor, (size_t)(colon - cursor));
-        valueStart = colon + 1;
-        while (valueStart < end && *valueStart == ' ') ++valueStart;
-        nextToken = find_next_token(valueStart, end);
-        valueEnd = (nextToken != NULL) ? nextToken : end;
-        value = trim_copy(valueStart, (size_t)(valueEnd - valueStart));
-
-        dbgprintf("[mmsnarewinsec DEBUG] parse_key_value_sequence: key='%s', value='%s'\n", key ? key : "NULL",
-                  value ? value : "NULL");
-
-        if (key != NULL) {
-            handle_key_value(ctx, target, sectionName, key, value);
-        }
-        free(key);
-        free(value);
-        if (nextToken == NULL) break;
-        cursor = nextToken;
-        while (cursor < end && *cursor == ' ') ++cursor;
-    }
+    key_value_token_context_t kv = {.ctx = ctx, .target = target, .sectionName = sectionName};
+    tokenize_on_multispace(text, strlen(text), key_value_token_handler, &kv);
 }
 
 static void parse_privilege_sequence(parse_context_t *ctx, const char *text) {
@@ -2609,6 +3424,8 @@ static void populate_event_metadata(parse_context_t *ctx, char **tokens, size_t 
         categoryTextIdx = 7;
     }
 
+    validate_field_count("header", tokenCount, categoryTextIdx + 1, &ctx->detection.validation);
+
     if (tokenCount > eventIdIdx && !is_placeholder(tokens[eventIdIdx])) {
         long long eid;
         if (try_parse_int64(tokens[eventIdIdx], &eid)) {
@@ -2679,6 +3496,8 @@ static rsRetVal parse_snare_text(
         return RS_RET_OUT_OF_MEMORY;
     }
     json_object_object_add(ctx.root, "Event", ctx.event);
+    initialize_parse_detection(&ctx);
+    initialize_parse_detection(&ctx);
 
     dbgprintf("[mmsnarewinsec DEBUG] Processing SNARE text message with %zu tokens\n", tokenCount);
     if (rawMsg != NULL) {
@@ -2709,6 +3528,8 @@ static rsRetVal parse_snare_text(
             tokenCount, descriptionIdx, tokenCount > descriptionIdx ? tokens[descriptionIdx] : "N/A");
     }
     if (ctx.unparsed == NULL && pData->emitDebugJson) ctx.unparsed = json_object_new_array();
+
+    finalize_detection_output(&ctx);
 
     const char *json_str = json_object_to_json_string_ext(ctx.root, JSON_C_TO_STRING_PRETTY);
     if (json_str != NULL) {
@@ -2799,6 +3620,7 @@ static rsRetVal parse_snare_json(instanceData *pData, smsg_t *pMsg, const char *
         dbgprintf("[mmsnarewinsec DEBUG] Failed to parse JSON payload\n");
         json_tokener_free(tokener);
         json_add_string(ctx.root, "RawJSON", jsonPayload);
+        finalize_detection_output(&ctx);
         msgAddJSON(pMsg, pData->container, ctx.root, 0, 0);
         return RS_RET_OK;
     }
@@ -2809,6 +3631,8 @@ static rsRetVal parse_snare_json(instanceData *pData, smsg_t *pMsg, const char *
     }
 
     if (pData->emitRawPayload) json_object_object_add(ctx.root, "RawJSON", json_object_get(payload));
+    const char *requiredJson[] = {"EventID"};
+    validate_required_fields(jsonPayload, requiredJson, ARRAY_SIZE(requiredJson), &ctx.detection.validation);
     if (json_object_object_get_ex(payload, "EventID", &value)) {
         long long eid = json_object_get_int64(value);
         json_add_int64(ctx.event, "EventID", eid);
@@ -2840,6 +3664,8 @@ static rsRetVal parse_snare_json(instanceData *pData, smsg_t *pMsg, const char *
             json_add_string(ctx.event, "Computer", json_object_get_string(inner));
     }
     apply_event_mapping(&ctx, NULL);
+
+    finalize_detection_output(&ctx);
 
     const char *json_str2 = json_object_to_json_string_ext(ctx.root, JSON_C_TO_STRING_PRETTY);
     if (json_str2 != NULL) {
@@ -2923,7 +3749,8 @@ static struct cnfparamdescr actpdescr[] = {
     {"enable.laps", eCmdHdlrBinary, 0},     {"enable.tls", eCmdHdlrBinary, 0},
     {"enable.wdac", eCmdHdlrBinary, 0},     {"emit.rawpayload", eCmdHdlrBinary, 0},
     {"emit.debugjson", eCmdHdlrBinary, 0},  {"definition.file", eCmdHdlrString, 0},
-    {"definition.json", eCmdHdlrString, 0}, {"validation.mode", eCmdHdlrString, 0}};
+    {"definition.json", eCmdHdlrString, 0}, {"validation.mode", eCmdHdlrString, 0},
+    {"runtime.config", eCmdHdlrString, 0}};
 static struct cnfparamblk actpblk = {CNFPARAMBLK_VERSION, ARRAY_SIZE(actpdescr), actpdescr};
 
 BEGINbeginCnfLoad
@@ -3050,6 +3877,13 @@ static inline void setInstParamDefaults(instanceData *pData) {
     pData->eventFieldMappingCount = 0;
     pData->eventMappings = NULL;
     pData->eventMappingCount = 0;
+    runtime_config_init(&pData->runtimeConfig);
+    pData->validationDefaults.mode = VALIDATION_MODERATE;
+    pData->validationDefaults.enable_debug = false;
+    pData->validationDefaults.log_parsing_errors = true;
+    pData->validationDefaults.continue_on_error = true;
+    pData->validationDefaults.max_errors_before_fail = MAX_PARSING_ERRORS;
+    pData->validationDefaults.current_error_count = 0;
 }
 
 BEGINnewActInst
@@ -3057,6 +3891,7 @@ BEGINnewActInst
     int i;
     char *definitionFile = NULL;
     char *definitionJson = NULL;
+    char *runtimeConfigFile = NULL;
     CODESTARTnewActInst;
     if ((pvals = nvlstGetParams(lst, &actpblk, NULL)) == NULL) {
         LogError(0, RS_RET_MISSING_CNFPARAMS, "mmsnarewinsec: missing configuration parameters");
@@ -3101,6 +3936,9 @@ BEGINnewActInst
             }
             CHKiRet(set_validation_mode(pData, mode));
             free(mode);
+        } else if (!strcmp(actpblk.descr[i].name, "runtime.config")) {
+            free(runtimeConfigFile);
+            runtimeConfigFile = es_str2cstr(pvals[i].val.d.estr, NULL);
         }
     }
     if (pData->container == NULL) {
@@ -3124,10 +3962,15 @@ BEGINnewActInst
     if (definitionJson != NULL) {
         CHKiRet(load_custom_definition_text(pData, definitionJson, "inline definitions"));
     }
+    if (runtimeConfigFile != NULL) {
+        CHKiRet(load_configuration(&pData->runtimeConfig, runtimeConfigFile));
+        CHKiRet(apply_runtime_configuration(pData, &pData->runtimeConfig));
+    }
     CODE_STD_FINALIZERnewActInst;
     cnfparamvalsDestruct(pvals, &actpblk);
     free(definitionFile);
     free(definitionJson);
+    free(runtimeConfigFile);
 ENDnewActInst
 
 BEGINdbgPrintInstInfo
