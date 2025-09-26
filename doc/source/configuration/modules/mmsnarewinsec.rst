@@ -46,6 +46,10 @@ Highlights
   Credential Guard and LAPS credential rotation indicators.
 * Stores any unmapped segments in ``!win!Unparsed`` to ensure the payload is
   preserved for later review.
+* Emits per-message validation diagnostics in ``!win!Validation!Errors`` and
+  parsing counters in ``!win!Stats!ParsingStats`` for easier troubleshooting.
+* Supports external JSON overrides via ``runtime.config`` or inline
+  ``definition.json`` so new fields can be mapped without recompilation.
 
 Build & Runtime Requirements
 -----------------------------
@@ -79,6 +83,10 @@ nodes include:
 * ``LAPS``, ``TLS``, ``WDAC``, ``WUFB`` — Dedicated blocks for modern telemetry
   (LAPS context, TLS inspection, Windows Defender Application Control, Windows
   Update for Business deployment events).
+* ``Validation`` — Per-message warnings raised by strict or moderate validation
+  policies.
+* ``Stats`` — Parsing counters (``ParsingStats``) summarising how many fields
+  were extracted successfully.
 * ``Raw`` / ``RawJSON`` — Optional copies of the original Snare payload when
   ``emit.rawpayload="on"``.
 * ``Unparsed`` — Catch-all array for any sections the module could not map with
@@ -124,6 +132,9 @@ Error Handling & Observability
 * Enable ``emit.debugjson="on"`` to force-create ``!win!Unparsed`` (even when
   empty) so assertions and log collection pipelines can detect previously
   unseen sections.
+* ``!win!Validation!Errors`` captures parse-time warnings when ``validation.mode``
+  is ``moderate`` or ``strict`` and ``!win!Stats!ParsingStats`` exposes
+  ``total_fields``, ``successful_parses`` and ``failed_parses`` for telemetry.
 
 Configuration
 -------------
@@ -354,10 +365,17 @@ New module parameters
     or replace objects loaded from disk.
 
 ``validation.mode``
-    Controls how the loader reacts to malformed entries. ``permissive`` (the
-    default; aliases: ``lenient``, ``default``) logs warnings and skips invalid
-    objects, while ``strict`` aborts the instance configuration when a
-    definition cannot be parsed.
+    Controls how both configuration and runtime parsing react to malformed
+    data. ``permissive`` (the default; aliases: ``lenient``, ``default``)
+    accepts issues silently, ``moderate`` records warnings under
+    ``!win!Validation!Errors`` while continuing, and ``strict`` aborts the
+    configuration or message when thresholds are exceeded.
+
+``runtime.config``
+    Path to a JSON file containing persistent overrides. The file shares the
+    same schema as ``definition.file`` and additionally supports an ``options``
+    object (``enable_debug``, ``enable_fallback``) to influence parse-time
+    behaviour.
 
 Definition schema
 ~~~~~~~~~~~~~~~~~
