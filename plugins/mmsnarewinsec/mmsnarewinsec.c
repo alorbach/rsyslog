@@ -1009,9 +1009,18 @@ static sbool try_parse_bool(const char *value, sbool *outVal) {
 
 static struct json_object *try_parse_json_block(const char *value) {
     if (value == NULL || *value == '\0') return NULL;
-    // Simple JSON parsing - just return NULL for now
-    // This would need proper JSON parsing implementation
-    return NULL;
+    
+    // Try to parse as JSON using json-c library
+    struct json_tokener *tokener = json_tokener_new();
+    if (tokener == NULL) return NULL;
+    
+    struct json_object *json_obj = json_tokener_parse_ex(tokener, value, (int)strlen(value));
+    json_tokener_free(tokener);
+    
+    // If parsing failed, return NULL
+    if (json_obj == NULL) return NULL;
+    
+    return json_obj;
 }
 
 static const char *lookup_logon_description(int logonType) {

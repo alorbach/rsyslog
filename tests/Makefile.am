@@ -511,7 +511,8 @@ TESTS += \
     mmsnarewinsec-generic-tokenization.sh\
     mmsnarewinsec-runtime-config.sh\
     mmsnarewinsec-enhanced-parsing.sh\
-    mmsnarewinsec-custom.sh
+    mmsnarewinsec-custom.sh\
+    mmsnarewinsec-custom-definitions.sh
 endif
 
 if ENABLE_OMSENDERTRACK
