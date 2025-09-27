@@ -22,6 +22,7 @@ action(type="mmsnarewinsec"
        validation_mode="strict"
        debugjson="on"
        template="validation_test_json")
+action(type="omfile" file="'$RSYSLOG_OUT_LOG'" template="validation_test_json")
 '
 
 startup

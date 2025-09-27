@@ -440,6 +440,7 @@ static rsRetVal load_configuration(runtime_config_t *config, const char *config_
 static rsRetVal save_configuration(const runtime_config_t *config, const char *config_file) ATTR_UNUSED;
 static rsRetVal apply_runtime_configuration(instanceData *pData, const runtime_config_t *config);
 static rsRetVal handle_parsing_error(field_detection_context_t *ctx, const char *error_message, const char *context);
+static void normalize_literal_tabs(char *text);
 
 /** worker data */
 typedef struct wrkrInstanceData {
@@ -760,6 +761,25 @@ static void unescape_hash_sequences(char *s) {
             int val = ((src[1] - '0') << 6) | ((src[2] - '0') << 3) | (src[3] - '0');
             *dst++ = (char)val;
             src += 4;
+        } else {
+            *dst++ = *src++;
+        }
+    }
+    *dst = '\0';
+}
+
+static void normalize_literal_tabs(char *text) {
+    char *src;
+    char *dst;
+
+    if (text == NULL) return;
+
+    src = text;
+    dst = text;
+    while (*src != '\0') {
+        if (src[0] == '\\' && src[1] == 't') {
+            *dst++ = '\t';
+            src += 2;
         } else {
             *dst++ = *src++;
         }
@@ -3007,29 +3027,55 @@ static sbool pattern_matches(const field_pattern_t *pattern, const char *label, 
     }
 }
 
-static const field_pattern_t *select_field_pattern(parse_context_t *ctx, const char *label, const char *canon) {
-    const field_pattern_t *best = NULL;
-    int bestPriority = INT_MIN;
+static const field_pattern_t *select_field_pattern(
+    parse_context_t *ctx, const char *label, const char *canon, const char *sectionName) {
+    const field_pattern_t *bestSection = NULL;
+    const field_pattern_t *bestGeneric = NULL;
+    const field_pattern_t *bestFallback = NULL;
+    int bestSectionPrio = INT_MIN;
+    int bestGenericPrio = INT_MIN;
+    int bestFallbackPrio = INT_MIN;
+
     if (ctx == NULL) return NULL;
-    if (ctx->eventPatterns != NULL) {
-        for (size_t i = 0; i < ctx->eventPatternCount; ++i) {
-            const field_pattern_t *candidate = &ctx->eventPatterns[i];
-            if (pattern_matches(candidate, label, canon) && candidate->priority > bestPriority) {
-                bestPriority = candidate->priority;
-                best = candidate;
+
+    const size_t eventCount = ctx->eventPatterns != NULL ? ctx->eventPatternCount : 0u;
+    const size_t coreCount = ctx->corePatterns != NULL ? ctx->corePatternCount : 0u;
+
+    for (size_t pass = 0; pass < 2; ++pass) {
+        const field_pattern_t *patterns = (pass == 0) ? ctx->eventPatterns : ctx->corePatterns;
+        size_t patternCount = (pass == 0) ? eventCount : coreCount;
+        for (size_t i = 0; i < patternCount; ++i) {
+            const field_pattern_t *candidate = &patterns[i];
+            const char *candidateSection = candidate->section;
+
+            if (!pattern_matches(candidate, label, canon)) continue;
+
+            if (sectionName != NULL && candidateSection != NULL && strcmp(candidateSection, sectionName) == 0) {
+                if (candidate->priority > bestSectionPrio) {
+                    bestSectionPrio = candidate->priority;
+                    bestSection = candidate;
+                }
+                continue;
+            }
+
+            if (candidateSection == NULL) {
+                if (candidate->priority > bestGenericPrio) {
+                    bestGenericPrio = candidate->priority;
+                    bestGeneric = candidate;
+                }
+                continue;
+            }
+
+            if (candidate->priority > bestFallbackPrio) {
+                bestFallbackPrio = candidate->priority;
+                bestFallback = candidate;
             }
         }
     }
-    if (ctx->corePatterns != NULL) {
-        for (size_t i = 0; i < ctx->corePatternCount; ++i) {
-            const field_pattern_t *candidate = &ctx->corePatterns[i];
-            if (pattern_matches(candidate, label, canon) && candidate->priority > bestPriority) {
-                bestPriority = candidate->priority;
-                best = candidate;
-            }
-        }
-    }
-    return best;
+
+    if (bestSection != NULL) return bestSection;
+    if (bestGeneric != NULL) return bestGeneric;
+    return bestFallback;
 }
 
 static void add_raw_string(struct json_object *obj, const char *baseName, const char *value) {
@@ -3198,7 +3244,7 @@ static void dispatch_field(
     char *canon = normalize_label(label);
     if (canon == NULL) return;
 
-    const field_pattern_t *pattern = select_field_pattern(ctx, label, canon);
+    const field_pattern_t *pattern = select_field_pattern(ctx, label, canon, sectionName);
     struct json_object *dest = resolve_target_object(ctx, target, pattern);
     if (dest == NULL && target != NULL) dest = target;
     if (dest == NULL) dest = ensure_event_data(ctx);
@@ -3425,7 +3471,9 @@ static void parse_key_value_sequence(parse_context_t *ctx,
                                      const char *sectionName) {
     if (text == NULL) return;
 
-    dbgprintf("[mmsnarewinsec DEBUG] parse_key_value_sequence: text='%s', sectionName='%s'\n", text, sectionName);
+    dbgprintf("[mmsnarewinsec DEBUG] parse_key_value_sequence: text='%s', sectionName='%s'\n",
+              text != NULL ? text : "<null>",
+              sectionName != NULL ? sectionName : "<none>");
 
     key_value_callback_t cb = {.ctx = ctx, .target = target, .sectionName = sectionName};
     tokenize_on_multispace(text, strlen(text), parse_key_value_token, &cb);
@@ -4145,6 +4193,7 @@ static rsRetVal process_message(instanceData *pData, smsg_t *pMsg, uchar *msgTex
         return RS_RET_OUT_OF_MEMORY;
     }
     unescape_hash_sequences(mutableMsg);
+    normalize_literal_tabs(mutableMsg);
     dbgprintf("[mmsnarewinsec DEBUG] After unescaping: '%s'\n", mutableMsg);
     cursor = mutableMsg;
     while (cursor != NULL && tokenCount < ARRAY_SIZE(tokens)) {
@@ -4181,13 +4230,21 @@ static struct cnfparamdescr modpdescr[] = {{"definition.file", eCmdHdlrString, 0
                                            {"validation.mode", eCmdHdlrString, 0}};
 static struct cnfparamblk modpblk = {CNFPARAMBLK_VERSION, ARRAY_SIZE(modpdescr), modpdescr};
 
-static struct cnfparamdescr actpdescr[] = {
-    {"container", eCmdHdlrString, 0},       {"enable.network", eCmdHdlrBinary, 0},
-    {"enable.laps", eCmdHdlrBinary, 0},     {"enable.tls", eCmdHdlrBinary, 0},
-    {"enable.wdac", eCmdHdlrBinary, 0},     {"emit.rawpayload", eCmdHdlrBinary, 0},
-    {"emit.debugjson", eCmdHdlrBinary, 0},  {"definition.file", eCmdHdlrString, 0},
-    {"definition.json", eCmdHdlrString, 0}, {"runtime.config", eCmdHdlrString, 0},
-    {"validation.mode", eCmdHdlrString, 0}};
+static struct cnfparamdescr actpdescr[] = {{"container", eCmdHdlrString, 0},
+                                           {"rootpath", eCmdHdlrString, 0},
+                                           {"template", eCmdHdlrGetWord, 0},
+                                           {"enable.network", eCmdHdlrBinary, 0},
+                                           {"enable.laps", eCmdHdlrBinary, 0},
+                                           {"enable.tls", eCmdHdlrBinary, 0},
+                                           {"enable.wdac", eCmdHdlrBinary, 0},
+                                           {"emit.rawpayload", eCmdHdlrBinary, 0},
+                                           {"emit.debugjson", eCmdHdlrBinary, 0},
+                                           {"debugjson", eCmdHdlrBinary, 0},
+                                           {"definition.file", eCmdHdlrString, 0},
+                                           {"definition.json", eCmdHdlrString, 0},
+                                           {"runtime.config", eCmdHdlrString, 0},
+                                           {"validation.mode", eCmdHdlrString, 0},
+                                           {"validation_mode", eCmdHdlrString, 0}};
 static struct cnfparamblk actpblk = {CNFPARAMBLK_VERSION, ARRAY_SIZE(actpdescr), actpdescr};
 
 BEGINbeginCnfLoad
@@ -4337,13 +4394,12 @@ BEGINnewActInst
     char *definitionFile = NULL;
     char *definitionJson = NULL;
     char *runtimeConfigFile = NULL;
+    char *templateName = NULL;
     CODESTARTnewActInst;
     if ((pvals = nvlstGetParams(lst, &actpblk, NULL)) == NULL) {
         LogError(0, RS_RET_MISSING_CNFPARAMS, "mmsnarewinsec: missing configuration parameters");
         ABORT_FINALIZE(RS_RET_MISSING_CNFPARAMS);
     }
-    CODE_STD_STRING_REQUESTnewActInst(1);
-    CHKiRet(OMSRsetEntry(*ppOMSR, 0, NULL, OMSR_TPL_AS_MSG));
     CHKiRet(createInstance(&pData));
     setInstParamDefaults(pData);
     if (loadModConf != NULL) {
@@ -4354,11 +4410,14 @@ BEGINnewActInst
     }
     for (i = 0; i < (int)actpblk.nParams; ++i) {
         if (!pvals[i].bUsed) continue;
-        if (!strcmp(actpblk.descr[i].name, "container")) {
+        if (!strcmp(actpblk.descr[i].name, "container") || !strcmp(actpblk.descr[i].name, "rootpath")) {
             free(pData->container);
             pData->container = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
             if (pData->container != NULL && pData->container[0] == '$')
                 memmove(pData->container, pData->container + 1, strlen((char *)pData->container));
+        } else if (!strcmp(actpblk.descr[i].name, "template")) {
+            free(templateName);
+            templateName = es_str2cstr(pvals[i].val.d.estr, NULL);
         } else if (!strcmp(actpblk.descr[i].name, "enable.network")) {
             pData->enableNetwork = (sbool)pvals[i].val.d.n;
         } else if (!strcmp(actpblk.descr[i].name, "enable.laps")) {
@@ -4369,7 +4428,7 @@ BEGINnewActInst
             pData->enableWdac = (sbool)pvals[i].val.d.n;
         } else if (!strcmp(actpblk.descr[i].name, "emit.rawpayload")) {
             pData->emitRawPayload = (sbool)pvals[i].val.d.n;
-        } else if (!strcmp(actpblk.descr[i].name, "emit.debugjson")) {
+        } else if (!strcmp(actpblk.descr[i].name, "emit.debugjson") || !strcmp(actpblk.descr[i].name, "debugjson")) {
             pData->emitDebugJson = (sbool)pvals[i].val.d.n;
         } else if (!strcmp(actpblk.descr[i].name, "definition.file")) {
             free(definitionFile);
@@ -4380,7 +4439,8 @@ BEGINnewActInst
         } else if (!strcmp(actpblk.descr[i].name, "runtime.config")) {
             free(runtimeConfigFile);
             runtimeConfigFile = es_str2cstr(pvals[i].val.d.estr, NULL);
-        } else if (!strcmp(actpblk.descr[i].name, "validation.mode")) {
+        } else if (!strcmp(actpblk.descr[i].name, "validation.mode") ||
+                   !strcmp(actpblk.descr[i].name, "validation_mode")) {
             char *mode = es_str2cstr(pvals[i].val.d.estr, NULL);
             if (mode == NULL) {
                 ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
@@ -4389,12 +4449,14 @@ BEGINnewActInst
             free(mode);
         }
     }
+    CODE_STD_STRING_REQUESTnewActInst(1);
     if (pData->container == NULL) {
         CHKmalloc(pData->container = (uchar *)strdup(MMSNAREWINSEC_CONTAINER_DEFAULT));
         if (pData->container == NULL) {
             LogError(0, RS_RET_OUT_OF_MEMORY, "mmsnarewinsec: failed to allocate default container name");
         }
     }
+    CHKiRet(OMSRsetEntry(*ppOMSR, 0, NULL, OMSR_TPL_AS_MSG));
     CHKiRet(initialize_runtime_tables(pData));
     if (loadModConf != NULL) {
         if (loadModConf->definitionFile != NULL) {
@@ -4416,6 +4478,7 @@ BEGINnewActInst
     CHKiRet(apply_runtime_configuration(pData, &pData->runtimeConfig));
     CODE_STD_FINALIZERnewActInst;
     cnfparamvalsDestruct(pvals, &actpblk);
+    free(templateName);
     free(definitionFile);
     free(definitionJson);
     free(runtimeConfigFile);
