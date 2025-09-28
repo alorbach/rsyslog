@@ -2592,6 +2592,68 @@ static const section_descriptor_t *select_section_descriptor(const instanceData 
     return best;
 }
 
+static const section_descriptor_t *find_embedded_section_descriptor(
+    const instanceData *inst, char *label, char **sectionStartOut) {
+    const section_descriptor_t *best = NULL;
+    char *bestStart = NULL;
+    int bestPriority = INT_MIN;
+    size_t bestSpecificity = 0;
+    size_t labelLen;
+
+    if (sectionStartOut != NULL) *sectionStartOut = NULL;
+    if (inst == NULL || label == NULL || sectionStartOut == NULL) return NULL;
+
+    labelLen = strlen(label);
+    if (labelLen == 0) return NULL;
+
+    for (size_t i = 0; i < inst->sectionDescriptorCount; ++i) {
+        const section_descriptor_t *candidate = &inst->sectionDescriptors[i];
+        const char *pattern = candidate->pattern;
+        size_t patternLen;
+        char *candidateStart;
+        int cmp;
+
+        if (!section_is_enabled(inst, candidate->flags)) continue;
+        if (pattern == NULL) continue;
+        patternLen = strlen(pattern);
+        if (patternLen == 0 || patternLen >= labelLen) continue;
+
+        candidateStart = label + labelLen - patternLen;
+        if (candidateStart <= label) continue;
+        if (!isspace((unsigned char)candidateStart[-1]) && candidateStart[-1] != '.' && candidateStart[-1] != '-')
+            continue;
+
+        switch (candidate->sensitivity) {
+            case fieldSensitivityCaseInsensitive:
+                cmp = strncasecmp(candidateStart, pattern, patternLen);
+                break;
+            case fieldSensitivityCanonical: {
+                char *normalized = normalize_label(candidateStart);
+                cmp = (normalized != NULL) ? strcmp(normalized, pattern) : 1;
+                free(normalized);
+                break;
+            }
+            case fieldSensitivityCaseSensitive:
+            default:
+                cmp = strncmp(candidateStart, pattern, patternLen);
+                break;
+        }
+        if (cmp != 0) continue;
+
+        size_t specificity = pattern_specificity(candidate->pattern);
+        if (candidate->priority > bestPriority ||
+            (candidate->priority == bestPriority && specificity > bestSpecificity)) {
+            best = candidate;
+            bestPriority = candidate->priority;
+            bestSpecificity = specificity;
+            bestStart = candidateStart;
+        }
+    }
+
+    if (best != NULL) *sectionStartOut = bestStart;
+    return best;
+}
+
 static inline int section_is_enabled(const instanceData *pData, uint32_t flags) {
     if ((flags & SECTION_FLAG_NETWORK) && !pData->enableNetwork) return 0;
     if ((flags & SECTION_FLAG_LAPS) && !pData->enableLaps) return 0;
@@ -3723,6 +3785,28 @@ static void parse_line(parse_context_t *ctx, char *line) {
     dbgprintf("[mmsnarewinsec DEBUG] parse_line: label='%s', rest='%s'\n", label, rest);
 
     desc = select_section_descriptor(ctx->inst, label);
+    if (desc == NULL) {
+        char *sectionStart = NULL;
+        const section_descriptor_t *embedded = find_embedded_section_descriptor(ctx->inst, label, &sectionStart);
+        if (embedded != NULL && sectionStart != NULL) {
+            size_t summaryLen = (size_t)(sectionStart - label);
+            if (summaryLen > 0) {
+                char *summary = trim_copy(label, summaryLen);
+                if (summary != NULL && *summary != '\0') {
+                    if (!ctx->summarySet) {
+                        json_add_string(ctx->root, "Summary", summary);
+                        ctx->summarySet = 1;
+                    } else {
+                        append_unparsed(ctx, summary);
+                    }
+                }
+                free(summary);
+            }
+            label = sectionStart;
+            trim_inplace(label);
+            desc = embedded;
+        }
+    }
     if (desc != NULL) {
         dbgprintf("[mmsnarewinsec DEBUG] parse_line: matched section pattern '%s' -> '%s'\n", desc->pattern,
                   desc->canonical);
