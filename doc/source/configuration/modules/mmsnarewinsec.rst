@@ -44,6 +44,9 @@ Highlights
 * Performs lookup translation for logon type codes, deriving
   ``LogonTypeName`` strings, and emits boolean interpretations for Remote
   Credential Guard and LAPS credential rotation indicators.
+* Applies enhanced value parsing that trims whitespace, skips placeholder
+  tokens, recognises embedded JSON fragments, GUID literals, IPv4 addresses,
+  and common timestamp formats before choosing the final JSON representation.
 * Stores any unmapped segments in ``!win!Unparsed`` to ensure the payload is
   preserved for later review.
 
@@ -263,6 +266,25 @@ Parameters
    "``enable.wdac``", "binary", "``on``", "Toggle WDAC enrichment (``Policy Name``, ``Policy Version``, etc.)."
    "``emit.rawpayload``", "binary", "``on``", "When enabled, stores the original payload in ``!win!Raw`` (or ``!win!RawJSON`` for Snare JSON records)."
    "``emit.debugjson``", "binary", "``off``", "Adds an empty ``Unparsed`` array even when all sections are recognized, simplifying downstream assertions."
+  "``runtime.config.file``", "string", "-", "Runtime configuration file merged after built-in and module-level definitions."
+  "``runtime.config.debug``", "binary", "``off``", "Enable verbose logging when runtime files are read or written."
+  "``runtime.config.fallback``", "binary", "``on``", "Keep processing even if loading ``runtime.config.file`` fails."
+  "``runtime.config.autosave``", "binary", "``off``", "Persist captured runtime definitions back to ``runtime.config.file`` during shutdown."
+
+Validation modes
+~~~~~~~~~~~~~~~~
+
+``validation.mode`` governs how aggressively the module reacts when payload
+structure differs from expectations:
+
+* ``strict`` aborts parsing on the first mismatch (missing required fields,
+  section count drift, or conversion failures). Use this when upstream data is
+  well-controlled and you prefer to drop malformed entries.
+* ``moderate`` (the default) records validation errors and continues, emitting
+  diagnostic messages when rsyslog runs with debug logging enabled.
+* ``permissive`` keeps parsing even when repeated issues are detected. This is
+  useful for exploratory deployments where capturing as much data as possible
+  outweighs strict schema enforcement.
 
 Extracted fields
 ----------------
@@ -339,6 +361,42 @@ Extending Pattern Tables at Runtime
 normalisation and event metadata, but environments frequently contain
 organisation-specific extensions. The module can import supplemental
 definitions at startup using declarative JSON descriptors.
+
+Runtime configuration
+~~~~~~~~~~~~~~~~~~~~~
+
+For action-level overrides the module offers a dedicated runtime configuration
+channel. Set ``runtime.config.file`` on the action to point at a JSON document
+that follows the same structure as ``definition.file`` / ``definition.json``
+(``sections``, ``fields``, ``eventFields``, ``events``). The loader merges the
+file after the built-in tables and any module-scoped definitions, so runtime
+rules win in case of conflicts.
+
+Optional toggles refine the behaviour:
+
+* ``runtime.config.debug`` — emit verbose diagnostics when runtime files are
+  loaded or saved. Useful when iterating on large rule sets.
+* ``runtime.config.fallback`` — when ``on`` (default) the action keeps running
+  even if the runtime file cannot be parsed, falling back to the compiled
+  tables.
+* ``runtime.config.autosave`` — persist the accumulated runtime definitions to
+  ``runtime.config.file`` during shutdown. The module writes only the entries it
+  captured (for example custom sections imported from files or provided inline
+  via ``definition.json``).
+
+Example:
+
+.. code-block:: none
+
+   action(type="mmsnarewinsec"
+          runtime.config.file="/etc/rsyslog.d/winsec-runtime.json"
+          runtime.config.debug="on"
+          runtime.config.autosave="on")
+
+With ``runtime.config.autosave`` the effective configuration is exported in
+JSON (pretty printed) whenever the action is destroyed. This makes it easy to
+curate custom matchers in staging and promote the resulting file unchanged to
+production systems.
 
 New module parameters
 ~~~~~~~~~~~~~~~~~~~~~

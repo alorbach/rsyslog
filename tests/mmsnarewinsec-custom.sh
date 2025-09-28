@@ -52,24 +52,25 @@ generate_conf
 add_conf "
 module(load=\"../plugins/imtcp/.libs/imtcp\")
 module(load=\"../plugins/mmsnarewinsec/.libs/mmsnarewinsec\" \
-       definition.file=\"${PWD}/${DEF_FILE}\" \
-       validation.mode=\"strict\")
+  validation.mode=\"strict\")
 
 template(name=\"customfmt\" type=\"list\") {
-    property(name=\"\\$!win!Event!Category\")
-    constant(value=\",\")
-    property(name=\"\\$!win!CustomBlock!WidgetID\")
-    constant(value=\",\")
-    property(name=\"\\$!win!EventData!CustomEventTag\")
-    constant(value=\",\")
-    property(name=\"\\$!win!Event!Outcome\")
-    constant(value=\"\\n\")
+  property(name=\"\$!win!Event!Category\")
+  constant(value=\",\")
+  property(name=\"\$!win!CustomBlock!WidgetID\")
+  constant(value=\",\")
+  property(name=\"\$!win!EventData!CustomEventTag\")
+  constant(value=\",\")
+  property(name=\"\$!win!Event!Outcome\")
+  constant(value=\"\n\")
 }
 
-action(type=\"mmsnarewinsec\")
+action(type=\"mmsnarewinsec\" \
+  runtime.config.file=\"${PWD}/${DEF_FILE}\" \
+  runtime.config.debug=\"on\")
 action(type=\"omfile\" file=\"$RSYSLOG_OUT_LOG\" template=\"customfmt\")
 
-input(type=\"imtcp\" port=\"0\" listenPortFileName=\"'$RSYSLOG_DYNNAME'.tcpflood_port\")
+input(type=\"imtcp\" port=\"0\" listenPortFileName=\"${RSYSLOG_DYNNAME}.tcpflood_port\")
 "
 
 startup
