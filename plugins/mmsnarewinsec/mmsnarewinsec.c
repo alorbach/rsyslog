@@ -596,6 +596,8 @@ static rsRetVal tokenize_on_multispace(
     size_t i = 0;
     bool in_token = false;
     size_t start = 0;
+    bool tokenSawColon = false;
+    bool tokenHasValue = false;
 
     while (i < len) {
         if (ptr[i] == ' ' || ptr[i] == '\t') {
@@ -617,10 +619,16 @@ static rsRetVal tokenize_on_multispace(
                 treat_as_delim = true;
             }
 
+            if (treat_as_delim && (!in_token || !tokenSawColon || !tokenHasValue)) {
+                treat_as_delim = false;
+            }
+
             if (treat_as_delim) {
                 if (in_token) {
                     callback(ptr + start, i - start, user_data);
                     in_token = false;
+                    tokenSawColon = false;
+                    tokenHasValue = false;
                 }
                 i = j;
                 continue;
@@ -629,6 +637,8 @@ static rsRetVal tokenize_on_multispace(
             if (!in_token) {
                 start = i;
                 in_token = true;
+                tokenSawColon = false;
+                tokenHasValue = false;
             }
             i = j;
             continue;
@@ -637,7 +647,11 @@ static rsRetVal tokenize_on_multispace(
         if (!in_token) {
             start = i;
             in_token = true;
+            tokenSawColon = false;
+            tokenHasValue = false;
         }
+        if (ptr[i] == ':' && in_token) tokenSawColon = true;
+        if (in_token && tokenSawColon && !isspace((unsigned char)ptr[i]) && ptr[i] != ':') tokenHasValue = true;
         ++i;
     }
 
