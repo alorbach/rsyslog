@@ -30,5 +30,49 @@ tcpflood -m1 -M "\"<14>Jun 10 11:30:45 LAB-LOGON105 MSWinEventLog\t1\tSecurity\t
 shutdown_when_empty
 wait_shutdown
 
-content_check '{"eventid":4624,"validation_errors":[],"parsing_stats":{"total_fields":15,"successful_parses":15,"failed_parses":0}}'
+python3 - "$RSYSLOG_OUT_LOG" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+data = []
+
+try:
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            data.append(json.loads(line))
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"failed to decode JSON line: {line}\n{exc}")
+except FileNotFoundError as exc:
+    raise SystemExit(f"output log not found: {exc}")
+
+event = next((entry for entry in data if entry.get("eventid")), None)
+if event is None:
+    raise SystemExit("no event record with an eventid was captured")
+
+try:
+    stats = json.loads(event["parsing_stats"])
+except (KeyError, json.JSONDecodeError) as exc:
+    raise SystemExit(f"unable to parse parsing_stats payload: {exc}")
+
+try:
+    errors = json.loads(event["validation_errors"])
+except (KeyError, json.JSONDecodeError) as exc:
+    raise SystemExit(f"unable to parse validation_errors payload: {exc}")
+
+if event["eventid"] != "4624":
+    raise SystemExit(f"unexpected eventid: {event['eventid']}")
+
+if errors != []:
+    raise SystemExit(f"expected no validation errors, got: {errors}")
+
+expected_stats = {"total_fields": 25, "successful_parses": 25, "failed_parses": 0}
+if stats != expected_stats:
+    raise SystemExit(f"unexpected parsing stats: {stats}")
+PY
+
 exit_test
