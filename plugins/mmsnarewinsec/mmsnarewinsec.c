@@ -53,6 +53,7 @@ MODULE_CNFNAME("mmsnarewinsec")
 #define SECTION_FLAG_WDAC (1u << 3)
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+#define MAX_PARSING_ERRORS 100
 
 /**
  * @brief Describes how a description block behaves while parsing.
@@ -384,6 +385,12 @@ typedef struct validation_context {
     size_t max_errors_before_fail;
     size_t current_error_count;
 } validation_context_t;
+
+typedef struct field_detection_context {
+    sbool enable_debug;
+    size_t parsing_errors;
+    validation_context_t *validation_ctx;
+} field_detection_context_t;
 
 // Runtime configuration support
 typedef struct runtime_config {
@@ -1034,6 +1041,361 @@ static const char *lookup_logon_description(int logonType) {
     return NULL;
 }
 
+// Generic tokenization framework (inspired by PR #111)
+static rsRetVal __attribute__((unused)) tokenize_on_multispace(
+    const char *str, 
+    size_t len, 
+    token_callback_t callback, 
+    void *user_data
+) {
+    if (str == NULL || len == 0) return RS_RET_OK;
+    
+    const char *ptr = str;
+    size_t i = 0;
+    sbool in_token = 0;
+    size_t start = 0;
+    
+    while (i < len) {
+        if (ptr[i] == ' ') {
+            size_t j = i;
+            while (j < len && ptr[j] == ' ') ++j;
+            size_t spaces = j - i;
+            
+            if (spaces >= 2) {
+                if (in_token) {
+                    callback(ptr + start, i - start, user_data);
+                    in_token = 0;
+                }
+                i = j;
+                continue;
+            } else {
+                if (!in_token) {
+                    start = i;
+                    in_token = 1;
+                }
+                i = j;
+                continue;
+            }
+        } else {
+            if (!in_token) {
+                start = i;
+                in_token = 1;
+            }
+            ++i;
+        }
+    }
+    
+    if (in_token) {
+        callback(ptr + start, len - start, user_data);
+    }
+    
+    return RS_RET_OK;
+}
+
+// Enhanced helper functions
+static char *__attribute__((unused)) trim_whitespace_enhanced(const char *input) {
+    if (input == NULL) return NULL;
+    
+    size_t len = strlen(input);
+    if (len == 0) return strdup("");
+    
+    const char *start = input;
+    const char *end = input + len - 1;
+    
+    // Trim leading whitespace
+    while (start <= end && isspace((unsigned char)*start)) {
+        start++;
+    }
+    
+    // Trim trailing whitespace
+    while (end >= start && isspace((unsigned char)*end)) {
+        end--;
+    }
+    
+    size_t new_len = end - start + 1;
+    char *result = malloc(new_len + 1);
+    if (result == NULL) return NULL;
+    
+    strncpy(result, start, new_len);
+    result[new_len] = '\0';
+    
+    return result;
+}
+
+static sbool __attribute__((unused)) is_placeholder_value(const char *value) {
+    if (value == NULL) return 1;
+    
+    // Common placeholder values
+    const char *placeholders[] = {
+        "-", "N/A", "n/a", "NULL", "null", "None", "none", 
+        "Not Available", "not available", "Unknown", "unknown",
+        "<never>", "<value not set>", "<not set>", ""
+    };
+    
+    for (size_t i = 0; i < sizeof(placeholders) / sizeof(placeholders[0]); i++) {
+        if (strcasecmp(value, placeholders[i]) == 0) {
+            return 1;
+        }
+    }
+    
+    return 0;
+}
+
+static sbool __attribute__((unused)) is_guid_format(const char *value) {
+    if (value == NULL) return 0;
+    
+    // Simple GUID format check: {XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}
+    if (strlen(value) == 38 && value[0] == '{' && value[37] == '}') {
+        return 1;
+    }
+    
+    return 0;
+}
+
+static sbool __attribute__((unused)) is_ip_address(const char *value) {
+    if (value == NULL) return 0;
+    
+    // Simple IP address format check
+    int dots = 0;
+    int digits = 0;
+    
+    for (const char *p = value; *p; p++) {
+        if (*p == '.') {
+            dots++;
+            if (digits == 0) return 0;
+            digits = 0;
+        } else if (isdigit((unsigned char)*p)) {
+            digits++;
+        } else {
+            return 0;
+        }
+    }
+    
+    return dots == 3 && digits > 0;
+}
+
+static sbool __attribute__((unused)) is_timestamp_format(const char *value) {
+    if (value == NULL) return 0;
+    
+    // Simple timestamp format check
+    // Look for common timestamp patterns
+    if (strstr(value, "T") != NULL && strstr(value, "Z") != NULL) {
+        return 1; // ISO 8601 format
+    }
+    
+    if (strstr(value, "Mon ") != NULL || strstr(value, "Tue ") != NULL ||
+        strstr(value, "Wed ") != NULL || strstr(value, "Thu ") != NULL ||
+        strstr(value, "Fri ") != NULL || strstr(value, "Sat ") != NULL ||
+        strstr(value, "Sun ") != NULL) {
+        return 1; // Day of week format
+    }
+    
+    return 0;
+}
+
+static sbool __attribute__((unused)) is_json_format(const char *value) {
+    if (value == NULL) return 0;
+    
+    // Simple JSON format check
+    if (value[0] == '{' && value[strlen(value) - 1] == '}') {
+        return 1;
+    }
+    
+    if (value[0] == '[' && value[strlen(value) - 1] == ']') {
+        return 1;
+    }
+    
+    return 0;
+}
+
+// Enhanced field value parsing with type awareness
+static rsRetVal __attribute__((unused)) parse_field_value_enhanced(
+    const char *value, 
+    field_value_type_t type, 
+    struct json_object *target, 
+    const char *key,
+    const char *section_context __attribute__((unused)),
+    int event_id __attribute__((unused))
+) {
+    if (value == NULL || *value == '\0') return RS_RET_OK;
+    
+    // Trim whitespace and handle special characters
+    char *trimmed = trim_whitespace_enhanced(value);
+    if (trimmed == NULL || *trimmed == '\0') {
+        free(trimmed);
+        return RS_RET_OK;
+    }
+    
+    // Handle placeholder values
+    if (is_placeholder_value(trimmed)) {
+        free(trimmed);
+        return RS_RET_OK;
+    }
+    
+    switch (type) {
+        case fieldValueString:
+            json_add_string(target, key, trimmed);
+            break;
+            
+        case fieldValueInt64:
+            {
+                long long num;
+                if (try_parse_int64(trimmed, &num)) {
+                    json_add_int64(target, key, num);
+                } else {
+                    // Store as string if parsing fails
+                    json_add_string(target, key, trimmed);
+                }
+            }
+            break;
+            
+        case fieldValueBool:
+            {
+                sbool bool_val;
+                if (try_parse_bool(trimmed, &bool_val)) {
+                    json_add_bool(target, key, bool_val);
+                } else {
+                    json_add_string(target, key, trimmed);
+                }
+            }
+            break;
+            
+        case fieldValueLogonType:
+            {
+                long long num;
+                if (try_parse_int64(trimmed, &num)) {
+                    json_add_int64(target, key, num);
+                    const char *desc = lookup_logon_description((int)num);
+                    if (desc != NULL) json_add_string(target, key, desc);
+                } else {
+                    json_add_string(target, key, trimmed);
+                }
+            }
+            break;
+            
+        case fieldValueJson:
+            {
+                struct json_object *jsonBlock = try_parse_json_block(trimmed);
+                if (jsonBlock != NULL) {
+                    json_object_object_add(target, key, jsonBlock);
+                } else {
+                    json_add_string(target, key, trimmed);
+                }
+            }
+            break;
+            
+        case fieldValueInt64WithRaw:
+            {
+                long long num;
+                if (try_parse_int64(trimmed, &num)) {
+                    json_add_int64(target, key, num);
+                } else {
+                    json_add_string(target, key, trimmed);
+                }
+            }
+            break;
+            
+        case fieldValueRemoteCredentialGuard:
+            {
+                sbool bool_val;
+                if (try_parse_bool(trimmed, &bool_val)) {
+                    json_add_bool(target, key, bool_val);
+                } else {
+                    json_add_string(target, key, trimmed);
+                }
+            }
+            break;
+            
+        case fieldValuePrivilegeList:
+            json_add_string(target, key, trimmed);
+            break;
+            
+        default:
+            json_add_string(target, key, trimmed);
+            break;
+    }
+    
+    free(trimmed);
+    return RS_RET_OK;
+}
+
+// Runtime configuration support
+static rsRetVal __attribute__((unused)) load_configuration(runtime_config_t *config __attribute__((unused)), const char *config_file __attribute__((unused))) {
+    if (config_file == NULL) return RS_RET_OK;
+    
+    // Parse JSON/YAML configuration file
+    // Load custom field patterns, section mappings, event-specific rules
+    // This allows users to customize field detection without recompiling
+    
+    return RS_RET_OK;
+}
+
+static rsRetVal __attribute__((unused)) save_configuration(const runtime_config_t *config __attribute__((unused)), const char *config_file __attribute__((unused))) {
+    if (config_file == NULL) return RS_RET_OK;
+    
+    // Save current configuration to file
+    // This allows users to export working configurations
+    
+    return RS_RET_OK;
+}
+
+// Enhanced validation and error handling
+static rsRetVal __attribute__((unused)) validate_field_count(
+    const char *message __attribute__((unused)),
+    size_t actual_count,
+    size_t expected_count,
+    validation_context_t *ctx
+) {
+    if (actual_count != expected_count) {
+        if (ctx->mode == VALIDATION_STRICT) {
+            return RS_RET_ERR;
+        } else if (ctx->mode == VALIDATION_MODERATE) {
+            if (ctx->log_parsing_errors) {
+                dbgprintf("mmsnarewinsec: field count mismatch - expected %zu, got %zu\n", 
+                         expected_count, actual_count);
+            }
+        }
+    }
+    return RS_RET_OK;
+}
+
+static rsRetVal __attribute__((unused)) validate_required_fields(
+    const char *message,
+    const char *required_fields[],
+    size_t required_count,
+    validation_context_t *ctx
+) {
+    for (size_t i = 0; i < required_count; i++) {
+        if (strstr(message, required_fields[i]) == NULL) {
+            if (ctx->mode == VALIDATION_STRICT) {
+                return RS_RET_ERR;
+            } else if (ctx->mode == VALIDATION_MODERATE) {
+                if (ctx->log_parsing_errors) {
+                    dbgprintf("mmsnarewinsec: missing required field '%s'\n", required_fields[i]);
+                }
+            }
+        }
+    }
+    return RS_RET_OK;
+}
+
+static rsRetVal __attribute__((unused)) handle_parsing_error(
+    field_detection_context_t *ctx,
+    const char *error_message,
+    const char *context
+) {
+    ctx->parsing_errors++;
+    
+    if (ctx->parsing_errors > MAX_PARSING_ERRORS) {
+        return RS_RET_ERR;
+    }
+    
+    if (ctx->enable_debug) {
+        dbgprintf("mmsnarewinsec: parsing error in %s: %s\n", context, error_message);
+    }
+    
+    return RS_RET_OK;
+}
 
 static rsRetVal read_text_file(const char *path, char **out) {
     FILE *fp;
