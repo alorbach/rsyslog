@@ -34,22 +34,10 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # If configure is absent or not executable, regenerate it
 if [ ! -x "$PROJECT_ROOT/configure" ]; then
   echo "[diag] 'configure' missing in $PROJECT_ROOT — running autoreconf"
-  if [ "${RSYSLOG_DIAG_SKIP_AUTORECONF:-0}" = "1" ]; then
-    echo "[diag] autoreconf disabled via RSYSLOG_DIAG_SKIP_AUTORECONF=1; skipping test" >&2
-    exit 77
-  fi
   # ensure autoreconf is available
   if ! command -v autoreconf >/dev/null 2>&1; then
-    echo "[diag] autoreconf not available; install autoconf/automake to run tests" >&2
-    exit 77
-  fi
-  if ! command -v aclocal >/dev/null 2>&1; then
-    echo "[diag] aclocal (automake) not available; skipping test" >&2
-    exit 77
-  fi
-  if ! command -v automake >/dev/null 2>&1; then
-    echo "[diag] automake binary not available; skipping test" >&2
-    exit 77
+    echo "Error: 'autoreconf' not found. Please install autoconf/automake." >&2
+    exit 1
   fi
   # run in a subshell so we don’t disturb the caller’s cwd
   (
