@@ -3206,7 +3206,6 @@ static rsRetVal parse_field_value_enhanced(const char *value,
         return RS_RET_OK;
     }
     if (is_placeholder_value(trimmed)) {
-        json_add_string(target, key, trimmed);
         if (storedOut != NULL) *storedOut = -1;
         free(trimmed);
         return RS_RET_OK;
@@ -4049,8 +4048,6 @@ static rsRetVal parse_snare_text(
         return RS_RET_OUT_OF_MEMORY;
     }
     json_object_object_add(ctx.root, "Event", ctx.event);
-
-    initialize_observability(&ctx);
 
     initialize_observability(&ctx);
 
