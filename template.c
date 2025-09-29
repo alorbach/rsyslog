@@ -759,7 +759,6 @@ rsRetVal tplToString(struct template *__restrict__ const pTpl,
      */
     pTpe = pTpl->pEntryRoot;
     iBuf = 0;
-    const int extra_space = (pTpl->optFormatEscape == JSONF) ? 1 : 3;
     if (pTpl->optFormatEscape == JSONF && !pTpl->bJsonTreeEnabled) {
         if (iparam->lenBuf < 2) /* we reserve one char for the final \0! */
             CHKiRet(ExtendBuf(iparam, 2));
@@ -793,14 +792,16 @@ rsRetVal tplToString(struct template *__restrict__ const pTpl,
         }
         /* got source, now copy over */
         if (iLenVal > 0) { /* may be zero depending on property */
-            /* first, make sure buffer fits */
-            if (iBuf + iLenVal + extra_space >= iparam->lenBuf) /* we reserve one char for the final \0! */
-                CHKiRet(ExtendBuf(iparam, iBuf + iLenVal + 1));
-
             if (need_comma) {
+                if (iBuf + 2 >= iparam->lenBuf)
+                    CHKiRet(ExtendBuf(iparam, iBuf + 2 + 1));
                 memcpy(iparam->param + iBuf, ", ", 2);
                 iBuf += 2;
             }
+            /* first, make sure buffer fits */
+            if (iBuf + iLenVal >= iparam->lenBuf) /* we reserve one char for the final \0! */
+                CHKiRet(ExtendBuf(iparam, iBuf + iLenVal + 1));
+
             memcpy(iparam->param + iBuf, pVal, iLenVal);
             iBuf += iLenVal;
             if (pTpl->optFormatEscape == JSONF && !pTpl->bJsonTreeEnabled) {
@@ -809,8 +810,8 @@ rsRetVal tplToString(struct template *__restrict__ const pTpl,
         }
 
         if ((pTpl->optFormatEscape == JSONF && !pTpl->bJsonTreeEnabled) && (pTpe->pNext == NULL)) {
-            /* space was reserved while processing field above
-               (via extra_space in ExtendBuf() new size formula. */
+            if (iBuf + 2 >= iparam->lenBuf)
+                CHKiRet(ExtendBuf(iparam, iBuf + 2 + 1));
             memcpy(iparam->param + iBuf, "}\n", 2);
             iBuf += 2;
         }
