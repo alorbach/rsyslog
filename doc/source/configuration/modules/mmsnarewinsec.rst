@@ -46,6 +46,10 @@ Highlights
   Credential Guard and LAPS credential rotation indicators.
 * Stores any unmapped segments in ``!win!Unparsed`` to ensure the payload is
   preserved for later review.
+* Emits per-message validation diagnostics in ``!win!Validation!Errors`` and
+  parsing counters in ``!win!Stats!ParsingStats`` for easier troubleshooting.
+* Supports external JSON overrides via ``runtime.config`` or inline
+  ``definition.json`` so new fields can be mapped without recompilation.
 
 Build & Runtime Requirements
 -----------------------------
@@ -79,6 +83,10 @@ nodes include:
 * ``LAPS``, ``TLS``, ``WDAC``, ``WUFB`` — Dedicated blocks for modern telemetry
   (LAPS context, TLS inspection, Windows Defender Application Control, Windows
   Update for Business deployment events).
+* ``Validation`` — Per-message warnings raised by strict or moderate validation
+  policies.
+* ``Stats`` — Parsing counters (``ParsingStats``) summarising how many fields
+  were extracted successfully.
 * ``Raw`` / ``RawJSON`` — Optional copies of the original Snare payload when
   ``emit.rawpayload="on"``.
 * ``Unparsed`` — Catch-all array for any sections the module could not map with
@@ -124,6 +132,11 @@ Error Handling & Observability
 * Enable ``emit.debugjson="on"`` to force-create ``!win!Unparsed`` (even when
   empty) so assertions and log collection pipelines can detect previously
   unseen sections.
+* ``!win!Validation!Errors`` captures parse-time warnings when ``validation.mode``
+  is ``moderate`` or ``strict`` and ``!win!Stats!ParsingStats`` exposes
+  ``total_fields``, ``successful_parses`` and ``failed_parses`` for telemetry.
+* Placeholder values such as ``-`` or ``N/A`` are ignored and therefore neither
+  counted as stored fields nor as parse failures in the telemetry counters.
 
 Configuration
 -------------
@@ -256,13 +269,17 @@ Parameters
    :widths: auto
    :class: parameter-table
 
-   "``container``", "string", "``!win``", "JSON container path that receives the parsed structure."
+   "``rootpath`` / ``container``", "string", "``!win``", "JSON container path that receives the parsed structure. ``rootpath`` remains a backwards-compatible alias."
    "``enable.network``", "binary", "``on``", "Toggle extraction for ``Network Information`` blocks."
    "``enable.laps``", "binary", "``on``", "Toggle parsing of ``LAPS Context`` sections."
    "``enable.tls``", "binary", "``on``", "Toggle parsing of ``TLS Inspection`` sections."
    "``enable.wdac``", "binary", "``on``", "Toggle WDAC enrichment (``Policy Name``, ``Policy Version``, etc.)."
    "``emit.rawpayload``", "binary", "``on``", "When enabled, stores the original payload in ``!win!Raw`` (or ``!win!RawJSON`` for Snare JSON records)."
-   "``emit.debugjson``", "binary", "``off``", "Adds an empty ``Unparsed`` array even when all sections are recognized, simplifying downstream assertions."
+   "``emit.debugjson`` / ``debugjson``", "binary", "``off``", "Adds an empty ``Unparsed`` array even when all sections are recognized, simplifying downstream assertions."
+   "``definition.file``", "string", "``unset``", "Path to a JSON descriptor that augments or overrides built-in section, field, and event mappings."
+   "``definition.json``", "string", "``unset``", "Inline JSON descriptor following the same schema as ``definition.file``. Processed after the file-based overrides."
+   "``runtime.config``", "string", "``unset``", "Persistent runtime configuration file. Supports the definition schema plus ``options`` such as ``enable_debug`` and ``enable_fallback``."
+   "``validation.mode`` / ``validation_mode``", "string", "``permissive``", "Selects parser strictness: ``permissive`` ignores issues, ``moderate`` records warnings, ``strict`` aborts when thresholds are exceeded."
 
 Extracted fields
 ----------------
@@ -354,10 +371,17 @@ New module parameters
     or replace objects loaded from disk.
 
 ``validation.mode``
-    Controls how the loader reacts to malformed entries. ``permissive`` (the
-    default; aliases: ``lenient``, ``default``) logs warnings and skips invalid
-    objects, while ``strict`` aborts the instance configuration when a
-    definition cannot be parsed.
+    Controls how both configuration and runtime parsing react to malformed
+    data. ``permissive`` (the default; aliases: ``lenient``, ``default``)
+    accepts issues silently, ``moderate`` records warnings under
+    ``!win!Validation!Errors`` while continuing, and ``strict`` aborts the
+    configuration or message when thresholds are exceeded.
+
+``runtime.config``
+    Path to a JSON file containing persistent overrides. The file shares the
+    same schema as ``definition.file`` and additionally supports an ``options``
+    object (``enable_debug``, ``enable_fallback``) to influence parse-time
+    behaviour.
 
 Definition schema
 ~~~~~~~~~~~~~~~~~
