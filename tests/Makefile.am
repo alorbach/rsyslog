@@ -509,6 +509,10 @@ TESTS += \
     mmsnarewinsec-syslog.sh\
     mmsnarewinsec-comprehensive.sh\
     mmsnarewinsec-enhanced-validation.sh
+if HAVE_VALGRIND
+TESTS += \
+    mmsnarewinsec-comprehensive-vg.sh
+endif
 endif
 
 if ENABLE_OMSENDERTRACK
@@ -2022,8 +2026,9 @@ EXTRA_DIST= \
         mmexternal-SegFault-empty-jroot-vg.sh \
         testsuites/mmexternal-SegFault-mm-python.py \
         testsuites/mmsnarewinsec/sample-custom-pattern.data \
+        mmsnarewinsec-comprehensive-vg.sh \
         mmsnarewinsec-enhanced-validation.sh \
-	mmexternal-InvldProg-vg.sh \
+        mmexternal-InvldProg-vg.sh \
 	nested-call-shutdown.sh \
 	1.rstest 2.rstest 3.rstest err1.rstest \
 	config_multiple_include.sh \
