@@ -508,7 +508,12 @@ TESTS += \
     mmsnarewinsec-json.sh\
     mmsnarewinsec-syslog.sh\
 	mmsnarewinsec-comprehensive.sh\
-	mmsnarewinsec-enhanced-validation.sh
+	mmsnarewinsec-enhanced-validation.sh\
+	mmsnarewinsec-tokenization.sh\
+	mmsnarewinsec-enhanced-parsing.sh\
+	mmsnarewinsec-runtime-config.sh\
+	mmsnarewinsec-validation-moderate.sh\
+	mmsnarewinsec-pattern-database.sh
 endif
 
 if ENABLE_OMSENDERTRACK
