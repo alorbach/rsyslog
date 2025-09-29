@@ -269,13 +269,17 @@ Parameters
    :widths: auto
    :class: parameter-table
 
-   "``container``", "string", "``!win``", "JSON container path that receives the parsed structure."
+   "``rootpath`` / ``container``", "string", "``!win``", "JSON container path that receives the parsed structure. ``rootpath`` remains a backwards-compatible alias."
    "``enable.network``", "binary", "``on``", "Toggle extraction for ``Network Information`` blocks."
    "``enable.laps``", "binary", "``on``", "Toggle parsing of ``LAPS Context`` sections."
    "``enable.tls``", "binary", "``on``", "Toggle parsing of ``TLS Inspection`` sections."
    "``enable.wdac``", "binary", "``on``", "Toggle WDAC enrichment (``Policy Name``, ``Policy Version``, etc.)."
    "``emit.rawpayload``", "binary", "``on``", "When enabled, stores the original payload in ``!win!Raw`` (or ``!win!RawJSON`` for Snare JSON records)."
-   "``emit.debugjson``", "binary", "``off``", "Adds an empty ``Unparsed`` array even when all sections are recognized, simplifying downstream assertions."
+   "``emit.debugjson`` / ``debugjson``", "binary", "``off``", "Adds an empty ``Unparsed`` array even when all sections are recognized, simplifying downstream assertions."
+   "``definition.file``", "string", "``unset``", "Path to a JSON descriptor that augments or overrides built-in section, field, and event mappings."
+   "``definition.json``", "string", "``unset``", "Inline JSON descriptor following the same schema as ``definition.file``. Processed after the file-based overrides."
+   "``runtime.config``", "string", "``unset``", "Persistent runtime configuration file. Supports the definition schema plus ``options`` such as ``enable_debug`` and ``enable_fallback``."
+   "``validation.mode`` / ``validation_mode``", "string", "``permissive``", "Selects parser strictness: ``permissive`` ignores issues, ``moderate`` records warnings, ``strict`` aborts when thresholds are exceeded."
 
 Extracted fields
 ----------------
