@@ -123,6 +123,9 @@ typedef enum field_value_type {
     fieldValueJson,
     fieldValueLogonType,
     fieldValueRemoteCredentialGuard,
+    fieldValueGuid,
+    fieldValueIpAddress,
+    fieldValueTimestamp,
     fieldValuePrivilegeList
 } field_value_type_t;
 
@@ -203,7 +206,7 @@ static const field_pattern_t g_coreFieldPatterns[] = {
     {"LinkedLogonID", "LinkedLogonID", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
     {"NetworkAccountName", "NetworkAccountName", fieldValueString, NULL, FIELD_PRIORITY_BASE,
      fieldSensitivityCanonical},
-    {"LogonGUID", "LogonGUID", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"LogonGUID", "LogonGUID", fieldValueGuid, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
     {"ProcessID", "ProcessID", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
     {"ProcessName", "ProcessName", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
     {"ProcessCommandLine", "ProcessCommandLine", fieldValueString, NULL, FIELD_PRIORITY_BASE,
@@ -212,7 +215,7 @@ static const field_pattern_t g_coreFieldPatterns[] = {
      fieldSensitivityCanonical},
     {"MandatoryLabel", "MandatoryLabel", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
     {"WorkstationName", "WorkstationName", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
-    {"SourceNetworkAddress", "SourceNetworkAddress", fieldValueString, NULL, FIELD_PRIORITY_BASE,
+    {"SourceNetworkAddress", "SourceNetworkAddress", fieldValueIpAddress, NULL, FIELD_PRIORITY_BASE,
      fieldSensitivityCanonical},
     {"SourcePort", "SourcePort", fieldValueInt64, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
     {"ClientPort", "ClientPort", fieldValueInt64, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
@@ -228,6 +231,16 @@ static const field_pattern_t g_coreFieldPatterns[] = {
     {"ElevatedToken", "ElevatedToken", fieldValueString, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
     {"ImpersonationLevel", "ImpersonationLevel", fieldValueString, NULL, FIELD_PRIORITY_BASE,
      fieldSensitivityCanonical},
+    {"PreviousTime", "PreviousTime", fieldValueTimestamp, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"NewTime", "NewTime", fieldValueTimestamp, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"LastLogon", "LastLogon", fieldValueTimestamp, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"LastLogoff", "LastLogoff", fieldValueTimestamp, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"LastSuccessfulLogon", "LastSuccessfulLogon", fieldValueTimestamp, NULL, FIELD_PRIORITY_BASE,
+     fieldSensitivityCanonical},
+    {"LastFailedLogon", "LastFailedLogon", fieldValueTimestamp, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"LockoutTime", "LockoutTime", fieldValueTimestamp, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"PasswordLastSet", "PasswordLastSet", fieldValueTimestamp, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
+    {"AccountExpires", "AccountExpires", fieldValueTimestamp, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
     {"KeyLength", "KeyLength", fieldValueInt64, NULL, FIELD_PRIORITY_BASE, fieldSensitivityCanonical},
     {"RemoteCredentialGuard", "RemoteCredentialGuard", fieldValueRemoteCredentialGuard, NULL, FIELD_PRIORITY_BASE,
      fieldSensitivityCanonical},
@@ -257,25 +270,39 @@ static const field_pattern_t g_coreFieldPatterns[] = {
      fieldSensitivityCanonical},
     {"NetworkAccountDomain", "NetworkAccountDomain", fieldValueString, "NewLogon", FIELD_PRIORITY_BASE + 10,
      fieldSensitivityCanonical},
-    {"LogonGUID", "LogonGUID", fieldValueString, "NewLogon", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"LogonGUID", "LogonGUID", fieldValueGuid, "NewLogon", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     {"NetworkInformation", "NetworkInformation", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10,
      fieldSensitivityCanonical},
     {"WorkstationName", "WorkstationName", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10,
      fieldSensitivityCanonical},
-    {"SourceNetworkAddress", "SourceNetworkAddress", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10,
+    {"SourceNetworkAddress", "SourceNetworkAddress", fieldValueIpAddress, "Network", FIELD_PRIORITY_BASE + 10,
      fieldSensitivityCanonical},
     {"SourcePort", "SourcePort", fieldValueInt64, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
-    {"NetworkAddress", "NetworkAddress", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10,
+    {"NetworkAddress", "NetworkAddress", fieldValueIpAddress, "Network", FIELD_PRIORITY_BASE + 10,
      fieldSensitivityCanonical},
-    {"ClientAddress", "ClientAddress", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10,
+    {"ClientAddress", "ClientAddress", fieldValueIpAddress, "Network", FIELD_PRIORITY_BASE + 10,
      fieldSensitivityCanonical},
     {"ClientPort", "ClientPort", fieldValueInt64, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
-    {"DestinationAddress", "DestinationAddress", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10,
+    {"DestinationAddress", "DestinationAddress", fieldValueIpAddress, "Network", FIELD_PRIORITY_BASE + 10,
      fieldSensitivityCanonical},
     {"DestinationPort", "DestinationPort", fieldValueInt64, "Network", FIELD_PRIORITY_BASE + 10,
      fieldSensitivityCanonical},
     {"Protocol", "Protocol", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     {"Direction", "Direction", fieldValueString, "Network", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
+    {"LastLogon", "LastLogon", fieldValueTimestamp, "AccountInformation", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"LastLogoff", "LastLogoff", fieldValueTimestamp, "AccountInformation", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"LastSuccessfulLogon", "LastSuccessfulLogon", fieldValueTimestamp, "AccountInformation", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"LastFailedLogon", "LastFailedLogon", fieldValueTimestamp, "AccountInformation", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"LockoutTime", "LockoutTime", fieldValueTimestamp, "AccountInformation", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"PasswordLastSet", "PasswordLastSet", fieldValueTimestamp, "AccountInformation", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"AccountExpires", "AccountExpires", fieldValueTimestamp, "AccountInformation", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
     {"ProcessInformation", "ProcessInformation", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10,
      fieldSensitivityCanonical},
     {"CallerProcessID", "CallerProcessID", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10,
@@ -291,6 +318,9 @@ static const field_pattern_t g_coreFieldPatterns[] = {
      fieldSensitivityCanonical},
     {"ProcessCommandLine", "ProcessCommandLine", fieldValueString, "Process", FIELD_PRIORITY_BASE + 10,
      fieldSensitivityCanonical},
+    {"PreviousTime", "PreviousTime", fieldValueTimestamp, "Process", FIELD_PRIORITY_BASE + 10,
+     fieldSensitivityCanonical},
+    {"NewTime", "NewTime", fieldValueTimestamp, "Process", FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     {"DetailedAuthenticationInformation", "DetailedAuthenticationInformation", fieldValueString, "Authentication",
      FIELD_PRIORITY_BASE + 10, fieldSensitivityCanonical},
     {"LogonProcess", "LogonProcess", fieldValueString, "Authentication", FIELD_PRIORITY_BASE + 10,
@@ -1937,6 +1967,18 @@ static sbool parse_field_value_type_string(const char *text, field_value_type_t 
         *type = fieldValueRemoteCredentialGuard;
         return 1;
     }
+    if (!strcasecmp(text, "guid")) {
+        *type = fieldValueGuid;
+        return 1;
+    }
+    if (!strcasecmp(text, "ip") || !strcasecmp(text, "ip_address") || !strcasecmp(text, "ip-address")) {
+        *type = fieldValueIpAddress;
+        return 1;
+    }
+    if (!strcasecmp(text, "timestamp")) {
+        *type = fieldValueTimestamp;
+        return 1;
+    }
     if (!strcasecmp(text, "privilege_list") || !strcasecmp(text, "privilege-list")) {
         *type = fieldValuePrivilegeList;
         return 1;
@@ -1993,6 +2035,12 @@ static const char *field_value_type_to_string(field_value_type_t type) {
             return "logon_type";
         case fieldValueRemoteCredentialGuard:
             return "remote_credential_guard";
+        case fieldValueGuid:
+            return "guid";
+        case fieldValueIpAddress:
+            return "ip_address";
+        case fieldValueTimestamp:
+            return "timestamp";
         case fieldValuePrivilegeList:
             return "privilege_list";
         default:
@@ -3282,6 +3330,42 @@ static rsRetVal parse_field_value_enhanced(const char *value,
                 if (storedOut != NULL) *storedOut = 1;
             } else {
                 r = handle_parsing_error(fdCtx, "invalid Remote Credential Guard value", key);
+                if (r == RS_RET_OK && fdCtx->enable_fallback) {
+                    json_add_string(target, key, trimmed);
+                    if (storedOut != NULL) *storedOut = 1;
+                }
+            }
+            break;
+        case fieldValueGuid:
+            if (is_guid_format(trimmed)) {
+                json_add_string(target, key, trimmed);
+                if (storedOut != NULL) *storedOut = 1;
+            } else {
+                r = handle_parsing_error(fdCtx, "invalid GUID", key);
+                if (r == RS_RET_OK && fdCtx->enable_fallback) {
+                    json_add_string(target, key, trimmed);
+                    if (storedOut != NULL) *storedOut = 1;
+                }
+            }
+            break;
+        case fieldValueIpAddress:
+            if (is_ip_address(trimmed)) {
+                json_add_string(target, key, trimmed);
+                if (storedOut != NULL) *storedOut = 1;
+            } else {
+                r = handle_parsing_error(fdCtx, "invalid IP address", key);
+                if (r == RS_RET_OK && fdCtx->enable_fallback) {
+                    json_add_string(target, key, trimmed);
+                    if (storedOut != NULL) *storedOut = 1;
+                }
+            }
+            break;
+        case fieldValueTimestamp:
+            if (is_timestamp_format(trimmed)) {
+                json_add_string(target, key, trimmed);
+                if (storedOut != NULL) *storedOut = 1;
+            } else {
+                r = handle_parsing_error(fdCtx, "invalid timestamp", key);
                 if (r == RS_RET_OK && fdCtx->enable_fallback) {
                     json_add_string(target, key, trimmed);
                     if (storedOut != NULL) *storedOut = 1;
