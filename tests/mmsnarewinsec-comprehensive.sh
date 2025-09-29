@@ -140,7 +140,15 @@ content_check '"newlogonaccountname":"SYSTEM"' $RSYSLOG_OUT_LOG.json
 content_check '"newlogonaccountdomain":"NT AUTHORITY"' $RSYSLOG_OUT_LOG.json
 content_check '"logonprocess":"Advapi"' $RSYSLOG_OUT_LOG.json
 content_check '"authenticationpackage":"Negotiate"' $RSYSLOG_OUT_LOG.json
-content_check '"packagename":"-"' $RSYSLOG_OUT_LOG.json
+# Placeholder tokens such as "-" should now be dropped entirely by the parser.
+# The JSON template still emits empty strings when a property is missing, so we
+# assert that hyphen placeholders never surface in the flattened output.
+check_not_present '"restrictedadminmode":"-"' "$RSYSLOG_OUT_LOG.json"
+check_not_present '"networkaccountname":"-"' "$RSYSLOG_OUT_LOG.json"
+check_not_present '"sourcenetworkaddress":"-"' "$RSYSLOG_OUT_LOG.json"
+check_not_present '"sourceport":"-"' "$RSYSLOG_OUT_LOG.json"
+check_not_present '"transitedservices":"-"' "$RSYSLOG_OUT_LOG.json"
+check_not_present '"packagename":"-"' "$RSYSLOG_OUT_LOG.json"
 
 # Validate structured JSON extraction from Windows 2025 data
 content_check '"categorytext":"Audit Policy Change"' $RSYSLOG_OUT_LOG.json

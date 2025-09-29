@@ -14,6 +14,7 @@ template(name="validation_test_json" type="list" option.jsonf="on") {
     property(outname="eventid" name="$!win!Event!EventID" format="jsonf")
     property(outname="validation_errors" name="$!win!Validation!Errors" format="jsonf")
     property(outname="parsing_stats" name="$!win!Stats!ParsingStats" format="jsonf")
+    property(outname="event_json" name="$!win" format="jsonf")
 }
 
 input(type="imtcp" port="'$TCPFLOOD_PORT'")
@@ -73,6 +74,32 @@ if errors != []:
 expected_stats = {"total_fields": 25, "successful_parses": 25, "failed_parses": 0}
 if stats != expected_stats:
     raise SystemExit(f"unexpected parsing stats: {stats}")
+
+try:
+    event_root = json.loads(event["event_json"])
+except (KeyError, json.JSONDecodeError) as exc:
+    raise SystemExit(f"unable to parse event_json payload: {exc}")
+
+logon = event_root.get("Logon", {})
+new_logon = event_root.get("NewLogon", {})
+network = event_root.get("Network", {})
+auth = event_root.get("Authentication", {})
+
+placeholder_checks = [
+    (logon, "RemoteCredentialGuard", "Logon"),
+    (new_logon, "NetworkAccountName", "NewLogon"),
+    (new_logon, "NetworkAccountDomain", "NewLogon"),
+    (network, "SourceNetworkAddress", "Network"),
+    (network, "SourcePort", "Network"),
+    (auth, "TransitedServices", "Authentication"),
+    (auth, "PackageName", "Authentication"),
+]
+
+for container_obj, field_name, container_name in placeholder_checks:
+    if field_name in container_obj:
+        raise SystemExit(
+            f"placeholder field {container_name}.{field_name} should be absent but was present: {container_obj[field_name]}"
+        )
 PY
 
 exit_test
