@@ -62,9 +62,14 @@ template(name="jsonfmt" type="list" option.jsonf="on") {
     property(outname="transitedservices" name="$!win!DetailedAuthentication!TransitedServices" format="jsonf")
     property(outname="packagename" name="$!win!DetailedAuthentication!PackageName" format="jsonf")
     property(outname="keylength" name="$!win!DetailedAuthentication!KeyLength" format="jsonf")
-    
+
     # Privileges fields
     property(outname="privilegelist" name="$!win!Privileges!PrivilegeList" format="jsonf")
+
+    # Membership and claims lists
+    property(outname="groupmembership" name="$!win!GroupMembership" format="jsonf")
+    property(outname="userclaims" name="$!win!UserClaims" format="jsonf")
+    property(outname="deviceclaims" name="$!win!DeviceClaims" format="jsonf")
 }
 
 # Template for basic field extraction (for comparison)
@@ -104,6 +109,9 @@ tcpflood -m 1 -I ${srcdir}/testsuites/mmsnarewinsec/sample-windows2025-security.
 
 echo "Using sample events with detailed field information..."
 tcpflood -m 1 -I ${srcdir}/testsuites/mmsnarewinsec/sample-events.data
+
+echo "Using comprehensive logon/logoff samples..."
+tcpflood -m 1 -I ${srcdir}/testsuites/mmsnarewinsec/samples-all-data/Logon_Logoff.data
 
 shutdown_when_empty
 wait_shutdown
@@ -158,6 +166,11 @@ content_check '"subjectaccountdomain":"WORKGROUP"' $RSYSLOG_OUT_LOG.json
 
 # Validate privileges extraction for 4672 events
 content_check '"privilegelist":"SeAssignPrimaryTokenPrivilege' $RSYSLOG_OUT_LOG.json
+
+# Validate group membership and claims extraction
+content_check '"groupmembership":["HOST-004\\None"' $RSYSLOG_OUT_LOG.json
+content_check '"userclaims":["%12"' $RSYSLOG_OUT_LOG.json
+content_check '"deviceclaims":["%13"' $RSYSLOG_OUT_LOG.json
 
 # Validate that DWM-1 account is extracted correctly for virtual accounts
 content_check '"newlogonaccountname":"DWM-1"' $RSYSLOG_OUT_LOG.json

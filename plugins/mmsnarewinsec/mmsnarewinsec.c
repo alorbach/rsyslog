@@ -530,6 +530,12 @@ static const section_descriptor_t g_builtinSectionDescriptors[] = {
      fieldSensitivityCaseSensitive},
     {"Certificate Information", "Certificate", sectionBehaviorStandard, SECTION_FLAG_NONE, SECTION_PRIORITY_DEFAULT,
      fieldSensitivityCaseSensitive},
+    {"Group Membership", "GroupMembership", sectionBehaviorList, SECTION_FLAG_NONE, SECTION_PRIORITY_DEFAULT,
+     fieldSensitivityCaseSensitive},
+    {"User Claims", "UserClaims", sectionBehaviorList, SECTION_FLAG_NONE, SECTION_PRIORITY_DEFAULT,
+     fieldSensitivityCaseSensitive},
+    {"Device Claims", "DeviceClaims", sectionBehaviorList, SECTION_FLAG_NONE, SECTION_PRIORITY_DEFAULT,
+     fieldSensitivityCaseSensitive},
     {"Remote Credential Guard", "RemoteCredentialGuard", sectionBehaviorInlineValue, SECTION_FLAG_NONE,
      SECTION_PRIORITY_OVERRIDE, fieldSensitivityCaseInsensitive},
     {"LAPS Context", "LAPS", sectionBehaviorSemicolon, SECTION_FLAG_LAPS, SECTION_PRIORITY_DEFAULT,
@@ -3789,6 +3795,210 @@ static void parse_key_value_sequence(parse_context_t *ctx,
     tokenize_on_multispace(text, strlen(text), parse_key_value_token, &cb);
 }
 
+static struct json_object *ensure_array_on_root(parse_context_t *ctx, const char *name) {
+    struct json_object *existing = NULL;
+    if (ctx == NULL || ctx->root == NULL || name == NULL) return NULL;
+
+    if (json_object_object_get_ex(ctx->root, name, &existing)) {
+        if (!json_object_is_type(existing, json_type_array)) {
+            json_object_object_del(ctx->root, name);
+            existing = NULL;
+        }
+    }
+
+    if (existing == NULL) {
+        existing = json_object_new_array();
+        if (existing == NULL) return NULL;
+        json_object_object_add(ctx->root, name, existing);
+    }
+
+    return existing;
+}
+
+static inline bool string_is_digits(const char *value) {
+    if (value == NULL || *value == '\0') return false;
+    for (const unsigned char *p = (const unsigned char *)value; *p != '\0'; ++p) {
+        if (!isdigit(*p)) return false;
+    }
+    return true;
+}
+
+static inline bool str_has_prefix(const char *str, const char *prefix) {
+    if (str == NULL || prefix == NULL) return false;
+    size_t len = strlen(prefix);
+    if (strlen(str) < len) return false;
+    return strncmp(str, prefix, len) == 0;
+}
+
+static inline bool str_ieq(const char *a, const char *b) {
+    if (a == NULL || b == NULL) return false;
+    return strcasecmp(a, b) == 0;
+}
+
+static bool should_start_group_membership_item(const char *currentStart,
+                                               const char *token,
+                                               const char *nextToken) {
+    if (token == NULL || *token == '\0') return false;
+    if (currentStart == NULL) return true;
+
+    if (!strcmp(token, "Everyone")) return true;
+    if (!strcmp(token, "LOCAL")) return true;
+
+    if (!strcmp(token, "NT") && nextToken != NULL &&
+        (str_has_prefix(nextToken, "AUTHORITY\\") || !strcmp(nextToken, "AUTHORITY"))) {
+        if (currentStart != NULL && !strcmp(currentStart, "LOCAL")) return false;
+        return true;
+    }
+
+    if (strchr(token, '\\') != NULL) {
+        if (currentStart != NULL && !strcmp(currentStart, "LOCAL")) return false;
+        if (str_has_prefix(token, "AUTHORITY\\")) return false;
+        if (str_has_prefix(token, "BUILTIN\\")) return true;
+        if (str_has_prefix(token, "HOST-")) return true;
+        if (str_has_prefix(token, "Label\\")) {
+            if (currentStart != NULL && !strcmp(currentStart, "LOCAL")) return false;
+            return true;
+        }
+        if (currentStart == NULL) return true;
+        if (!str_has_prefix(token, "AUTHORITY\\")) return true;
+    }
+
+    return false;
+}
+
+static bool should_start_claim_item(const char *currentStart, const char *token) {
+    if (token == NULL || *token == '\0') return false;
+    if (currentStart == NULL) return true;
+
+    if (str_ieq(token, "Type:") || str_ieq(token, "ClaimType:")) return true;
+    if (str_ieq(token, "User:")) return true;
+    if (str_ieq(token, "Device:")) return true;
+
+    return false;
+}
+
+static bool should_start_new_list_entry(const char *sectionCanonical,
+                                        const char *currentStart,
+                                        const char *token,
+                                        const char *nextToken) {
+    if (sectionCanonical != NULL && !strcmp(sectionCanonical, "GroupMembership"))
+        return should_start_group_membership_item(currentStart, token, nextToken);
+    if (sectionCanonical != NULL &&
+        (!strcmp(sectionCanonical, "UserClaims") || !strcmp(sectionCanonical, "DeviceClaims")))
+        return should_start_claim_item(currentStart, token);
+    return currentStart == NULL;
+}
+
+static bool append_token(char **buffer, size_t *capacity, size_t *length, const char *token) {
+    size_t needed;
+    size_t tokenLen;
+    char *tmp;
+    if (buffer == NULL || capacity == NULL || length == NULL || token == NULL) return false;
+
+    tokenLen = strlen(token);
+    if (tokenLen == 0) return true;
+
+    needed = tokenLen + ((*length > 0) ? 1 : 0) + 1;
+    if (*capacity < *length + needed) {
+        size_t newCap = (*capacity == 0) ? 32 : (*capacity * 2);
+        while (newCap < *length + needed) newCap *= 2;
+        tmp = realloc(*buffer, newCap);
+        if (tmp == NULL) return false;
+        *buffer = tmp;
+        *capacity = newCap;
+    }
+
+    if (*length > 0) {
+        (*buffer)[*length] = ' ';
+        ++(*length);
+    }
+    memcpy(*buffer + *length, token, tokenLen);
+    *length += tokenLen;
+    (*buffer)[*length] = '\0';
+    return true;
+}
+
+static void flush_list_entry(struct json_object *array, char **buffer, size_t *capacity, size_t *length) {
+    if (array == NULL || buffer == NULL || length == NULL) return;
+    if (*buffer == NULL || *length == 0) return;
+
+    trim_inplace(*buffer);
+    if (**buffer != '\0') json_object_array_add(array, json_object_new_string(*buffer));
+    free(*buffer);
+    *buffer = NULL;
+    if (capacity != NULL) *capacity = 0;
+    *length = 0;
+}
+
+static void append_list_entries(parse_context_t *ctx,
+                                const section_descriptor_t *desc,
+                                struct json_object *array,
+                                const char *text) {
+    char *mutable;
+    char *saveptr = NULL;
+    char **tokens = NULL;
+    size_t tokenCount = 0;
+    size_t capacity = 0;
+    const char *canonical = desc != NULL ? desc->canonical : NULL;
+
+    if (ctx == NULL || array == NULL || text == NULL) return;
+
+    mutable = strdup(text);
+    if (mutable == NULL) return;
+
+    for (char *tok = strtok_r(mutable, " \t", &saveptr); tok != NULL; tok = strtok_r(NULL, " \t", &saveptr)) {
+        if (*tok == '\0') continue;
+        if (tokenCount == capacity) {
+            size_t newCap = capacity == 0 ? 16 : capacity * 2;
+            char **tmp = realloc(tokens, newCap * sizeof(char *));
+            if (tmp == NULL) {
+                free(tokens);
+                free(mutable);
+                return;
+            }
+            tokens = tmp;
+            capacity = newCap;
+        }
+        tokens[tokenCount++] = tok;
+    }
+
+    char *buffer = NULL;
+    size_t bufCap = 0;
+    size_t bufLen = 0;
+    const char *currentStart = NULL;
+
+    for (size_t i = 0; i < tokenCount; ++i) {
+        char *tok = tokens[i];
+        char *next = (i + 1 < tokenCount) ? tokens[i + 1] : NULL;
+
+        if (tok == NULL) continue;
+
+        if ((strcmp(tok, "Device") == 0 || strcmp(tok, "User") == 0 || strcmp(tok, "Group") == 0) && next != NULL &&
+            (strcmp(next, "Claims:") == 0 || strcmp(next, "Membership:") == 0)) {
+            break;
+        }
+        if (!strcmp(tok, "Claims:") || !strcmp(tok, "Membership:")) break;
+        if (string_is_digits(tok)) continue;
+
+        if (should_start_new_list_entry(canonical, currentStart, tok, next)) {
+            flush_list_entry(array, &buffer, &bufCap, &bufLen);
+            currentStart = tok;
+        }
+
+        if (!append_token(&buffer, &bufCap, &bufLen, tok)) {
+            free(buffer);
+            free(tokens);
+            free(mutable);
+            return;
+        }
+    }
+
+    flush_list_entry(array, &buffer, &bufCap, &bufLen);
+
+    free(tokens);
+    free(mutable);
+}
+
 static void parse_privilege_sequence(parse_context_t *ctx, const char *text) {
     struct json_object *arr;
     const char *cursor = text;
@@ -3961,39 +4171,44 @@ static void parse_line(parse_context_t *ctx, char *line) {
     if (colon == NULL) {
         dbgprintf("[mmsnarewinsec DEBUG] parse_line: no colon found, treating as content\n");
 
-        // Special handling for Privileges section - collect privilege names
-        if (ctx->activeSection != NULL && strcmp(ctx->activeSection->canonical, "Privileges") == 0 &&
-            ctx->activeSection->behavior == sectionBehaviorList) {
-            dbgprintf("[mmsnarewinsec DEBUG] parse_line: collecting privilege name '%s' in Privileges section\n", line);
+        if (ctx->activeSection != NULL && ctx->activeSection->behavior == sectionBehaviorList) {
+            if (ctx->activeSection->canonical != NULL && !strcmp(ctx->activeSection->canonical, "Privileges")) {
+                dbgprintf("[mmsnarewinsec DEBUG] parse_line: collecting privilege name '%s' in Privileges section\n", line);
 
-            // Get or create the Privileges object
-            struct json_object *privileges_obj = NULL;
-            if (!json_object_object_get_ex(ctx->root, "Privileges", &privileges_obj)) {
-                privileges_obj = json_object_new_object();
-                json_object_object_add(ctx->root, "Privileges", privileges_obj);
+                struct json_object *privileges_obj = NULL;
+                if (!json_object_object_get_ex(ctx->root, "Privileges", &privileges_obj)) {
+                    privileges_obj = json_object_new_object();
+                    json_object_object_add(ctx->root, "Privileges", privileges_obj);
+                }
+
+                struct json_object *privilege_list = NULL;
+                const char *current_list = "";
+                if (json_object_object_get_ex(privileges_obj, "PrivilegeList", &privilege_list)) {
+                    current_list = json_object_get_string(privilege_list);
+                }
+
+                char *new_list = NULL;
+                if (strlen(current_list) > 0) {
+                    int ret = asprintf(&new_list, "%s %s", current_list, line);
+                    if (ret < 0) new_list = NULL;
+                } else {
+                    new_list = strdup(line);
+                }
+
+                if (new_list != NULL) {
+                    json_object_object_add(privileges_obj, "PrivilegeList", json_object_new_string(new_list));
+                    free(new_list);
+                }
+
+                return;
             }
 
-            // Get the current PrivilegeList string
-            struct json_object *privilege_list = NULL;
-            const char *current_list = "";
-            if (json_object_object_get_ex(privileges_obj, "PrivilegeList", &privilege_list)) {
-                current_list = json_object_get_string(privilege_list);
+            struct json_object *array = (ctx->activeSectionObj != NULL) ? ctx->activeSectionObj
+                                                                        : ensure_array_on_root(ctx, ctx->activeSection->canonical);
+            if (array != NULL) {
+                append_list_entries(ctx, ctx->activeSection, array, line);
+                ctx->activeSectionObj = array;
             }
-
-            // Create the new privilege list string
-            char *new_list = NULL;
-            if (strlen(current_list) > 0) {
-                int ret = asprintf(&new_list, "%s %s", current_list, line);
-                if (ret < 0) new_list = NULL;
-            } else {
-                new_list = strdup(line);
-            }
-
-            if (new_list != NULL) {
-                json_object_object_add(privileges_obj, "PrivilegeList", json_object_new_string(new_list));
-                free(new_list);
-            }
-
             return;
         }
 
@@ -4069,19 +4284,23 @@ static void parse_line(parse_context_t *ctx, char *line) {
                 ctx->activeSectionObj = NULL;
                 break;
             case sectionBehaviorList: {
-                // Start building the privileges list - keep section active to collect more privilege names
-                struct json_object *privileges_obj = NULL;
-                if (!json_object_object_get_ex(ctx->root, "Privileges", &privileges_obj)) {
-                    privileges_obj = json_object_new_object();
-                    json_object_object_add(ctx->root, "Privileges", privileges_obj);
+                if (desc->canonical != NULL && !strcmp(desc->canonical, "Privileges")) {
+                    struct json_object *privileges_obj = NULL;
+                    if (!json_object_object_get_ex(ctx->root, "Privileges", &privileges_obj)) {
+                        privileges_obj = json_object_new_object();
+                        json_object_object_add(ctx->root, "Privileges", privileges_obj);
+                    }
+
+                    json_object_object_add(privileges_obj, "PrivilegeList", json_object_new_string(rest));
+
+                    ctx->activeSection = desc;
+                    ctx->activeSectionObj = privileges_obj;
+                } else {
+                    struct json_object *array = ensure_array_on_root(ctx, desc->canonical);
+                    if (array != NULL && *rest != '\0') append_list_entries(ctx, desc, array, rest);
+                    ctx->activeSection = desc;
+                    ctx->activeSectionObj = array;
                 }
-
-                // Initialize with the first privilege name
-                json_object_object_add(privileges_obj, "PrivilegeList", json_object_new_string(rest));
-
-                // Keep the section active to collect more privilege names
-                ctx->activeSection = desc;
-                ctx->activeSectionObj = privileges_obj;
                 break;
             }
             default:
