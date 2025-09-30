@@ -750,22 +750,40 @@ static bool is_placeholder_value(const char *value) {
 
 static bool is_guid_format(const char *value) {
     if (value == NULL) return false;
+
     size_t len = strlen(value);
-    if (len == 38 && value[0] == '{' && value[len - 1] == '}') {
-        return true;
+    size_t offset = 0;
+
+    if (len == 38) {
+        if (value[0] != '{' || value[len - 1] != '}') return false;
+        offset = 1;
+    } else if (len == 36) {
+        offset = 0;
+    } else {
+        return false;
     }
-    if (len == 36) {
-        int hyphenCount = 0;
-        for (size_t i = 0; i < len; ++i) {
-            if (value[i] == '-') {
-                ++hyphenCount;
-            } else if (!isxdigit((unsigned char)value[i])) {
-                return false;
+
+    static const size_t hyphen_positions[] = {8u, 13u, 18u, 23u};
+
+    for (size_t i = 0; i < 36; ++i) {
+        const size_t absolute_index = offset + i;
+        bool expect_hyphen = 0;
+
+        for (size_t j = 0; j < ARRAY_SIZE(hyphen_positions); ++j) {
+            if (i == hyphen_positions[j]) {
+                expect_hyphen = 1;
+                break;
             }
         }
-        return hyphenCount == 4;
+
+        if (expect_hyphen) {
+            if (value[absolute_index] != '-') return false;
+        } else {
+            if (!isxdigit((unsigned char)value[absolute_index])) return false;
+        }
     }
-    return false;
+
+    return true;
 }
 
 static bool is_ip_address(const char *value) {

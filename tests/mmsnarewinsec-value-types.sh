@@ -1,6 +1,9 @@
 #!/bin/bash
-# Validate GUID, IP address, and timestamp value typing in mmsnarewinsec output,
-# including fallback behaviour for malformed inputs
+## @brief Validate GUID, IP address, and timestamp typing for mmsnarewinsec
+## @description
+## Exercises successful and failing GUID/IP/timestamp samples to ensure
+## validated values are stored as typed JSON strings while malformed data
+## follows the fallback path and records validation errors.
 unset RSYSLOG_DYNNAME
 . ${srcdir:=.}/diag.sh init
 
