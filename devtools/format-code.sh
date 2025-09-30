@@ -7,7 +7,7 @@
 # It's intended to enforce the canonical code format for the repository.
 #
 # Usage:
-#   ./devtools/format-code.sh [-h]
+#   ./devtools/format-code-exec.sh [-h]
 #
 # Options:
 #   -h, --help    Display this help message and exit.
@@ -30,13 +30,13 @@
 #   parentheses `\( ... \)` to ensure that `clang-format` is executed for
 #   both `.c` and `.h` files as intended.
 #
-#   Before running, ensure 'clang-format' is installed on your system.
+#   Before running, ensure 'clang-format-18' is installed on your system.
 #   It is highly recommended to commit your current changes or create a backup
 #   before executing this script, as it modifies files directly.
 #
 # Exit Codes:
 #   0: Overall formatting process completed successfully.
-#   1: 'clang-format' is not found or not executable.
+#   1: 'clang-format-18' is not found or not executable.
 #   2: A critical error occurred during the 'find -exec' command.
 
 # --- Script Start ---
@@ -45,7 +45,7 @@
 set -euo pipefail # Exit on error, unset variables, and pipefail
 
 # --- Configuration ---
-readonly CLANG_FORMAT="clang-format"  # Use system clang-format (will work with any version)
+readonly CLANG_FORMAT="clang-format-18"  # Specify the clang-format version to use
 
 # --- Functions ---
 
@@ -74,7 +74,7 @@ done
 # Check if clang-format is installed and executable
 if ! command -v "$CLANG_FORMAT" &> /dev/null; then
   echo "Error: '$CLANG_FORMAT' command not found." >&2
-  echo "Please install clang-format. On Ubuntu, you can run: sudo apt install clang-format" >&2
+  echo "Please install it. On Ubuntu, you can run: sudo apt install $CLANG_FORMAT" >&2
   exit 1
 fi
 
@@ -87,9 +87,9 @@ if ! find . -maxdepth 2 -name ".clang-format" -print -quit | grep -q .; then
 fi
 
 echo "Starting code formatting for .c and .h files using 'find -exec ... +'..."
-echo "Using clang-format -i -style=file"
+echo "Using $CLANG_FORMAT -i -style=file"
 echo "This may take a moment. Any clang-format errors for individual files will be printed directly."
-echo "Note: clang-format only modifies files that deviate from the specified style."
+echo "Note: '$CLANG_FORMAT' only modifies files that deviate from the specified style."
 echo ""
 
 # --- Formatting Logic ---
