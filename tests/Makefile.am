@@ -509,7 +509,9 @@ TESTS += \
     mmsnarewinsec-syslog.sh\
     mmsnarewinsec-comprehensive.sh\
     mmsnarewinsec-value-types.sh\
-    mmsnarewinsec-enhanced-validation.sh
+    mmsnarewinsec-enhanced-validation.sh\
+    mmsnarewinsec-kerberos.sh\
+    mmsnarewinsec-realworld-4624-4634-5140.sh
 if HAVE_VALGRIND
 TESTS += \
     mmsnarewinsec-comprehensive-vg.sh
@@ -2716,7 +2718,6 @@ EXTRA_DIST= \
 	relp_tls_certificate_not_found.sh \
 	omrelp_wrong_authmode.sh \
 	imrelp-tls.sh \
-	imrelp-tls-cfgcmd.sh \
 	imrelp-tls-chainedcert.sh \
 	imrelp-tls-mixed-chainedcert.sh \
 	imrelp-tls-mixed-chainedcert2.sh \
@@ -2944,9 +2945,9 @@ EXTRA_DIST= \
 	imfile-symlink-ext-tmp-dir-tree.sh \
 	imfile-logrotate.sh \
 	imfile-logrotate-async.sh \
+	imfile-logrotate-multiple.sh \
 	imfile-logrotate-copytruncate.sh \
 	imfile-logrotate-nocopytruncate.sh \
-	imfile-logrotate-multiple.sh \
 	imfile-logrotate-state-files.sh \
 	imfile-growing-file-id.sh \
 	imfile-ignore-old-file-1.sh \

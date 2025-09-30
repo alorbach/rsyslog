@@ -793,8 +793,7 @@ rsRetVal tplToString(struct template *__restrict__ const pTpl,
         /* got source, now copy over */
         if (iLenVal > 0) { /* may be zero depending on property */
             if (need_comma) {
-                if (iBuf + 2 >= iparam->lenBuf)
-                    CHKiRet(ExtendBuf(iparam, iBuf + 2 + 1));
+                if (iBuf + 2 >= iparam->lenBuf) CHKiRet(ExtendBuf(iparam, iBuf + 2 + 1));
                 memcpy(iparam->param + iBuf, ", ", 2);
                 iBuf += 2;
             }
@@ -810,8 +809,7 @@ rsRetVal tplToString(struct template *__restrict__ const pTpl,
         }
 
         if ((pTpl->optFormatEscape == JSONF && !pTpl->bJsonTreeEnabled) && (pTpe->pNext == NULL)) {
-            if (iBuf + 2 >= iparam->lenBuf)
-                CHKiRet(ExtendBuf(iparam, iBuf + 2 + 1));
+            if (iBuf + 2 >= iparam->lenBuf) CHKiRet(ExtendBuf(iparam, iBuf + 2 + 1));
             memcpy(iparam->param + iBuf, "}\n", 2);
             iBuf += 2;
         }

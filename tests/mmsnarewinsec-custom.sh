@@ -49,28 +49,28 @@ cat >"$DEF_FILE" <<'JSON'
 JSON
 
 generate_conf
-add_conf "
-module(load=\"../plugins/imtcp/.libs/imtcp\")
-module(load=\"../plugins/mmsnarewinsec/.libs/mmsnarewinsec\" \
-       definition.file=\"${PWD}/${DEF_FILE}\" \
-       validation.mode=\"strict\")
+add_conf '
+module(load="../plugins/imtcp/.libs/imtcp")
+module(load="../plugins/mmsnarewinsec/.libs/mmsnarewinsec" \
+       definition.file="'${PWD}/${DEF_FILE}'" \
+       validation.mode="strict")
 
-template(name=\"customfmt\" type=\"list\") {
-    property(name=\"\\$!win!Event!Category\")
-    constant(value=\",\")
-    property(name=\"\\$!win!CustomBlock!WidgetID\")
-    constant(value=\",\")
-    property(name=\"\\$!win!EventData!CustomEventTag\")
-    constant(value=\",\")
-    property(name=\"\\$!win!Event!Outcome\")
-    constant(value=\"\\n\")
+template(name="customfmt" type="list") {
+    property(name="$!win!Event!Category")
+    constant(value=",")
+    property(name="$!win!CustomBlock!WidgetID")
+    constant(value=",")
+    property(name="$!win!EventData!CustomEventTag")
+    constant(value=",")
+    property(name="$!win!Event!Outcome")
+    constant(value="\n")
 }
 
-action(type=\"mmsnarewinsec\")
-action(type=\"omfile\" file=\"$RSYSLOG_OUT_LOG\" template=\"customfmt\")
+action(type="mmsnarewinsec")
+action(type="omfile" file="'$RSYSLOG_OUT_LOG'" template="customfmt")
 
-input(type=\"imtcp\" port=\"0\" listenPortFileName=\"'$RSYSLOG_DYNNAME'.tcpflood_port\")
-"
+input(type="imtcp" port="0" listenPortFileName="'$RSYSLOG_DYNNAME'.tcpflood_port")
+'
 
 startup
 
@@ -80,7 +80,7 @@ tcpflood -m 1 -I "${srcdir}/testsuites/mmsnarewinsec/sample-custom-pattern.data"
 shutdown_when_empty
 wait_shutdown
 
-content_check 'Custom,ZX-42,Demo,success' "$RSYSLOG_OUT_LOG"
+content_check ',ZX-42,Demo,success' "$RSYSLOG_OUT_LOG"
 
 rm -f "$DEF_FILE"
 

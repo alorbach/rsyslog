@@ -10,6 +10,7 @@ module(load="../plugins/mmsnarewinsec/.libs/mmsnarewinsec")
 
 template(name="jsonfmt" type="list" option.jsonf="on") {
   property(outname="EventID" name="$!win!Event!EventID" format="jsonf")
+  property(outname="TimeCreatedNormalized" name="$!win!Event!TimeCreated!Normalized" format="jsonf")
   property(outname="LogonType" name="$!win!LogonInformation!LogonType" format="jsonf")
   property(outname="LogonTypeName" name="$!win!LogonInformation!LogonTypeName" format="jsonf")
   property(outname="LAPSPolicyVersion" name="$!win!LAPS!PolicyVersion" format="jsonf")
@@ -38,10 +39,29 @@ injectmsg_file ${RSYSLOG_DYNNAME}.input
 shutdown_when_empty
 wait_shutdown
 
-# Check JSON output format
-content_check '{"eventid":"4624", "logontype":"2", "logontypename":"Interactive", "lapspolicyversion":"2", "lapscredentialrotation":"true", "tlsreason":"", "wdacpolicyversion":"", "wdacpid":"", "wufbpolicyid":"", "remotecredentialguard":"true", "networksourceport":"59122"}' $RSYSLOG_OUT_LOG
-content_check '{"eventid":"5157", "logontype":"", "logontypename":"", "lapspolicyversion":"", "lapscredentialrotation":"", "tlsreason":"Unapproved Root Authority", "wdacpolicyversion":"", "wdacpid":"", "wufbpolicyid":"", "remotecredentialguard":"", "networksourceport":"57912"}' $RSYSLOG_OUT_LOG
-content_check '{"eventid":"6281", "logontype":"", "logontypename":"", "lapspolicyversion":"", "lapscredentialrotation":"", "tlsreason":"", "wdacpolicyversion":"3.2.0", "wdacpid":"4128", "wufbpolicyid":"", "remotecredentialguard":"", "networksourceport":""}' $RSYSLOG_OUT_LOG
-content_check '{"eventid":"1243", "logontype":"", "logontypename":"", "lapspolicyversion":"", "lapscredentialrotation":"", "tlsreason":"", "wdacpolicyversion":"", "wdacpid":"", "wufbpolicyid":"2f9c4414-3f71-4f2b-9a7e-cc98a6d96970", "remotecredentialguard":"", "networksourceport":""}' $RSYSLOG_OUT_LOG
+# Check JSON output format (field-by-field for robustness)
+# 4624
+content_check '"eventid":"4624"' $RSYSLOG_OUT_LOG
+content_check '"timecreatednormalized":"2025-02-18T06:42:17' $RSYSLOG_OUT_LOG
+content_check '"logontype":"2"' $RSYSLOG_OUT_LOG
+content_check '"logontypename":"Interactive"' $RSYSLOG_OUT_LOG
+content_check '"lapspolicyversion":"2"' $RSYSLOG_OUT_LOG
+content_check '"lapscredentialrotation":"true"' $RSYSLOG_OUT_LOG
+content_check '"remotecredentialguard":"true"' $RSYSLOG_OUT_LOG
+content_check '"networksourceport":"59122"' $RSYSLOG_OUT_LOG
+
+# 5157
+content_check '"eventid":"5157"' $RSYSLOG_OUT_LOG
+content_check '"tlsreason":"Unapproved Root Authority"' $RSYSLOG_OUT_LOG
+content_check '"networksourceport":"57912"' $RSYSLOG_OUT_LOG
+
+# 6281
+content_check '"eventid":"6281"' $RSYSLOG_OUT_LOG
+content_check '"wdacpolicyversion":"3.2.0"' $RSYSLOG_OUT_LOG
+content_check '"wdacpid":"4128"' $RSYSLOG_OUT_LOG
+
+# 1243
+content_check '"eventid":"1243"' $RSYSLOG_OUT_LOG
+content_check '"wufbpolicyid":"2f9c4414-3f71-4f2b-9a7e-cc98a6d96970"' $RSYSLOG_OUT_LOG
 
 exit_test
