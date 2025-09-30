@@ -2936,6 +2936,7 @@ static struct json_object *ensure_object(struct json_object *parent, const char 
 }
 
 static inline struct json_object *ensure_event_data(parse_context_t *ctx) {
+    if (ctx == NULL) return NULL;
     if (ctx->eventData == NULL) {
         ctx->eventData = json_object_new_object();
         if (ctx->eventData != NULL) json_object_object_add(ctx->root, "EventData", ctx->eventData);
@@ -2944,6 +2945,7 @@ static inline struct json_object *ensure_event_data(parse_context_t *ctx) {
 }
 
 static inline struct json_object *ensure_logon_root(parse_context_t *ctx) {
+    if (ctx == NULL) return NULL;
     if (ctx->logonDerived == NULL) {
         ctx->logonDerived = json_object_new_object();
         if (ctx->logonDerived != NULL) json_object_object_add(ctx->root, "Logon", ctx->logonDerived);
