@@ -2,23 +2,15 @@
 # Test imptcp with poller not processing any messages
 # test imptcp with very large messages while poller driven processing is disabled
 # added 2015-10-17 by singh.janmejay
-
-# Skip test if imptcp module is not available (e.g., on macOS)
-if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
-	echo "imptcp module not available - skipping test"
-	exit 77
-fi
-
+skip_platform "Darwin" "imptcp not supported on macOS"
 # This file is part of the rsyslog project, released  under GPLv3
 . ${srcdir:=.}/diag.sh init
 export NUMMESSAGES=20000
 generate_conf
 add_conf '$MaxMessageSize 10k
 template(name="outfmt" type="string" string="%msg:F,58:2%,%msg:F,58:3%,%msg:F,58:4%\n")
-
 module(load="../plugins/imptcp/.libs/imptcp" threads="32" processOnPoller="off")
 input(type="imptcp" port="0" listenPortFileName="'$RSYSLOG_DYNNAME'.tcpflood_port")
-
 if (prifilt("local0.*")) then {
    action(type="omfile" file="'$RSYSLOG_OUT_LOG'" template="outfmt")
 }

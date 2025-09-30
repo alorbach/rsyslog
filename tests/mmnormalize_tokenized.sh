@@ -4,31 +4,15 @@
 echo ===============================================================================
 echo \[mmnormalize_tokenized.sh\]: test for mmnormalize tokenized field_type
 . ${srcdir:=.}/diag.sh init
-
-
-# Skip test if imptcp module is not available (e.g., on macOS)
-if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
-	echo "imptcp module not available - skipping test"
-	exit 77
-fi
-
-# Skip test if imptcp module is not available (e.g., on macOS)
-if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
-	echo "imptcp module not available - skipping test"
-	exit 77
-fi
-
+skip_platform "Darwin" "imptcp not supported on macOS"
 generate_conf
 add_conf '
 template(name="ips" type="string" string="%$.ips%\n")
-
 template(name="paths" type="string" string="%$!fragments% %$!user%\n")
 template(name="numbers" type="string" string="nos: %$!some_nos%\n")
-
 module(load="../plugins/mmnormalize/.libs/mmnormalize")
 module(load="../plugins/imptcp/.libs/imptcp")
 input(type="imptcp" port="0" listenPortFileName="'$RSYSLOG_DYNNAME'.tcpflood_port")
-
 action(type="mmnormalize" rulebase=`echo $srcdir/testsuites/mmnormalize_tokenized.rulebase`)
 if ( $!only_ips != "" ) then {
   set $.ips = $!only_ips;

@@ -2,18 +2,14 @@
 # add 2016-11-22 by Pascal Withopf, released under ASL 2.0
 . ${srcdir:=.}/diag.sh init
 . $srcdir/faketime_common.sh
-
 export TZ=TEST-02:00
-
 generate_conf
 add_conf '
 module(load="../plugins/imtcp/.libs/imtcp")
 module(load="../plugins/mmnormalize/.libs/mmnormalize")
 input(type="imtcp" port="0" listenPortFileName="'$RSYSLOG_DYNNAME'.tcpflood_port" ruleset="ruleset1")
-
 template(name="t_file_record" type="string" string="%timestamp:::date-rfc3339% %timestamp:::date-rfc3339% %hostname% %$!v_tag% %$!v_msg%\n")
 template(name="t_file_path" type="string" string="/sb/logs/incoming/%$year%/%$month%/%$day%/svc_%$!v_svc%/ret_%$!v_ret%/os_%$!v_os%/%fromhost-ip%/r_relay1/%$!v_file:::lowercase%.gz\n")
-
 ruleset(name="ruleset1") {
 	action(type="mmnormalize" rulebase=`echo $srcdir/testsuites/mmnormalize_processing_tests.rulebase` useRawMsg="on")
 	if ($!v_file == "") then {
@@ -21,7 +17,6 @@ ruleset(name="ruleset1") {
 	}
 	action(type="omfile" File=`echo $RSYSLOG_OUT_LOG` template="t_file_record")
 	action(type="omfile" File=`echo $RSYSLOG_OUT_LOG` template="t_file_path")
-
 }
 '
 FAKETIME='2017-03-08 14:56:37' startup
@@ -35,5 +30,4 @@ if [ ! $? -eq 0 ]; then
   cat $RSYSLOG_OUT_LOG
   error_exit  1
 fi;
-
 exit_test

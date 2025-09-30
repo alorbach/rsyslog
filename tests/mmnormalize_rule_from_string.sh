@@ -5,11 +5,8 @@ generate_conf
 add_conf '
 module(load="../plugins/imtcp/.libs/imtcp")
 module(load="../plugins/mmnormalize/.libs/mmnormalize")
-
 input(type="imtcp" port="0" listenPortFileName="'$RSYSLOG_DYNNAME'.tcpflood_port" ruleset="norm")
-
 template(name="outfmt" type="string" string="%hostname% %syslogtag%\n")
-
 ruleset(name="norm") {
 	action(type="mmnormalize" useRawMsg="on" rule="rule=:%host:word% %tag:char-to:\\x3a%: no longer listening on %ip:ipv4%#%port:number%")
 	action(type="omfile" file=`echo $RSYSLOG_OUT_LOG` template="outfmt")
@@ -29,5 +26,4 @@ if [ ! $? -eq 0 ]; then
   cat $RSYSLOG_OUT_LOG
   error_exit  1
 fi;
-
 exit_test

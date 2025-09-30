@@ -2,14 +2,8 @@
 # test imptcp with large connection count
 # test many concurrent tcp connections
 # released under ASL 2.0
-
-# Skip test if imptcp module is not available (e.g., on macOS)
-if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
-	echo "imptcp module not available - skipping test"
-	exit 77
-fi
-
 . ${srcdir:=.}/diag.sh init
+skip_platform "Darwin" "imptcp not supported on macOS"
 export NUMMESSAGES=40000
 export QUEUE_EMPTY_CHECK_FUNC=wait_file_lines
 generate_conf
@@ -17,7 +11,6 @@ add_conf '
 $MaxOpenFiles 2000
 module(load="../plugins/imptcp/.libs/imptcp")
 input(type="imptcp" SocketBacklog="1000" port="0" listenPortFileName="'$RSYSLOG_DYNNAME'.tcpflood_port")
-
 template(name="outfmt" type="string" string="%msg:F,58:2%\n")
 :msg, contains, "msgnum:" action(type="omfile" file="'$RSYSLOG_OUT_LOG'" template="outfmt")
 '

@@ -4,24 +4,15 @@
 echo ===============================================================================
 echo \[mmnormalize_regex_disabled.sh\]: test for mmnormalize regex field_type with allow_regex disabled
 . ${srcdir:=.}/diag.sh init
+skip_platform "Darwin" "imptcp not supported on macOS"
 generate_conf
-
-# Skip test if imptcp module is not available (e.g., on macOS)
-if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
-	echo "imptcp module not available - skipping test"
-	exit 77
-fi
-
 add_conf '
 template(name="hosts_and_ports" type="string" string="host and port list: %$!hps%\n")
-
 template(name="paths" type="string" string="%$!fragments% %$!user%\n")
 template(name="numbers" type="string" string="nos: %$!some_nos%\n")
-
 module(load="../plugins/mmnormalize/.libs/mmnormalize" allowRegex="off")
 module(load="../plugins/imptcp/.libs/imptcp")
 input(type="imptcp" port="0" listenPortFileName="'$RSYSLOG_DYNNAME'.tcpflood_port")
-
 action(type="mmnormalize" rulebase=`echo $srcdir/testsuites/mmnormalize_regex.rulebase`)
 action(type="omfile" file=`echo $RSYSLOG_OUT_LOG` template="hosts_and_ports")
 '

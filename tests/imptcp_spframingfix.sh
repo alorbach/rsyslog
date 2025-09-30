@@ -2,19 +2,12 @@
 # This file is part of the rsyslog project, released  under ASL 2.0
 echo ====================================================================================
 echo TEST: \[imptcp_spframingfix.sh\]: test imptcp in regard to Cisco ASA framing fix
-
-# Skip test if imptcp module is not available (e.g., on macOS)
-if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
-	echo "imptcp module not available - skipping test"
-	exit 77
-fi
-
+skip_platform "Darwin" "imptcp not supported on macOS"
 . ${srcdir:=.}/diag.sh init
 generate_conf
 add_conf '
 module(load="../plugins/imptcp/.libs/imptcp")
 input(type="imptcp" port="0" listenPortFileName="'$RSYSLOG_DYNNAME'.tcpflood_port" ruleset="remote" framingfix.cisco.asa="on")
-
 template(name="outfmt" type="string" string="%rawmsg:6:7%\n")
 ruleset(name="remote") {
 	action(type="omfile" file=`echo $RSYSLOG_OUT_LOG` template="outfmt")

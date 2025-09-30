@@ -1,47 +1,32 @@
 #!/bin/bash
 # addd 2017-03-31 by Pascal Withopf, released under ASL 2.0
-
 . ${srcdir:=.}/diag.sh init
-
-# Skip test if imptcp module is not available (e.g., on macOS)
-if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
-	echo "imptcp module not available - skipping test"
-	exit 77
-fi
-
+skip_platform "Darwin" "imptcp not supported on macOS"
 generate_conf
 add_conf '
 module(load="../plugins/imptcp/.libs/imptcp")
 input(type="imptcp" port="0" listenPortFileName="'$RSYSLOG_DYNNAME'.tcpflood_port"
 	notifyonconnectionclose="on" notifyonconnectionopen="on")
-
 :msg, contains, "msgnum:" {
 	action(type="omfile" file=`echo $RSYSLOG2_OUT_LOG`)
 }
-
 action(type="omfile" file="'$RSYSLOG_OUT_LOG'")
-
 '
 startup
 assign_tcpflood_port $RSYSLOG_DYNNAME.tcpflood_port
 tcpflood -m1 -M"\"<129>Mar 10 01:00:00 172.20.245.8 tag: msgnum:1\""
 shutdown_when_empty
 wait_shutdown
-
 grep "imptcp: connection established"  $RSYSLOG_OUT_LOG > /dev/null
 if [ $? -ne 0 ]; then
 	echo
 	echo "FAIL: expected error message not found.  $RSYSLOG_OUT_LOG is:"
 	cat $RSYSLOG_OUT_LOG
 	error_exit 1
-fi
-
 grep "imptcp: session on socket.* closed"  $RSYSLOG_OUT_LOG > /dev/null
 if [ $? -ne 0 ]; then
 	echo
 	echo "FAIL: expected error message not found.  $RSYSLOG_OUT_LOG is:"
 	cat $RSYSLOG_OUT_LOG
 	error_exit 1
-fi
-
 exit_test

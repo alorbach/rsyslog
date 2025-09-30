@@ -2,20 +2,13 @@
 # added 2022-04-25 by RGerhards, released under ASL 2.0
 . ${srcdir:=.}/diag.sh init
 generate_conf
-
-# Skip test if imptcp module is not available (e.g., on macOS)
-if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
-	echo "imptcp module not available - skipping test"
-	exit 77
-fi
-
+skip_platform "Darwin" "imptcp not supported on macOS"
 add_conf '
 $MaxMessageSize 128
 global(processInternalMessages="on"
 	oversizemsg.input.mode="accept")
 module(load="../plugins/imptcp/.libs/imptcp")
 input(type="imptcp" port="0" listenPortFileName="'$RSYSLOG_DYNNAME'.tcpflood_port")
-
 action(type="omfile" file="'$RSYSLOG_OUT_LOG'")
 '
 startup_vg
@@ -24,7 +17,6 @@ tcpflood -I $RSYSLOG_DYNNAME.inputfile
 shutdown_when_empty
 wait_shutdown_vg
 check_exit_vg
-
 # the prime objective is to see if valgrind check is ok, but we also do a quick content check (just in case)
 content_check "received oversize message from peer"
 exit_test

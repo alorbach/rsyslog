@@ -2,12 +2,7 @@
 # added 2019-07-30 by RGerhards, released under ASL 2.0
 export NUMMESSAGES=4000 # MUST be an even number!
 . ${srcdir:=.}/diag.sh init
-
-# Skip test if imptcp module is not available (e.g., on macOS)
-if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
-	echo "imptcp module not available - skipping test"
-	exit 77
-fi
+skip_platform "Darwin" "imptcp not supported on macOS"
 
 generate_conf
 add_conf '

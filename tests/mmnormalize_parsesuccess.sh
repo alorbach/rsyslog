@@ -5,11 +5,9 @@
 generate_conf
 add_conf '
 module(load="../plugins/mmnormalize/.libs/mmnormalize")
-
 action(type="mmnormalize" rule=
 	["rule=: %-:char-to{\"extradata\":\":\"}%:00000000:",
 	 "rule=: %-:char-to{\"extradata\":\":\"}%:00000010:"] )
-
 if not ($rawmsg contains "rsyslog") then
 	if $parsesuccess == "OK" then
 		action(type="omfile" file="'$RSYSLOG_OUT_LOG'")

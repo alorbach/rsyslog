@@ -2,20 +2,13 @@
 # This file is part of the rsyslog project, released  under ASL 2.0
 . ${srcdir:=.}/diag.sh init
 generate_conf
-
-# Skip test if imptcp module is not available (e.g., on macOS)
-if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
-	echo "imptcp module not available - skipping test"
-	exit 77
-fi
-
+skip_platform "Darwin" "imptcp not supported on macOS"
 add_conf '
 $EscapeControlCharactersOnReceive off
 module(load="../plugins/imptcp/.libs/imptcp")
 input(type="imptcp" port="0" listenPortFileName="'$RSYSLOG_DYNNAME'.tcpflood_port"
 	ruleset="remote"
 	framing.delimiter.regex="^<[0-9]{2}>(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)")
-
 template(name="outfmt" type="string" string="NEWMSG: %rawmsg%\n")
 ruleset(name="remote") {
 	action(type="omfile" file=`echo $RSYSLOG_OUT_LOG` template="outfmt")
@@ -36,7 +29,6 @@ NEWMSG: <33>Mar  1 01:00:00 172.20.245.8 tag multi
  l
  i
  n
-
 e2
 NEWMSG: <33>Mar  1 01:00:00 172.20.245.8 tag test3
 NEWMSG: <33>Mar  1 01:00:00 172.20.245.8 tag multi

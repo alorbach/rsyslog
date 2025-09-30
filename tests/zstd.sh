@@ -5,20 +5,8 @@
 # added 2022-06-21 by Rgerhards
 #
 # This file is part of the rsyslog project, released under ASL 2.0
-
-# Skip test if imptcp module is not available (e.g., on macOS)
-if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
-	echo "imptcp module not available - skipping test"
-	exit 77
-fi
-
 . ${srcdir:=.}/diag.sh init
-
-# Skip test if imptcp module is not available (e.g., on macOS)
-if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
-	echo "imptcp module not available - skipping test"
-	exit 77
-fi
+skip_platform "Darwin" "imptcp not supported on macOS"
 export NUMMESSAGES=${NUMMESSAGES:-50000}
 export QUEUE_EMPTY_CHECK_FUNC=wait_seq_check
 generate_conf
@@ -27,11 +15,9 @@ generate_conf
 add_conf '
 $MaxMessageSize 10k
 $MainMsgQueueTimeoutShutdown 10000
-
 module(load="builtin:omfile" compression.driver="zstd" compression.zstd.workers="5")
 module(load="../plugins/imptcp/.libs/imptcp")
 input(type="imptcp" port="0" listenPortFileName="'$RSYSLOG_DYNNAME'.tcpflood_port")
-
 template(name="outfmt" type="string" string="%msg:F,58:2%,%msg:F,58:3%,%msg:F,58:4%\n")
 local0.* action(type="omfile" file="'$RSYSLOG_OUT_LOG'.zst" template="outfmt"
 		zipLevel="20" iobuffersize="64k" veryRobustZIP="off")

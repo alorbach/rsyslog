@@ -2,13 +2,7 @@
 # Test imptcp with many dropping connections
 # added 2010-08-10 by Rgerhards
 #
-
-# Skip test if imptcp module is not available (e.g., on macOS)
-if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
-	echo "imptcp module not available - skipping test"
-	exit 77
-fi
-
+skip_platform "Darwin" "imptcp not supported on macOS"
 # This file is part of the rsyslog project, released under ASL 2.0
 . ${srcdir:=.}/diag.sh init
 export NUMMESSAGES=${NUMMESSAGES:-50000} # permit valgrind test to override value
@@ -16,10 +10,8 @@ export TB_TEST_MAX_RUNTIME=${TB_TEST_MAX_RUNTIME:-700} # connection drops are ve
 generate_conf
 add_conf '
 $MaxMessageSize 10k
-
 module(load="../plugins/imptcp/.libs/imptcp")
 input(type="imptcp" port="0" listenPortFileName="'$RSYSLOG_DYNNAME'.tcpflood_port")
-
 $template outfmt,"%msg:F,58:2%,%msg:F,58:3%,%msg:F,58:4%\n"
 template(name="dynfile" type="string" string="'$RSYSLOG_OUT_LOG'")
 $OMFileFlushInterval 2
