@@ -2,6 +2,13 @@
 # Test imptcp with many dropping connections
 # added 2010-08-10 by Rgerhards
 #
+
+# Skip test if imptcp module is not available (e.g., on macOS)
+if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
+	echo "imptcp module not available - skipping test"
+	exit 77
+fi
+
 # This file is part of the rsyslog project, released under ASL 2.0
 . ${srcdir:=.}/diag.sh init
 export NUMMESSAGES=${NUMMESSAGES:-50000} # permit valgrind test to override value

@@ -4,6 +4,20 @@
 echo ===============================================================================
 echo \[mmnormalize_regex.sh\]: test for mmnormalize regex field_type
 . ${srcdir:=.}/diag.sh init
+
+
+# Skip test if imptcp module is not available (e.g., on macOS)
+if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
+	echo "imptcp module not available - skipping test"
+	exit 77
+fi
+
+# Skip test if imptcp module is not available (e.g., on macOS)
+if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
+	echo "imptcp module not available - skipping test"
+	exit 77
+fi
+
 generate_conf
 add_conf '
 template(name="hosts_and_ports" type="string" string="host and port list: %$!hps%\n")

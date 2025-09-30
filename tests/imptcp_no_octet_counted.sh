@@ -2,6 +2,13 @@
 # This file is part of the rsyslog project, released  under GPLv3
 echo ====================================================================================
 echo TEST: \[imptcp_no_octet_counted.sh\]: test imptcp with octet counted framing disabled
+
+# Skip test if imptcp module is not available (e.g., on macOS)
+if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
+	echo "imptcp module not available - skipping test"
+	exit 77
+fi
+
 . ${srcdir:=.}/diag.sh init
 generate_conf
 add_conf '

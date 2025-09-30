@@ -2,6 +2,13 @@
 # added 2010-08-11 by Rgerhards
 #
 # This file is part of the rsyslog project, released  under ASL 2.0
+
+# Skip test if imptcp module is not available (e.g., on macOS)
+if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
+	echo "imptcp module not available - skipping test"
+	exit 77
+fi
+
 . ${srcdir:=.}/diag.sh init
 export NUMMESSAGES=20000
 export QUEUE_EMPTY_CHECK_FUNC=wait_file_lines

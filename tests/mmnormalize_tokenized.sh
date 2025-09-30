@@ -4,6 +4,20 @@
 echo ===============================================================================
 echo \[mmnormalize_tokenized.sh\]: test for mmnormalize tokenized field_type
 . ${srcdir:=.}/diag.sh init
+
+
+# Skip test if imptcp module is not available (e.g., on macOS)
+if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
+	echo "imptcp module not available - skipping test"
+	exit 77
+fi
+
+# Skip test if imptcp module is not available (e.g., on macOS)
+if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
+	echo "imptcp module not available - skipping test"
+	exit 77
+fi
+
 generate_conf
 add_conf '
 template(name="ips" type="string" string="%$.ips%\n")

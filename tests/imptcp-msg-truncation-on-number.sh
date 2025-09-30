@@ -3,6 +3,13 @@
 . ${srcdir:=.}/diag.sh init
 skip_platform "Darwin" "Test fails on MacOS 13, TCP chunking causes false octet-counting detection with sequence 9876543210"
 
+# Skip test if imptcp module is not available (e.g., on macOS)
+if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
+	echo "imptcp module not available - skipping test"
+	exit 77
+fi
+
+
 generate_conf
 add_conf '
 $MaxMessageSize 128

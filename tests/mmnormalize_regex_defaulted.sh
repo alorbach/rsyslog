@@ -5,6 +5,13 @@ echo ===========================================================================
 echo \[mmnormalize_regex_defaulted.sh\]: test for mmnormalize regex field_type, with allow_regex defaulted
 . ${srcdir:=.}/diag.sh init
 generate_conf
+
+# Skip test if imptcp module is not available (e.g., on macOS)
+if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
+	echo "imptcp module not available - skipping test"
+	exit 77
+fi
+
 add_conf '
 template(name="hosts_and_ports" type="string" string="host and port list: %$!hps%\n")
 

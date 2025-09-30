@@ -5,6 +5,13 @@ echo ===========================================================================
 echo \[mmnormalize_variable.sh\]: basic test for mmnormalize module variable-support
 . ${srcdir:=.}/diag.sh init
 generate_conf
+
+# Skip test if imptcp module is not available (e.g., on macOS)
+if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
+	echo "imptcp module not available - skipping test"
+	exit 77
+fi
+
 add_conf '
 template(name="outfmt" type="string" string="h:%$!hr% m:%$!min% s:%$!sec%\n")
 

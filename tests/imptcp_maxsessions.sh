@@ -2,6 +2,13 @@
 # Test imtcp with many dropping connections
 # added 2010-08-10 by Rgerhards
 #
+
+# Skip test if imptcp module is not available (e.g., on macOS)
+if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
+	echo "imptcp module not available - skipping test"
+	exit 77
+fi
+
 # This file is part of the rsyslog project, released  under GPLv3
 . ${srcdir:=.}/diag.sh init
 skip_platform "FreeBSD"  "This test currently does not work on FreeBSD"

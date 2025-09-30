@@ -2,6 +2,13 @@
 . ${srcdir:=.}/diag.sh init
 # First make sure we don't unlink if not asked to
 rm -f "$srcdir/testbench_socket"
+
+# Skip test if imptcp module is not available (e.g., on macOS)
+if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
+	echo "imptcp module not available - skipping test"
+	exit 77
+fi
+
 echo "nope" > "$srcdir/testbench_socket"
 
 generate_conf

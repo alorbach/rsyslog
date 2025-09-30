@@ -2,6 +2,13 @@
 # addd 2017-03-01 by RGerhards, released under ASL 2.0
 
 . ${srcdir:=.}/diag.sh init
+
+# Skip test if imptcp module is not available (e.g., on macOS)
+if ! ls ../plugins/imptcp/.libs/imptcp.so* 1>/dev/null 2>&1; then
+	echo "imptcp module not available - skipping test"
+	exit 77
+fi
+
 generate_conf
 add_conf '
 $MaxMessageSize 12800
