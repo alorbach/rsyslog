@@ -54,7 +54,7 @@ jobs:
             libtool
 
       - name: git checkout project
-        uses: actions/checkout@v1
+        uses: actions/checkout@v4
 
       - name: prepare for build
         run: |

@@ -72,7 +72,7 @@ jobs:
           df -h . | tail -1 | awk '{print "Free space: " $4 " (" $5 " used)"}'
 
       - name: git checkout project
-        uses: actions/checkout@v1
+        uses: actions/checkout@v4
 
       - name: prepare for build
         run: |
