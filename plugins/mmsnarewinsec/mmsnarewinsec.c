@@ -787,11 +787,27 @@ static bool parse_int_range(const char *digits, size_t length, int min_value, in
     int value = 0;
     for (size_t i = 0; i < length; ++i) {
         if (!isdigit((unsigned char)digits[i])) return false;
-        value = (value * 10) + (digits[i] - '0');
+        if (value > INT_MAX / 10) return false;
+        const int digit = digits[i] - '0';
+        if (value == INT_MAX / 10 && digit > INT_MAX % 10) return false;
+        value = (value * 10) + digit;
     }
     if (value < min_value || value > max_value) return false;
     if (out != NULL) *out = value;
     return true;
+}
+
+static bool is_leap_year(int year) {
+    if (year % 4 != 0) return false;
+    if (year % 100 != 0) return true;
+    return (year % 400) == 0;
+}
+
+static int days_in_month(int year, int month) {
+    static const int days[] = {0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    if (month < 1 || month > 12) return 0;
+    if (month == 2 && is_leap_year(year)) return 29;
+    return days[month];
 }
 
 static bool is_iso8601_timestamp(const char *value) {
@@ -802,13 +818,22 @@ static bool is_iso8601_timestamp(const char *value) {
 
     if (value[4] != '-' || value[7] != '-' || value[10] != 'T' || value[13] != ':' || value[16] != ':') return false;
 
-    int dummy;
-    if (!parse_int_range(value, 4, 0, 9999, &dummy)) return false;
-    if (!parse_int_range(value + 5, 2, 1, 12, &dummy)) return false;
-    if (!parse_int_range(value + 8, 2, 1, 31, &dummy)) return false;
-    if (!parse_int_range(value + 11, 2, 0, 23, &dummy)) return false;
-    if (!parse_int_range(value + 14, 2, 0, 59, &dummy)) return false;
-    if (!parse_int_range(value + 17, 2, 0, 60, &dummy)) return false;
+    int year = 0;
+    int month = 0;
+    int day = 0;
+    int hour = 0;
+    int minute = 0;
+    int second = 0;
+
+    if (!parse_int_range(value, 4, 0, 9999, &year)) return false;
+    if (!parse_int_range(value + 5, 2, 1, 12, &month)) return false;
+    if (!parse_int_range(value + 8, 2, 1, 31, &day)) return false;
+    const int max_day = days_in_month(year, month);
+    if (max_day == 0 || day > max_day) return false;
+    if (!parse_int_range(value + 11, 2, 0, 23, &hour)) return false;
+    if (!parse_int_range(value + 14, 2, 0, 59, &minute)) return false;
+    if (!parse_int_range(value + 17, 2, 0, 60, &second)) return false;
+    if (second == 60 && minute != 59) return false;
 
     size_t pos = 19;
     if (value[pos] == '.') {
@@ -824,16 +849,21 @@ static bool is_iso8601_timestamp(const char *value) {
     } else if (value[pos] == '+' || value[pos] == '-') {
         pos++;
         if (pos + 1 >= len) return false;
-        if (!parse_int_range(value + pos, 2, 0, 23, &dummy)) return false;
+        int tz_hour = 0;
+        if (!parse_int_range(value + pos, 2, 0, 23, &tz_hour)) return false;
         pos += 2;
-        if (pos < len && value[pos] == ':') {
-            pos++;
-            if (pos + 1 >= len) return false;
-            if (!parse_int_range(value + pos, 2, 0, 59, &dummy)) return false;
-            pos += 2;
-        } else if (pos < len && isdigit((unsigned char)value[pos])) {
-            if (!parse_int_range(value + pos, 2, 0, 59, &dummy)) return false;
-            pos += 2;
+        if (pos < len) {
+            int tz_minute = 0;
+            if (value[pos] == ':') {
+                pos++;
+                if (pos + 1 >= len) return false;
+                if (!parse_int_range(value + pos, 2, 0, 59, &tz_minute)) return false;
+                pos += 2;
+            } else if (isdigit((unsigned char)value[pos])) {
+                if (pos + 1 >= len) return false;
+                if (!parse_int_range(value + pos, 2, 0, 59, &tz_minute)) return false;
+                pos += 2;
+            }
         }
     } else {
         return false;
@@ -848,6 +878,14 @@ static bool token_matches(const char *token, const char *const *table, size_t ta
         if (strcasecmp(token, table[i]) == 0) return true;
     }
     return false;
+}
+
+static int lookup_month_index(const char *month) {
+    static const char *const months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    for (size_t i = 0; i < ARRAY_SIZE(months); ++i) {
+        if (strcasecmp(month, months[i]) == 0) return (int)i + 1;
+    }
+    return 0;
 }
 
 static bool is_windows_event_timestamp(const char *value) {
@@ -870,14 +908,15 @@ static bool is_windows_event_timestamp(const char *value) {
     if (*tail != '\0') return false;
 
     static const char *const weekdays[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
-    static const char *const months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
     if (!token_matches(weekday, weekdays, ARRAY_SIZE(weekdays))) return false;
-    if (!token_matches(month, months, ARRAY_SIZE(months))) return false;
-    if (day < 1 || day > 31) return false;
+    const int month_index = lookup_month_index(month);
+    if (month_index == 0) return false;
+    if (day < 1 || day > days_in_month(year, month_index)) return false;
     if (hour < 0 || hour > 23) return false;
     if (minute < 0 || minute > 59) return false;
     if (second < 0 || second > 60) return false;
+    if (second == 60 && minute != 59) return false;
     if (year < 1900) return false;
 
     return true;
