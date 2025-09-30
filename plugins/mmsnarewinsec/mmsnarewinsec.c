@@ -27,6 +27,9 @@
 #include <string.h>
 #include <strings.h>
 #include <stdio.h>
+#include <time.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 
 #include "conf.h"
 #include "datetime.h"
@@ -462,6 +465,15 @@ static uint32_t parse_section_flags_array(struct json_object *value, sbool *ok);
 static bool is_guid_format(const char *value) ATTR_UNUSED;
 static bool is_ip_address(const char *value) ATTR_UNUSED;
 static bool is_timestamp_format(const char *value) ATTR_UNUSED;
+static bool is_iso8601_timestamp(const char *value) ATTR_UNUSED;
+static bool is_windows_event_timestamp(const char *value) ATTR_UNUSED;
+static rsRetVal store_validated_string(field_detection_context_t *fdCtx,
+                                       struct json_object *target,
+                                       const char *key,
+                                       const char *value,
+                                       bool (*validator)(const char *),
+                                       const char *error_message,
+                                       sbool *storedOut);
 static const char *section_behavior_to_string(section_behavior_t behavior) ATTR_UNUSED;
 static const char *field_value_type_to_string(field_value_type_t type) ATTR_UNUSED;
 static const char *field_sensitivity_to_string(field_pattern_sensitivity_t sensitivity) ATTR_UNUSED;
@@ -759,33 +771,121 @@ static bool is_guid_format(const char *value) {
 static bool is_ip_address(const char *value) {
     if (value == NULL) return false;
 
-    int dots = 0;
-    int digits = 0;
+    struct in_addr ipv4_addr;
+    if (inet_pton(AF_INET, value, &ipv4_addr) == 1) return true;
 
-    for (const char *p = value; *p; ++p) {
-        if (*p == '.') {
-            dots++;
-            if (digits == 0) return false;
-            digits = 0;
-        } else if (isdigit((unsigned char)*p)) {
-            digits++;
-        } else {
-            return false;
-        }
+#ifdef AF_INET6
+    struct in6_addr ipv6_addr;
+    if (inet_pton(AF_INET6, value, &ipv6_addr) == 1) return true;
+#endif
+
+    return false;
+}
+
+static bool parse_int_range(const char *digits, size_t length, int min_value, int max_value, int *out) {
+    if (digits == NULL || length == 0) return false;
+    int value = 0;
+    for (size_t i = 0; i < length; ++i) {
+        if (!isdigit((unsigned char)digits[i])) return false;
+        value = (value * 10) + (digits[i] - '0');
+    }
+    if (value < min_value || value > max_value) return false;
+    if (out != NULL) *out = value;
+    return true;
+}
+
+static bool is_iso8601_timestamp(const char *value) {
+    if (value == NULL) return false;
+
+    size_t len = strlen(value);
+    if (len < 20) return false;
+
+    if (value[4] != '-' || value[7] != '-' || value[10] != 'T' || value[13] != ':' || value[16] != ':') return false;
+
+    int dummy;
+    if (!parse_int_range(value, 4, 0, 9999, &dummy)) return false;
+    if (!parse_int_range(value + 5, 2, 1, 12, &dummy)) return false;
+    if (!parse_int_range(value + 8, 2, 1, 31, &dummy)) return false;
+    if (!parse_int_range(value + 11, 2, 0, 23, &dummy)) return false;
+    if (!parse_int_range(value + 14, 2, 0, 59, &dummy)) return false;
+    if (!parse_int_range(value + 17, 2, 0, 60, &dummy)) return false;
+
+    size_t pos = 19;
+    if (value[pos] == '.') {
+        pos++;
+        if (pos >= len || !isdigit((unsigned char)value[pos])) return false;
+        while (pos < len && isdigit((unsigned char)value[pos])) pos++;
     }
 
-    return dots == 3 && digits > 0;
+    if (pos >= len) return false;
+
+    if (value[pos] == 'Z' || value[pos] == 'z') {
+        pos++;
+    } else if (value[pos] == '+' || value[pos] == '-') {
+        pos++;
+        if (pos + 1 >= len) return false;
+        if (!parse_int_range(value + pos, 2, 0, 23, &dummy)) return false;
+        pos += 2;
+        if (pos < len && value[pos] == ':') {
+            pos++;
+            if (pos + 1 >= len) return false;
+            if (!parse_int_range(value + pos, 2, 0, 59, &dummy)) return false;
+            pos += 2;
+        } else if (pos < len && isdigit((unsigned char)value[pos])) {
+            if (!parse_int_range(value + pos, 2, 0, 59, &dummy)) return false;
+            pos += 2;
+        }
+    } else {
+        return false;
+    }
+
+    while (pos < len && isspace((unsigned char)value[pos])) pos++;
+    return pos == len;
+}
+
+static bool token_matches(const char *token, const char *const *table, size_t table_len) {
+    for (size_t i = 0; i < table_len; ++i) {
+        if (strcasecmp(token, table[i]) == 0) return true;
+    }
+    return false;
+}
+
+static bool is_windows_event_timestamp(const char *value) {
+    if (value == NULL) return false;
+
+    char weekday[4] = {0};
+    char month[4] = {0};
+    int day = 0;
+    int hour = 0;
+    int minute = 0;
+    int second = 0;
+    int year = 0;
+    int consumed = 0;
+
+    if (sscanf(value, "%3s %3s %d %d:%d:%d %d%n", weekday, month, &day, &hour, &minute, &second, &year, &consumed) != 7)
+        return false;
+
+    const char *tail = value + consumed;
+    while (*tail != '\0' && isspace((unsigned char)*tail)) tail++;
+    if (*tail != '\0') return false;
+
+    static const char *const weekdays[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+    static const char *const months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+
+    if (!token_matches(weekday, weekdays, ARRAY_SIZE(weekdays))) return false;
+    if (!token_matches(month, months, ARRAY_SIZE(months))) return false;
+    if (day < 1 || day > 31) return false;
+    if (hour < 0 || hour > 23) return false;
+    if (minute < 0 || minute > 59) return false;
+    if (second < 0 || second > 60) return false;
+    if (year < 1900) return false;
+
+    return true;
 }
 
 static bool is_timestamp_format(const char *value) {
     if (value == NULL) return false;
-
-    if (strstr(value, "T") != NULL && strstr(value, "Z") != NULL) return true;
-    if (strstr(value, "Mon ") != NULL || strstr(value, "Tue ") != NULL || strstr(value, "Wed ") != NULL ||
-        strstr(value, "Thu ") != NULL || strstr(value, "Fri ") != NULL || strstr(value, "Sat ") != NULL ||
-        strstr(value, "Sun ") != NULL)
-        return true;
-    return false;
+    return is_iso8601_timestamp(value) || is_windows_event_timestamp(value);
 }
 
 static bool is_json_format(const char *value) {
@@ -3217,6 +3317,27 @@ static void add_raw_string(struct json_object *obj, const char *baseName, const 
     free(rawName);
 }
 
+static rsRetVal store_validated_string(field_detection_context_t *fdCtx,
+                                       struct json_object *target,
+                                       const char *key,
+                                       const char *value,
+                                       bool (*validator)(const char *),
+                                       const char *error_message,
+                                       sbool *storedOut) {
+    if (validator == NULL || validator(value)) {
+        json_add_string(target, key, value);
+        if (storedOut != NULL) *storedOut = 1;
+        return RS_RET_OK;
+    }
+
+    rsRetVal r = handle_parsing_error(fdCtx, error_message, key);
+    if (r == RS_RET_OK && fdCtx->enable_fallback) {
+        json_add_string(target, key, value);
+        if (storedOut != NULL) *storedOut = 1;
+    }
+    return r;
+}
+
 static struct json_object *resolve_target_object(parse_context_t *ctx,
                                                  struct json_object *hint,
                                                  const field_pattern_t *pattern) {
@@ -3337,40 +3458,13 @@ static rsRetVal parse_field_value_enhanced(const char *value,
             }
             break;
         case fieldValueGuid:
-            if (is_guid_format(trimmed)) {
-                json_add_string(target, key, trimmed);
-                if (storedOut != NULL) *storedOut = 1;
-            } else {
-                r = handle_parsing_error(fdCtx, "invalid GUID", key);
-                if (r == RS_RET_OK && fdCtx->enable_fallback) {
-                    json_add_string(target, key, trimmed);
-                    if (storedOut != NULL) *storedOut = 1;
-                }
-            }
+            r = store_validated_string(fdCtx, target, key, trimmed, is_guid_format, "invalid GUID", storedOut);
             break;
         case fieldValueIpAddress:
-            if (is_ip_address(trimmed)) {
-                json_add_string(target, key, trimmed);
-                if (storedOut != NULL) *storedOut = 1;
-            } else {
-                r = handle_parsing_error(fdCtx, "invalid IP address", key);
-                if (r == RS_RET_OK && fdCtx->enable_fallback) {
-                    json_add_string(target, key, trimmed);
-                    if (storedOut != NULL) *storedOut = 1;
-                }
-            }
+            r = store_validated_string(fdCtx, target, key, trimmed, is_ip_address, "invalid IP address", storedOut);
             break;
         case fieldValueTimestamp:
-            if (is_timestamp_format(trimmed)) {
-                json_add_string(target, key, trimmed);
-                if (storedOut != NULL) *storedOut = 1;
-            } else {
-                r = handle_parsing_error(fdCtx, "invalid timestamp", key);
-                if (r == RS_RET_OK && fdCtx->enable_fallback) {
-                    json_add_string(target, key, trimmed);
-                    if (storedOut != NULL) *storedOut = 1;
-                }
-            }
+            r = store_validated_string(fdCtx, target, key, trimmed, is_timestamp_format, "invalid timestamp", storedOut);
             break;
         case fieldValuePrivilegeList:
             if (fdCtx->parse_ctx != NULL) {
