@@ -72,6 +72,8 @@ template(name="jsonfmt" type="list" option.jsonf="on") {
     property(outname="deviceclaims" name="$!win!DeviceClaims" format="jsonf")
 }
 
+template(name="winraw" type="string" string="%$!win%\n")
+
 # Template for basic field extraction (for comparison)
 template(name="basicfmt" type="list") {
     property(name="$!win!Event!EventID")
@@ -92,6 +94,7 @@ ruleset(name="winsec") {
     action(type="mmsnarewinsec")
     action(type="omfile" file="'$RSYSLOG_OUT_LOG'.json" template="jsonfmt")
     action(type="omfile" file="'$RSYSLOG_OUT_LOG'.basic" template="basicfmt")
+    action(type="omfile" file="'$RSYSLOG_OUT_LOG'.raw.json" template="winraw")
 }
 
 input(type="imtcp" port="0" listenPortFileName="'$RSYSLOG_DYNNAME'.tcpflood_port" ruleset="winsec")
@@ -168,9 +171,68 @@ content_check '"subjectaccountdomain":"WORKGROUP"' $RSYSLOG_OUT_LOG.json
 content_check '"privilegelist":"SeAssignPrimaryTokenPrivilege' $RSYSLOG_OUT_LOG.json
 
 # Validate group membership and claims extraction
-content_check '"groupmembership":["HOST-004\\None"' $RSYSLOG_OUT_LOG.json
-content_check '"userclaims":["%12"' $RSYSLOG_OUT_LOG.json
-content_check '"deviceclaims":["%13"' $RSYSLOG_OUT_LOG.json
+if ! python3 - "$RSYSLOG_OUT_LOG.raw.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+raw_path = Path(sys.argv[1])
+if not raw_path.exists():
+    sys.stderr.write(f"raw JSON file not found: {raw_path}\n")
+    sys.exit(1)
+
+events = []
+with raw_path.open('r', encoding='utf-8') as fh:
+    for line in fh:
+        line = line.strip()
+        if not line:
+            continue
+        envelope = json.loads(line)
+        if isinstance(envelope, dict) and 'win' in envelope:
+            payload = envelope['win']
+            if isinstance(payload, str):
+                events.append(json.loads(payload))
+            elif isinstance(payload, dict):
+                events.append(payload)
+        elif isinstance(envelope, dict):
+            events.append(envelope)
+        elif isinstance(envelope, str):
+            events.append(json.loads(envelope))
+
+def find_event(event_id, category=None):
+    for evt in events:
+        meta = evt.get('Event', {})
+        if meta.get('EventID') == event_id and (category is None or meta.get('CategoryText') == category):
+            return evt
+    return None
+
+gm_evt = find_event(4627, 'Group Membership')
+if gm_evt is None:
+    sys.stderr.write('Group Membership event not found in raw JSON output\n')
+    sys.exit(1)
+gm = gm_evt.get('GroupMembership')
+if not isinstance(gm, list) or 'HOST-004\\None' not in gm:
+    sys.stderr.write(f'GroupMembership array missing expected entry: {gm!r}\n')
+    sys.exit(1)
+
+claims_evt = find_event(4626, 'Logon')
+if claims_evt is None:
+    sys.stderr.write('Claims event not found in raw JSON output\n')
+    sys.exit(1)
+user_claims = claims_evt.get('UserClaims')
+device_claims = claims_evt.get('DeviceClaims')
+if not isinstance(user_claims, list) or not isinstance(device_claims, list):
+    sys.stderr.write('Claims containers are not arrays\n')
+    sys.exit(1)
+if len(device_claims) == 0:
+    sys.stderr.write('DeviceClaims array is empty\n')
+    sys.exit(1)
+
+PY
+then
+    echo "Membership and claims validation failed" >&2
+    exit 1
+fi
 
 # Validate that DWM-1 account is extracted correctly for virtual accounts
 content_check '"newlogonaccountname":"DWM-1"' $RSYSLOG_OUT_LOG.json
