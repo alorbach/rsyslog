@@ -16,7 +16,6 @@
 #include "config.h"
 #include "rsyslog.h"
 
-#include <assert.h>
 #include <ctype.h>
 #include <errno.h>
 #include <json.h>
@@ -39,7 +38,6 @@
 #include "msg.h"
 #include "syslogd-types.h"
 #include "template.h"
-#include "unicode-helper.h"
 
 MODULE_TYPE_OUTPUT;
 MODULE_TYPE_NOKEEP;
@@ -3796,25 +3794,77 @@ static void parse_key_value_sequence(parse_context_t *ctx,
 }
 
 static void parse_privilege_sequence(parse_context_t *ctx, const char *text) {
-    struct json_object *arr;
-    const char *cursor = text;
-    if (cursor == NULL || !section_is_enabled(ctx->inst, SECTION_FLAG_NONE)) return;
-    arr = json_object_new_array();
-    if (arr == NULL) return;
-    while (*cursor) {
-        while (*cursor == ' ') ++cursor;
-        if (*cursor == '\0') break;
-        const char *start = cursor;
-        while (*cursor != '\0' && *cursor != ' ') ++cursor;
-        if (cursor > start) {
-            char *token = strdup_range(start, (size_t)(cursor - start));
-            if (token != NULL) {
-                json_object_array_add(arr, json_object_new_string(token));
-                free(token);
+    struct json_object *privObj;
+    struct json_object *existing;
+    char *trimmed;
+    char *cursor;
+    char *combined = NULL;
+
+    if (ctx == NULL || ctx->root == NULL || text == NULL) return;
+    privObj = ensure_object(ctx->root, "Privileges");
+    if (privObj == NULL) return;
+
+    trimmed = trim_copy(text, strlen(text));
+    if (trimmed == NULL) return;
+    if (*trimmed == '\0' || is_placeholder_value(trimmed)) {
+        free(trimmed);
+        return;
+    }
+
+    if (json_object_object_get_ex(privObj, "PrivilegeList", &existing) &&
+        json_object_is_type(existing, json_type_string)) {
+        const char *existing_str = json_object_get_string(existing);
+        if (existing_str != NULL && *existing_str != '\0') {
+            combined = strdup(existing_str);
+            if (combined == NULL) {
+                free(trimmed);
+                return;
             }
         }
     }
-    json_object_object_add(ctx->root, "Privileges", arr);
+
+    cursor = trimmed;
+    while (*cursor != '\0') {
+        cursor += strspn(cursor, " \t\r\n");
+        if (*cursor == '\0') break;
+        size_t len = strcspn(cursor, " \t\r\n");
+        if (len == 0) {
+            ++cursor;
+            continue;
+        }
+        char *token = strdup_range(cursor, len);
+        cursor += len;
+        if (token == NULL) {
+            free(combined);
+            free(trimmed);
+            return;
+        }
+        if (*token == '\0') {
+            free(token);
+            continue;
+        }
+        if (combined == NULL) {
+            combined = token;
+        } else {
+            char *expanded;
+            if (asprintf(&expanded, "%s %s", combined, token) < 0) {
+                free(token);
+                free(combined);
+                free(trimmed);
+                return;
+            }
+            free(combined);
+            combined = expanded;
+            free(token);
+        }
+    }
+
+    if (combined != NULL) {
+        json_object_object_add(privObj, "PrivilegeList", json_object_new_string(combined));
+        free(combined);
+    }
+
+    free(trimmed);
 }
 
 static void handle_inline_remote_credential_guard(parse_context_t *ctx,
