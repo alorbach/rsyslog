@@ -18,7 +18,7 @@ if $msg contains "msgnum:" then {
     pwd="testbench"
     queue.type="LinkedList"
     queue.timeoutEnqueue="1000"
-    queue.workerThreads="2"
+    queue.workerThreads="1"
     queue.workerThreadMinimumMessages="64"
   )
 }
