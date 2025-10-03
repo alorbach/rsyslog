@@ -2,12 +2,14 @@
 # This file is part of the rsyslog project, released under ASL 2.0
 # asyn test for mysql functionality (running on async action queue)
 . ${srcdir:=.}/diag.sh init
+export RSYSLOG_DEBUG="debug nologfuncflow noprintmutexaction nostdout"
+export RSYSLOG_DEBUGLOG="log"
 export NUMMESSAGES=50000
 generate_conf
 add_conf '
 $ModLoad ../plugins/ommysql/.libs/ommysql
 $ActionQueueType LinkedList
-$ActionQueueTimeoutEnqueue 20000
+$ActionQueueTimeoutEnqueue 1000
 $IMDiagInjectDelayMode light
 if $msg contains "msgnum:" then {
   action(
@@ -17,12 +19,7 @@ if $msg contains "msgnum:" then {
     uid="rsyslog"
     pwd="testbench"
     queue.type="LinkedList"
-    queue.timeoutEnqueue="20000"
-    queue.dequeueBatchSize="256"
-    queue.minDequeueBatchSize="64"
-    queue.size="5000"
-    queue.highWatermark="4000"
-    queue.lowWatermark="2000"
+    queue.timeoutEnqueue="1000"
     queue.workerThreads="1"
     queue.workerThreadMinimumMessages="64"
   )
