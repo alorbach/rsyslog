@@ -63,4 +63,18 @@ find . -name "*.log" -exec  bash -c 'check_incomplete_logs "$1" >> failed-tests.
 if [ -f failed-tests.log ]; then
 	# show summary stats so that we know how many failed
 	find . -name test-suite.log -exec bash -c 'append_summary "$1" >>failed-tests.log' _ {} \;
+	# also include rsyslog debug log if present (truncated if huge)
+	if [ -f log ]; then
+		printf '\n===== rsyslog debug log (log) =====\n' >> failed-tests.log
+		lines=$(wc -l < log)
+		if (( lines > 4000 )); then
+			ls -l log >> failed-tests.log
+			printf 'file is very large (%d lines), showing parts\n' "$lines" >> failed-tests.log
+			head -n 2000 < log >> failed-tests.log
+			printf '\n\n... snip ...\n\n' >> failed-tests.log
+			tail -n 2000 < log >> failed-tests.log
+		else
+			cat log >> failed-tests.log
+		fi
+	fi
 fi
