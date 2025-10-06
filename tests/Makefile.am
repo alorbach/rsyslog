@@ -503,23 +503,6 @@ TESTS +=  \
 	parsertest-snare_ccoff_udp.sh \
     parsertest-snare_ccoff_udp2.sh
 
-if ENABLE_MMSNAREWINSEC
-TESTS += \
-	mmsnarewinsec-basic.sh \
-	mmsnarewinsec-json.sh \
-	mmsnarewinsec-syslog.sh \
-	mmsnarewinsec-comprehensive.sh \
-	mmsnarewinsec-value-types.sh \
-	mmsnarewinsec-enhanced-validation.sh \
-	mmsnarewinsec-kerberos.sh \
-	mmsnarewinsec-custom.sh \
-	mmsnarewinsec-realworld-4624-4634-5140.sh
-if HAVE_VALGRIND
-TESTS += \
-	mmsnarewinsec-comprehensive-vg.sh
-endif
-endif
-
 if ENABLE_OMSENDERTRACK
 TESTS += \
         omsendertrack-basic.sh
@@ -1942,6 +1925,23 @@ TESTS +=  \
 endif
 endif # ENABLE_OMAMQP1
 
+if ENABLE_MMSNAREPARSE
+TESTS += \
+	mmsnareparse-basic.sh \
+	mmsnareparse-json.sh \
+	mmsnareparse-syslog.sh \
+	mmsnareparse-comprehensive.sh \
+	mmsnareparse-value-types.sh \
+	mmsnareparse-enhanced-validation.sh \
+	mmsnareparse-kerberos.sh \
+	mmsnareparse-custom.sh \
+	mmsnareparse-realworld-4624-4634-5140.sh
+if HAVE_VALGRIND
+TESTS += \
+	mmsnareparse-comprehensive-vg.sh
+endif
+endif
+
 endif # if ENABLE_TESTBENCH
 
 TESTS_ENVIRONMENT = RSYSLOG_MODDIR='$(abs_top_builddir)'/runtime/.libs/
@@ -2030,17 +2030,17 @@ EXTRA_DIST= \
         mmexternal-SegFault.sh \
         mmexternal-SegFault-empty-jroot-vg.sh \
         testsuites/mmexternal-SegFault-mm-python.py \
-        testsuites/mmsnarewinsec/sample-custom-pattern.data \
-        mmsnarewinsec-basic.sh \
-        mmsnarewinsec-comprehensive.sh \
-        mmsnarewinsec-comprehensive-vg.sh \
-        mmsnarewinsec-custom.sh \
-        mmsnarewinsec-enhanced-validation.sh \
-        mmsnarewinsec-json.sh \
-        mmsnarewinsec-kerberos.sh \
-        mmsnarewinsec-realworld-4624-4634-5140.sh \
-        mmsnarewinsec-syslog.sh \
-        mmsnarewinsec-value-types.sh \
+        testsuites/mmsnareparse/sample-custom-pattern.data \
+        mmsnareparse-basic.sh \
+        mmsnareparse-comprehensive.sh \
+        mmsnareparse-comprehensive-vg.sh \
+        mmsnareparse-custom.sh \
+        mmsnareparse-enhanced-validation.sh \
+        mmsnareparse-json.sh \
+        mmsnareparse-kerberos.sh \
+        mmsnareparse-realworld-4624-4634-5140.sh \
+        mmsnareparse-syslog.sh \
+        mmsnareparse-value-types.sh \
         mmexternal-InvldProg-vg.sh \
 	nested-call-shutdown.sh \
 	1.rstest 2.rstest 3.rstest err1.rstest \
@@ -2728,7 +2728,6 @@ EXTRA_DIST= \
 	relp_tls_certificate_not_found.sh \
 	omrelp_wrong_authmode.sh \
 	imrelp-tls.sh \
-	imrelp-tls-cfgcmd.sh \
 	imrelp-tls-chainedcert.sh \
 	imrelp-tls-mixed-chainedcert.sh \
 	imrelp-tls-mixed-chainedcert2.sh \
@@ -2899,35 +2898,18 @@ EXTRA_DIST= \
 	imfile-readmode2-vg.sh \
 	imfile-readmode2-with-persists-data-during-stop.sh \
 	imfile-readmode2-with-persists.sh \
+	imfile-endregex.sh \
 	imfile-endregex-save-lf.sh \
 	imfile-endregex-save-lf-persist.sh \
-	imfile-endregex.sh \
-	imfile-endregex-vg.sh \
-	imfile-basic.sh \
-	imfile-basic-legacy.sh \
-	imfile-basic-2GB-file.sh \
-	imfile-truncate-2GB-file.sh \
-	imfile-discard-truncated-line.sh \
-	imfile-truncate-line.sh \
-	imfile-file-not-found-error.sh \
-	imfile-fileNotFoundError-parameter.sh \
-	imfile-error-not-repeated.sh \
-	imfile-basic-vg.sh \
-	imfile-basic-vgthread.sh \
 	imfile-endregex-timeout-none-polling.sh \
 	imfile-endregex-timeout-polling.sh \
 	imfile-endregex-timeout.sh \
 	imfile-endregex-timeout-none.sh \
 	imfile-endregex-timeout-with-shutdown.sh \
 	imfile-endregex-timeout-with-shutdown-polling.sh \
+	imfile-endmsg.regex.sh \
 	imfile-escapelf.replacement.sh \
 	imfile-escapelf.replacement-empty.sh \
-	imfile-endmsg.regex.sh \
-	imfile-endmsg.regex-vg.sh \
-	imfile-endmsg.regex-with-example.sh \
-	imfile-endmsg.regex-with-example-vg.sh \
-	imfile-endmsg.regex.crio.rulebase \
-	imfile-endmsg.regex.json.rulebase \
 	imfile-statefile-no-file_id.sh \
 	imfile-statefile-no-file_id-TO-file_id.sh \
 	imfile-statefile-directory.sh \
@@ -2937,8 +2919,6 @@ EXTRA_DIST= \
 	imfile-freshStartTail1.sh \
 	imfile-freshStartTail2.sh \
 	imfile-freshStartTail3.sh \
-	imfile-truncate.sh \
-	imfile-truncate-multiple.sh \
 	imfile-wildcards.sh \
 	imfile-wildcards-dirs.sh \
 	imfile-wildcards-dirs2.sh \
@@ -3285,7 +3265,18 @@ EXTRA_DIST= \
 	testsuites/variable_leading_underscore.conf \
 	omamqp1-common.sh \
 	omamqp1-basic.sh \
-	omamqp1-basic-vg.sh
+	omamqp1-basic-vg.sh \
+	testsuites/mmsnareparse/sample-custom-pattern.data \
+	mmsnareparse-basic.sh \
+	mmsnareparse-comprehensive.sh \
+	mmsnareparse-comprehensive-vg.sh \
+	mmsnareparse-custom.sh \
+	mmsnareparse-enhanced-validation.sh \
+	mmsnareparse-json.sh \
+	mmsnareparse-kerberos.sh \
+	mmsnareparse-realworld-4624-4634-5140.sh \
+	mmsnareparse-syslog.sh \
+	mmsnareparse-value-types.sh
 
 ourtail_SOURCES = ourtail.c
 msleep_SOURCES = msleep.c
