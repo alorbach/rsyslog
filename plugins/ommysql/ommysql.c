@@ -26,6 +26,7 @@
 #include "config.h"
 #include "rsyslog.h"
 #include <stdio.h>
+#include <stdbool.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
@@ -71,6 +72,7 @@ typedef struct wrkrInstanceData {
     instanceData *pData;
     MYSQL *hmysql; /* handle to MySQL */
     unsigned uLastMySQLErrno; /* last errno returned by MySQL or 0 if all is well */
+    bool threadInitialized; /* whether mysql_thread_init() succeeded */
 } wrkrInstanceData_t;
 
 typedef struct configSettings_s {
@@ -110,6 +112,7 @@ ENDcreateInstance
 BEGINcreateWrkrInstance
     CODESTARTcreateWrkrInstance;
     pWrkrData->hmysql = NULL;
+    pWrkrData->threadInitialized = false;
 ENDcreateWrkrInstance
 
 
@@ -138,7 +141,10 @@ ENDfreeInstance
 BEGINfreeWrkrInstance
     CODESTARTfreeWrkrInstance;
     closeMySQL(pWrkrData);
-    mysql_thread_end();
+    if (pWrkrData->threadInitialized) {
+        mysql_thread_end();
+        pWrkrData->threadInitialized = false;
+    }
 ENDfreeWrkrInstance
 
 
@@ -185,6 +191,14 @@ static rsRetVal initMySQL(wrkrInstanceData_t *pWrkrData, int bSilent) {
 
     assert(pWrkrData->hmysql == NULL);
     pData = pWrkrData->pData;
+
+    if (!pWrkrData->threadInitialized) {
+        if (mysql_thread_init()) {
+            LogError(0, RS_RET_SUSPENDED, "ommysql: failed to initialize thread for MySQL client library");
+            ABORT_FINALIZE(RS_RET_SUSPENDED);
+        }
+        pWrkrData->threadInitialized = true;
+    }
 
     pWrkrData->hmysql = mysql_init(NULL);
     if (pWrkrData->hmysql == NULL) {
