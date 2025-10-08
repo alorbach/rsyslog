@@ -115,6 +115,14 @@ rsRetVal omotlp_batch_flush(omotlp_batch_t *batch);
 rsRetVal omotlp_batch_cleanup(omotlp_batch_t *batch);
 int omotlp_batch_should_flush(omotlp_batch_t *batch, omotlp_config_t *config);
 
+/* gRPC bridge functions (optional) */
+#ifdef ENABLE_OMOTLP_GRPC
+rsRetVal omotlp_grpc_init_bridge(void);
+rsRetVal omotlp_grpc_flush_bridge(void);
+rsRetVal omotlp_grpc_cleanup_bridge(void);
+int omotlp_grpc_send_batch(omotlp_batch_t *batch);
+#endif
+
 /* Utility functions */
 rsRetVal omotlp_parse_config(omotlp_config_t *config, struct cnfobj *o);
 int omotlp_should_retry(int http_status);

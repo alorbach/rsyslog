@@ -1120,6 +1120,46 @@ AM_CONDITIONAL(ENABLE_OMHTTP, test x$enable_omhttp = xyes)
 RSYSLOG_ENABLE_OMOTLP
 AM_CONDITIONAL(ENABLE_OMOTLP, test x$enable_omotlp = xyes)
 
+# Optional omotlp gRPC support
+AC_ARG_ENABLE(omotlp-grpc,
+        [AS_HELP_STRING([--enable-omotlp-grpc],[Enable OTLP gRPC bridge support @<:@default=no@:>@])],
+        [case "${enableval}" in
+         yes) enable_omotlp_grpc="yes" ;;
+          no) enable_omotlp_grpc="no" ;;
+           *) AC_MSG_ERROR(bad value ${enableval} for --enable-omotlp-grpc) ;;
+         esac],
+        [enable_omotlp_grpc=no]
+)
+
+if test "x$enable_omotlp_grpc" = "xyes"; then
+    # Check for required C++17 and OpenTelemetry C++ SDK
+    AX_CXX_COMPILE_STDCXX([17], [noext], [mandatory])
+
+    # Check for OpenTelemetry C++ SDK
+    PKG_CHECK_MODULES([OPENTELEMETRY_CPP], [opentelemetry-cpp >= 1.8.0],
+                      [have_opentelemetry_cpp=yes], [have_opentelemetry_cpp=no])
+
+    if test "$have_opentelemetry_cpp" = "yes"; then
+        # Check for gRPC and protobuf dependencies
+        PKG_CHECK_MODULES([GRPC], [grpc++ >= 1.40.0],
+                          [have_grpc=yes], [have_grpc=no])
+
+        PKG_CHECK_MODULES([PROTOBUF], [protobuf >= 3.12.0],
+                          [have_protobuf=yes], [have_protobuf=no])
+
+        if test "$have_grpc" = "yes" -a "$have_protobuf" = "yes"; then
+            AC_DEFINE([ENABLE_OMOTLP_GRPC], [1], [Define if OTLP gRPC bridge is enabled])
+            AM_CONDITIONAL([ENABLE_OMOTLP_GRPC], [true])
+        else
+            AC_MSG_ERROR([OTLP gRPC support requires grpc++ >= 1.40.0 and protobuf >= 3.12.0])
+        fi
+    else
+        AC_MSG_ERROR([OTLP gRPC support requires opentelemetry-cpp >= 1.8.0])
+    fi
+else
+    AM_CONDITIONAL([ENABLE_OMOTLP_GRPC], [false])
+fi
+
 
 # capability to enable elasticsearch testbench tests. This requries that an ES test
 # environment is present on the local (127.0.0.1) machine.

@@ -496,6 +496,10 @@ if ENABLE_OMOTLP
 DISTCHECK_CONFIGURE_FLAGS+= --enable-omotlp
 endif
 
+if ENABLE_OMOTLP_GRPC
+DISTCHECK_CONFIGURE_FLAGS+= --enable-omotlp-grpc
+endif
+
 if ENABLE_OMHTTPFS
 DISTCHECK_CONFIGURE_FLAGS+= --enable-omhttpfs
 endif

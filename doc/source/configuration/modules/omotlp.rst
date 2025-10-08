@@ -47,7 +47,7 @@ Action Configuration Parameters
    * - protocol
      - string
      - ``"http/json"``
-     - Protocol to use (currently only ``"http/json"`` is supported)
+     - Protocol to use (``"http/json"`` for HTTP transport, ``"grpc"`` for gRPC transport)
    * - path
      - string
      - ``"/v1/logs"``
@@ -384,6 +384,25 @@ Enable debug logging to troubleshoot issues:
           debug.file="/var/log/rsyslog/debug.log")
 
 **Testing Configuration**
+
+The module supports both HTTP/JSON and gRPC protocols. The gRPC implementation uses a C++ bridge over the OpenTelemetry C++ SDK and requires additional dependencies.
+
+**Build Configuration**
+
+.. code-block:: bash
+
+   # Enable basic OTLP support (HTTP/JSON)
+   ./configure --enable-omotlp
+
+   # Enable gRPC support (requires OpenTelemetry C++ SDK)
+   ./configure --enable-omotlp --enable-omotlp-grpc
+
+**Required Dependencies for gRPC**
+
+- ``opentelemetry-cpp >= 1.8.0``
+- ``grpc++ >= 1.40.0``
+- ``protobuf >= 3.12.0``
+- C++17 compiler support
 
 The module includes comprehensive tests using the official OpenTelemetry Collector for validation. The test setup uses Docker to run a collector instance that receives OTLP data and validates the payload structure.
 

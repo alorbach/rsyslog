@@ -58,6 +58,11 @@
 #include "ruleset.h"
 #include "omotlp.h"
 
+/* Optional gRPC bridge support */
+#ifdef ENABLE_OMOTLP_GRPC
+#include "grpc_bridge.h"
+#endif
+
 #ifndef O_LARGEFILE
     #define O_LARGEFILE 0
 #endif
@@ -74,6 +79,11 @@ DEFobjCurrIf(ruleset)
 
 /* Global module data */
 static omotlp_data_t *omotlp_data = NULL;
+
+/* Optional gRPC bridge data */
+#ifdef ENABLE_OMOTLP_GRPC
+static omotlp_grpc_bridge_t *grpc_bridge = NULL;
+#endif
 
 /* Statistics counters */
 STATSCOUNTER_DEF(sent, mutSent)
@@ -466,6 +476,11 @@ BEGINmodExit(omotlp)
 
         /* Cleanup HTTP transport */
         omotlp_http_cleanup();
+
+        /* Cleanup gRPC bridge if available */
+#ifdef ENABLE_OMOTLP_GRPC
+        omotlp_grpc_cleanup_bridge();
+#endif
 
         free(omotlp_data);
         omotlp_data = NULL;
@@ -1139,8 +1154,6 @@ rsRetVal
 omotlp_batch_flush(omotlp_batch_t *batch)
 {
     rsRetVal ret = RS_RET_OK;
-    uchar *payload = NULL;
-    size_t payload_len = 0;
 
     if (batch->count == 0) {
         return RS_RET_OK; /* Nothing to flush */
@@ -1149,29 +1162,49 @@ omotlp_batch_flush(omotlp_batch_t *batch)
     DBGPRINTF("omotlp: flushing batch with %zu messages (%zu bytes)\n",
              batch->count, batch->total_bytes);
 
-    /* Build OTLP JSON payload */
-    ret = omotlp_build_otlp_json(batch->messages, batch->count, &payload, &payload_len);
-    if (ret != RS_RET_OK || payload == NULL) {
-        LogError(0, RS_RET_ERR, "omotlp: failed to build JSON payload");
-        STATSCOUNTER_INC(dropped, mutDropped);
-        goto cleanup;
+#ifdef ENABLE_OMOTLP_GRPC
+    /* Try gRPC transport if available and configured */
+    if (grpc_bridge != NULL && strcmp((char*)omotlp_data->config.protocol, "grpc") == 0) {
+        ret = omotlp_grpc_send_batch(batch);
+        if (ret == RS_RET_OK) {
+            DBGPRINTF("omotlp: successfully sent batch via gRPC of %zu messages\n", batch->count);
+            goto reset_batch;
+        } else {
+            LogError(0, RS_RET_ERR, "omotlp: failed to send via gRPC, falling back to HTTP");
+        }
+    }
+#endif
+
+    /* Fall back to HTTP transport */
+    {
+        uchar *payload = NULL;
+        size_t payload_len = 0;
+
+        /* Build OTLP JSON payload */
+        ret = omotlp_build_otlp_json(batch->messages, batch->count, &payload, &payload_len);
+        if (ret != RS_RET_OK || payload == NULL) {
+            LogError(0, RS_RET_ERR, "omotlp: failed to build JSON payload");
+            STATSCOUNTER_INC(dropped, mutDropped);
+            goto cleanup;
+        }
+
+        /* Send via HTTP */
+        ret = omotlp_http_send(payload, payload_len);
+        if (ret != RS_RET_OK) {
+            LogError(0, RS_RET_ERR, "omotlp: failed to send HTTP request");
+            STATSCOUNTER_INC(dropped, mutDropped);
+            goto cleanup;
+        }
+
+        DBGPRINTF("omotlp: successfully sent batch via HTTP of %zu messages\n", batch->count);
+
+    cleanup:
+        if (payload != NULL) {
+            free(payload);
+        }
     }
 
-    /* Send via HTTP */
-    ret = omotlp_http_send(payload, payload_len);
-    if (ret != RS_RET_OK) {
-        LogError(0, RS_RET_ERR, "omotlp: failed to send HTTP request");
-        STATSCOUNTER_INC(dropped, mutDropped);
-        goto cleanup;
-    }
-
-    DBGPRINTF("omotlp: successfully sent batch of %zu messages\n", batch->count);
-
-cleanup:
-    if (payload != NULL) {
-        free(payload);
-    }
-
+reset_batch:
     /* Reset batch */
     batch->count = 0;
     batch->total_bytes = 0;
@@ -1242,6 +1275,128 @@ omotlp_tryResume(void)
     /* This is a placeholder - will be implemented with batching */
     return RS_RET_OK;
 }
+
+/* Initialize gRPC bridge */
+#ifdef ENABLE_OMOTLP_GRPC
+rsRetVal
+omotlp_grpc_init_bridge(void)
+{
+    if (grpc_bridge != NULL) {
+        return RS_RET_OK; /* Already initialized */
+    }
+
+    omotlp_grpc_config_t grpc_config;
+
+    /* Convert rsyslog config to gRPC bridge config */
+    grpc_config.endpoint = (char*)omotlp_data->config.endpoint;
+    grpc_config.bearer_token = (char*)omotlp_data->config.bearer_token;
+    grpc_config.ca_file = (char*)omotlp_data->config.ca_file;
+    grpc_config.cert_file = (char*)omotlp_data->config.cert_file;
+    grpc_config.key_file = (char*)omotlp_data->config.key_file;
+    grpc_config.verify_ssl = omotlp_data->config.verify_ssl;
+    grpc_config.timeout_ms = omotlp_data->config.timeout_ms;
+    grpc_config.compression = (strcmp((char*)omotlp_data->config.compression, "gzip") == 0) ? 1 : 0;
+    grpc_config.batch_max_items = omotlp_data->config.batch_max_items;
+    grpc_config.batch_max_bytes = omotlp_data->config.batch_max_bytes;
+    grpc_config.batch_timeout_ms = omotlp_data->config.batch_timeout_ms;
+
+    if (omotlp_grpc_init(&grpc_config, &grpc_bridge) != 0) {
+        LogError(0, RS_RET_ERR, "omotlp: failed to initialize gRPC bridge: %s",
+                omotlp_grpc_get_error());
+        return RS_RET_ERR;
+    }
+
+    DBGPRINTF("omotlp: gRPC bridge initialized successfully\n");
+    return RS_RET_OK;
+}
+
+/* Send batch via gRPC */
+int
+omotlp_grpc_send_batch(omotlp_batch_t *batch)
+{
+    if (batch->count == 0) {
+        return 0; /* Nothing to send */
+    }
+
+    /* Convert batch messages to gRPC log records */
+    omotlp_log_record_t *records = (omotlp_log_record_t*)malloc(batch->count * sizeof(omotlp_log_record_t));
+    if (records == NULL) {
+        LogError(0, RS_RET_ERR, "omotlp: failed to allocate gRPC records");
+        return -1;
+    }
+
+    for (size_t i = 0; i < batch->count; i++) {
+        msg_t *pMsg = batch->messages[i];
+
+        records[i].time_unix_nano = pMsg->ttGenTime * 1000000000ULL;
+        records[i].body = (char*)getMSG(pMsg);
+        records[i].severity_number = omotlp_map_severity(pMsg->iSeverity);
+        records[i].severity_text = omotlp_map_severity_text(pMsg->iSeverity);
+        records[i].hostname = (pMsg->pszHOSTNAME != NULL) ? (char*)pMsg->pszHOSTNAME : NULL;
+        records[i].app_name = (pMsg->pszAPPNAME != NULL) ? (char*)pMsg->pszAPPNAME : NULL;
+        records[i].procid = (pMsg->pszPROCID != NULL) ? (char*)pMsg->pszPROCID : NULL;
+        records[i].msgid = (pMsg->pszMSGID != NULL) ? (char*)pMsg->pszMSGID : NULL;
+        records[i].facility = pMsg->iFacility;
+        records[i].severity = pMsg->iSeverity;
+        records[i].priority = pMsg->iFacility * 8 + pMsg->iSeverity;
+
+        /* Set trace correlation if available */
+        if (omotlp_data->config.trace_id_prop != NULL) {
+            /* Extract trace_id from message properties */
+            records[i].trace_id = NULL; /* Would need property extraction logic */
+        }
+        if (omotlp_data->config.span_id_prop != NULL) {
+            records[i].span_id = NULL; /* Would need property extraction logic */
+        }
+        if (omotlp_data->config.trace_flags_prop != NULL) {
+            records[i].trace_flags = NULL; /* Would need property extraction logic */
+        }
+    }
+
+    /* Send via gRPC */
+    int ret = omotlp_grpc_emit(grpc_bridge, records, batch->count);
+
+    free(records);
+
+    if (ret != 0) {
+        LogError(0, RS_RET_ERR, "omotlp: gRPC emit failed: %s", omotlp_grpc_get_error());
+        return ret;
+    }
+
+    return 0;
+}
+
+/* Flush gRPC bridge */
+rsRetVal
+omotlp_grpc_flush_bridge(void)
+{
+    if (grpc_bridge == NULL) {
+        return RS_RET_OK;
+    }
+
+    if (omotlp_grpc_flush(grpc_bridge) != 0) {
+        LogError(0, RS_RET_ERR, "omotlp: gRPC flush failed: %s", omotlp_grpc_get_error());
+        return RS_RET_ERR;
+    }
+
+    return RS_RET_OK;
+}
+
+/* Cleanup gRPC bridge */
+rsRetVal
+omotlp_grpc_cleanup_bridge(void)
+{
+    if (grpc_bridge != NULL) {
+        if (omotlp_grpc_shutdown(&grpc_bridge) != 0) {
+            LogError(0, RS_RET_ERR, "omotlp: gRPC shutdown failed: %s", omotlp_grpc_get_error());
+            return RS_RET_ERR;
+        }
+        grpc_bridge = NULL;
+    }
+
+    return RS_RET_OK;
+}
+#endif
 
 /* Configuration parameter definitions */
 static struct cnfparamdescr cnfparamdescr[] = {
