@@ -78,6 +78,22 @@ fi
 PKG_PROG_PKG_CONFIG
 
 AC_ARG_VAR(CONF_FILE_PATH, Configuration file path (default : /etc/rsyslog.conf))
+
+# omotlp (pure C HTTP/JSON) enable switch (default: no)
+AC_ARG_ENABLE(omotlp,
+  [AS_HELP_STRING([--enable-omotlp],[Enable OpenTelemetry Logs HTTP/JSON output module @<:@default=no@:>@])],
+  [case "${enableval}" in
+     yes) enable_omotlp="yes" ;;
+      no) enable_omotlp="no" ;;
+       *) AC_MSG_ERROR(bad value ${enableval} for --enable-omotlp) ;;
+   esac],
+  [enable_omotlp=no])
+
+AS_IF([test "x$enable_omotlp" = "xyes"],[
+  PKG_CHECK_MODULES([CURL], [libcurl])
+  PKG_CHECK_MODULES([LIBFASTJSON], [libfastjson >= 0.99.8])
+])
+AM_CONDITIONAL(ENABLE_OMOTLP, test x$enable_omotlp = xyes)
 if test "$ac_cv_env_CONF_FILE_PATH_set" = "set"; then
 	AC_DEFINE_UNQUOTED(PATH_CONFFILE,  "${ac_cv_env_CONF_FILE_PATH_value}", "Configuration file path (default : /etc/rsyslog.conf)")
 fi
