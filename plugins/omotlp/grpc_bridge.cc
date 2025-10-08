@@ -22,6 +22,7 @@
 // Link with: -lopentelemetry_logs -lopentelemetry_exporter_otlp_grpc_logs -lgrpc++ -lprotobuf -labsl_*
 
 #include "grpc_bridge.h"
+
 #include <opentelemetry/sdk/logs/logger_provider.h>
 #include <opentelemetry/sdk/logs/simple_log_record_processor.h>
 #include <opentelemetry/sdk/logs/batch_log_record_processor.h>
@@ -47,6 +48,8 @@ namespace logs_api = opentelemetry::logs;
 namespace logs_sdk = opentelemetry::sdk::logs;
 namespace resource = opentelemetry::sdk::resource;
 namespace otlp = opentelemetry::exporter::otlp;
+
+#ifdef ENABLE_OMOTLP_GRPC
 
 struct omotlp_grpc_bridge_s {
     std::shared_ptr<logs_sdk::LoggerProvider> logger_provider;
@@ -331,3 +334,5 @@ const char *omotlp_grpc_get_error(void) {
 }
 
 } /* extern "C" */
+
+#endif /* ENABLE_OMOTLP_GRPC */

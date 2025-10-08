@@ -1140,6 +1140,16 @@ if test "x$enable_omotlp_grpc" = "xyes"; then
                       [have_opentelemetry_cpp=yes], [have_opentelemetry_cpp=no])
 
     if test "$have_opentelemetry_cpp" = "yes"; then
+        # Check for OpenTelemetry headers
+        AC_LANG_PUSH([C++])
+        AC_CHECK_HEADER([opentelemetry/sdk/logs/logger_provider.h],
+                       [have_otlp_headers=yes], [have_otlp_headers=no])
+        AC_LANG_POP([C++])
+
+        if test "$have_otlp_headers" = "no"; then
+            AC_MSG_ERROR([OpenTelemetry C++ SDK headers not found. Please install opentelemetry-cpp development package.])
+        fi
+
         # Check for gRPC and protobuf dependencies
         PKG_CHECK_MODULES([GRPC], [grpc++ >= 1.40.0],
                           [have_grpc=yes], [have_grpc=no])
