@@ -167,13 +167,33 @@ static inline rsRetVal otlp_flush_batch(wrkrInstanceData_t *const wi) {
         es_deleteStr(wi->batch.buf);
         wi->batch.buf = es_newStr(2048);
         iRet = RS_RET_OK;
-    } else if (httpCode == 429 || (httpCode >= 500 && httpCode < 600)) {
+    } else if ((wi->pData && wi->pData->retryFailures && (httpCode == 429 || (httpCode >= 500 && httpCode < 600))) ||
+               (wi->pData && wi->pData->nhttpRetryCodes > 0)) {
+        if (wi->pData && wi->pData->nhttpRetryCodes > 0) {
+            for (int i = 0; i < wi->pData->nhttpRetryCodes; ++i) {
+                if ((unsigned int)httpCode == wi->pData->httpRetryCodes[i]) {
+                    STATSCOUNTER_INC(ctrRetried, mutCtrRetried);
+                    ABORT_FINALIZE(RS_RET_SUSPENDED);
+                }
+            }
+        }
         STATSCOUNTER_INC(ctrRetried, mutCtrRetried);
         STATSCOUNTER_INC(ctrHttp5xx, mutCtrHttp5xx);
         ABORT_FINALIZE(RS_RET_SUSPENDED);
     } else {
-        STATSCOUNTER_INC(ctrDropped, mutCtrDropped);
-        if (httpCode >= 400 && httpCode < 500) STATSCOUNTER_INC(ctrHttp4xx, mutCtrHttp4xx);
+        sbool ignorable = 0;
+        if (wi->pData && wi->pData->nIgnorableCodes > 0) {
+            for (int i = 0; i < wi->pData->nIgnorableCodes; ++i) {
+                if ((unsigned int)httpCode == wi->pData->ignorableCodes[i]) {
+                    ignorable = 1;
+                    break;
+                }
+            }
+        }
+        if (!ignorable) {
+            STATSCOUNTER_INC(ctrDropped, mutCtrDropped);
+            if (httpCode >= 400 && httpCode < 500) STATSCOUNTER_INC(ctrHttp4xx, mutCtrHttp4xx);
+        }
         iRet = RS_RET_OK; /* drop */
         wi->batch.items = 0;
         wi->batch.bytes = 0;
