@@ -36,6 +36,12 @@ MODULE_CNFNAME("omotlp")
 /* internal structures */
 DEF_OMOD_STATIC_DATA;
 DEFobjCurrIf(statsobj)
+    statsobj_t *otlpStats;
+STATSCOUNTER_DEF(ctrSent, mutCtrSent)
+STATSCOUNTER_DEF(ctrRetried, mutCtrRetried)
+STATSCOUNTER_DEF(ctrDropped, mutCtrDropped)
+STATSCOUNTER_DEF(ctrHttp4xx, mutCtrHttp4xx)
+STATSCOUNTER_DEF(ctrHttp5xx, mutCtrHttp5xx)
 
 static prop_t *pInputName = NULL;
 
@@ -99,6 +105,8 @@ BEGINcreateInstance
     pData->ignorableCodes = NULL;
     pData->resourceJson = NULL;
     pData->tplName = NULL;
+    /* register module-global stats object */
+    otlpStats = NULL;
 ENDcreateInstance
 
 BEGINcreateWrkrInstance
@@ -153,14 +161,19 @@ static inline rsRetVal otlp_flush_batch(wrkrInstanceData_t *const wi) {
                              wi->pData ? wi->pData->timeoutMs : 1000, wi->pData ? wi->pData->compress : 0,
                              wi->pData ? wi->pData->compressionLevel : -1));
     if (httpCode >= 200 && httpCode < 300) {
+        STATSCOUNTER_ADD(ctrSent, mutCtrSent, wi->batch.items);
         wi->batch.items = 0;
         wi->batch.bytes = 0;
         es_deleteStr(wi->batch.buf);
         wi->batch.buf = es_newStr(2048);
         iRet = RS_RET_OK;
     } else if (httpCode == 429 || (httpCode >= 500 && httpCode < 600)) {
+        STATSCOUNTER_INC(ctrRetried, mutCtrRetried);
+        STATSCOUNTER_INC(ctrHttp5xx, mutCtrHttp5xx);
         ABORT_FINALIZE(RS_RET_SUSPENDED);
     } else {
+        STATSCOUNTER_INC(ctrDropped, mutCtrDropped);
+        if (httpCode >= 400 && httpCode < 500) STATSCOUNTER_INC(ctrHttp4xx, mutCtrHttp4xx);
         iRet = RS_RET_OK; /* drop */
         wi->batch.items = 0;
         wi->batch.bytes = 0;
