@@ -149,6 +149,11 @@ BEGINdbgPrintInstInfo
     dbgprintf("omotlp\n");
 ENDdbgPrintInstInfo
 
+BEGINendTransaction
+    CODESTARTendTransaction;
+    CHKiRet(otlp_flush_batch((wrkrInstanceData_t *)pWrkrData));
+ENDendTransaction
+
 static inline rsRetVal otlp_flush_batch(wrkrInstanceData_t *const wi) {
     DEFiRet;
     if (wi->batch.items == 0) RETiRet;
