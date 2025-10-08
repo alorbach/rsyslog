@@ -10,6 +10,7 @@
 #include "config.h"
 #include "rsyslog.h"
 
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -50,6 +51,149 @@ static struct cnfparamdescr actpdescr[] = {{"endpoint", eCmdHdlrString, 0},
                                            {"protocol", eCmdHdlrGetWord, 0},
                                            {"template", eCmdHdlrGetWord, 0}};
 static struct cnfparamblk actpblk = {CNFPARAMBLK_VERSION, sizeof(actpdescr) / sizeof(struct cnfparamdescr), actpdescr};
+
+static void lowercaseInPlace(uchar *value) {
+    char *cursor;
+
+    if (value == NULL) {
+        return;
+    }
+
+    for (cursor = (char *)value; *cursor != '\0'; ++cursor) {
+        *cursor = (char)tolower((unsigned char)*cursor);
+    }
+}
+
+static rsRetVal assignParamFromCStr(uchar **target, const char *value) {
+    uchar *tmp;
+    DEFiRet;
+
+    if (value == NULL) {
+        goto finalize_it;
+    }
+
+    tmp = (uchar *)strdup(value);
+    if (tmp == NULL) {
+        ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+    }
+
+    free(*target);
+    *target = tmp;
+
+finalize_it:
+    RETiRet;
+}
+
+static const char *firstPopulatedEnv(const char *const *names) {
+    size_t i;
+
+    if (names == NULL) {
+        return NULL;
+    }
+
+    for (i = 0; names[i] != NULL; ++i) {
+        const char *value = getenv(names[i]);
+        if (value != NULL && value[0] != '\0') {
+            return value;
+        }
+    }
+
+    return NULL;
+}
+
+static rsRetVal applyEnvDefaults(instanceData *pData) {
+    const char *value;
+    static const char *const endpointEnvVars[] = {"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT",
+                                                  NULL};
+    static const char *const protocolEnvVars[] = {"OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "OTEL_EXPORTER_OTLP_PROTOCOL",
+                                                  NULL};
+
+    DEFiRet;
+
+    if (pData->endpoint == NULL) {
+        value = firstPopulatedEnv(endpointEnvVars);
+        if (value != NULL) {
+            CHKiRet(assignParamFromCStr(&pData->endpoint, value));
+        }
+    }
+
+    if (pData->protocol == NULL) {
+        value = firstPopulatedEnv(protocolEnvVars);
+        if (value != NULL) {
+            CHKiRet(assignParamFromCStr(&pData->protocol, value));
+        }
+    }
+
+finalize_it:
+    RETiRet;
+}
+
+static rsRetVal ensureEndpointPathSplit(instanceData *pData) {
+    char *endpoint;
+    char *schemeSeparator;
+    char *pathStart;
+    char *baseDup = NULL;
+    char *pathDup = NULL;
+    size_t baseLength;
+
+    DEFiRet;
+
+    if (pData->endpoint == NULL || pData->path != NULL) {
+        goto finalize_it;
+    }
+
+    endpoint = (char *)pData->endpoint;
+    schemeSeparator = strstr(endpoint, "://");
+    if (schemeSeparator != NULL) {
+        pathStart = strchr(schemeSeparator + 3, '/');
+    } else {
+        pathStart = strchr(endpoint, '/');
+    }
+
+    if (pathStart == NULL || *pathStart == '\0' || pathStart == endpoint) {
+        goto finalize_it;
+    }
+
+    baseLength = (size_t)(pathStart - endpoint);
+    baseDup = (char *)malloc(baseLength + 1);
+    if (baseDup == NULL) {
+        ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+    }
+    memcpy(baseDup, endpoint, baseLength);
+    baseDup[baseLength] = '\0';
+
+    pathDup = strdup(pathStart);
+    if (pathDup == NULL) {
+        free(baseDup);
+        ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+    }
+
+    free(pData->endpoint);
+    pData->endpoint = (uchar *)baseDup;
+    pData->path = (uchar *)pathDup;
+
+finalize_it:
+    RETiRet;
+}
+
+static rsRetVal validateProtocol(instanceData *pData) {
+    DEFiRet;
+
+    if (pData->protocol == NULL) {
+        goto finalize_it;
+    }
+
+    if (!strcmp((char *)pData->protocol, "http/json")) {
+        goto finalize_it;
+    }
+
+    LogError(0, RS_RET_NOT_IMPLEMENTED, "omotlp: protocol '%s' is not supported by the scaffolding build",
+             pData->protocol);
+    ABORT_FINALIZE(RS_RET_NOT_IMPLEMENTED);
+
+finalize_it:
+    RETiRet;
+}
 
 static inline void setInstParamDefaults(instanceData *pData) {
     pData->endpoint = NULL;
@@ -163,10 +307,16 @@ BEGINnewActInst
         }
     }
 
+    CHKiRet(applyEnvDefaults(pData));
+    CHKiRet(ensureEndpointPathSplit(pData));
+
     if (pData->protocol == NULL) CHKmalloc(pData->protocol = (uchar *)strdup("http/json"));
     if (pData->endpoint == NULL) CHKmalloc(pData->endpoint = (uchar *)strdup("http://127.0.0.1:4318"));
     if (pData->path == NULL) CHKmalloc(pData->path = (uchar *)strdup("/v1/logs"));
     if (pData->bodyTemplateName == NULL) CHKmalloc(pData->bodyTemplateName = (uchar *)strdup("RSYSLOG_FileFormat"));
+
+    lowercaseInPlace(pData->protocol);
+    CHKiRet(validateProtocol(pData));
 
     CODE_STD_STRING_REQUESTnewActInst(1);
     tplToUse = (uchar *)strdup((char *)pData->bodyTemplateName);

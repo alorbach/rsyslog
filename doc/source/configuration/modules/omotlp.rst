@@ -53,6 +53,18 @@ parameters are optional and fall back to the OpenTelemetry defaults described in
    "protocol", "word", "http/json", "Intended transport variant"
    "template", "word", "RSYSLOG_FileFormat", "Message template used for the log body"
 
+Environment variables that originate from the OpenTelemetry specification are
+consulted when the configuration omits explicit values. ``endpoint`` falls back
+to ``OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`` and then
+``OTEL_EXPORTER_OTLP_ENDPOINT`` if set; ``protocol`` follows the matching
+``*_PROTOCOL`` variables. The action parameters always take precedence, giving
+operators an easy override when reusing existing collector deployments.
+
+When the endpoint string includes an explicit path (for example,
+``https://otel:4318/v1/logs``), the module automatically splits the final path
+segment into the ``path`` parameter so that future HTTP transport code can join
+the pieces without duplicating ``/v1/logs``.
+
 Example
 -------
 
