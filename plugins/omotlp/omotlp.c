@@ -366,11 +366,13 @@ BEGINnewActInst
     /* template for message body */
     CHKiRet(OMSRsetEntry(*ppOMSR, 0, (uchar *)"RSYSLOG_TraditionalFileFormat", OMSR_NO_RQD_TPL_OPTS));
     if (pvals != NULL) cnfparamvalsDestruct(pvals, &actpblk);
+    CODE_STD_FINALIZERnewActInst
 ENDnewActInst
 
 BEGINparseSelectorAct
     CODESTARTparseSelectorAct;
     ABORT_FINALIZE(RS_RET_CONFLINE_UNPROCESSED);
+    CODE_STD_FINALIZERparseSelectorAct
 ENDparseSelectorAct
 
 BEGINmodInit()
