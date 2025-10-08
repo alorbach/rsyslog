@@ -5,10 +5,11 @@ omotlp_la_SOURCES = \
         otlp_json.c
 
 omotlp_la_CPPFLAGS = \
-        -I$(top_srcdir) \
-        -I$(top_srcdir)/runtime \
-        -I$(top_srcdir)/grammar \
-        $(RSRT_CFLAGS) \
+       -I$(srcdir) \
+       -I$(top_srcdir) \
+       -I$(top_srcdir)/runtime \
+       -I$(top_srcdir)/grammar \
+       $(RSRT_CFLAGS) \
         $(OMOTLP_HTTP_CFLAGS)
 
 omotlp_la_LDFLAGS = -module -avoid-version $(OMOTLP_HTTP_LIBS)
