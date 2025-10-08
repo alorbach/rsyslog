@@ -15,6 +15,14 @@ rsRetVal omotlp_http_setup(omotlp_wrkr_instance_t *wi) {
     /* basic defaults */
     curl_easy_setopt(wi->curlPostHandle, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(wi->curlPostHandle, CURLOPT_MAXREDIRS, 5L);
+    /* TLS options */
+    if (wi->pData != NULL) {
+        if (wi->pData->allowUnsignedCerts) curl_easy_setopt(wi->curlPostHandle, CURLOPT_SSL_VERIFYPEER, 0L);
+        if (wi->pData->skipVerifyHost) curl_easy_setopt(wi->curlPostHandle, CURLOPT_SSL_VERIFYHOST, 0L);
+        if (wi->pData->caCertFile) curl_easy_setopt(wi->curlPostHandle, CURLOPT_CAINFO, wi->pData->caCertFile);
+        if (wi->pData->myCertFile) curl_easy_setopt(wi->curlPostHandle, CURLOPT_SSLCERT, wi->pData->myCertFile);
+        if (wi->pData->myPrivKeyFile) curl_easy_setopt(wi->curlPostHandle, CURLOPT_SSLKEY, wi->pData->myPrivKeyFile);
+    }
     /* headers baseline */
     struct curl_slist *hdr = NULL;
     hdr = curl_slist_append(hdr, "Content-Type: application/json");

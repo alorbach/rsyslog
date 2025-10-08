@@ -79,6 +79,20 @@ BEGINcreateWrkrInstance
     ((wrkrInstanceData_t *)pWrkrData)->restURL = NULL;
     ((wrkrInstanceData_t *)pWrkrData)->curlPostHandle = NULL;
     ((wrkrInstanceData_t *)pWrkrData)->curlHeader = NULL;
+    if (pData != NULL && pData->serverBaseUrls != NULL && pData->numServers > 0) {
+        const char *base = (const char *)pData->serverBaseUrls[0];
+        const char *path = (const char *)(pData->path ? pData->path : (uchar *)"/v1/logs");
+        es_str_t *url = es_newStr(256);
+        if (url != NULL) {
+            es_addBuf(&url, base, strlen(base));
+            size_t blen = strlen(base);
+            if (blen == 0 || base[blen - 1] != '/') es_addChar(&url, '/');
+            if (*path == '/') path++;
+            es_addBuf(&url, path, strlen(path));
+            ((wrkrInstanceData_t *)pWrkrData)->restURL = (uchar *)es_str2cstr(url, NULL);
+            es_deleteStr(url);
+        }
+    }
 ENDcreateWrkrInstance
 
 BEGINfreeWrkrInstance
