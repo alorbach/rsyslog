@@ -1132,8 +1132,26 @@ AC_ARG_ENABLE(omotlp-grpc,
 )
 
 if test "x$enable_omotlp_grpc" = "xyes"; then
-    # Check for required C++17 and OpenTelemetry C++ SDK
-    AX_CXX_COMPILE_STDCXX([17], [noext], [mandatory])
+    # Check for C++17 compiler support
+    AC_LANG_PUSH([C++])
+    AC_MSG_CHECKING([for C++17 support])
+    AC_COMPILE_IFELSE([
+        AC_LANG_PROGRAM([[
+            #include <iostream>
+            int main() {
+                auto lambda = []() { return 1; };
+                std::cout << lambda() << std::endl;
+                return 0;
+            }
+        ]])
+    ], [
+        AC_MSG_RESULT([yes])
+        have_cxx17=yes
+    ], [
+        AC_MSG_RESULT([no])
+        AC_MSG_ERROR([C++17 compiler support is required for OTLP gRPC bridge])
+    ])
+    AC_LANG_POP([C++])
 
     # Check for OpenTelemetry C++ SDK
     PKG_CHECK_MODULES([OPENTELEMETRY_CPP], [opentelemetry-cpp >= 1.8.0],

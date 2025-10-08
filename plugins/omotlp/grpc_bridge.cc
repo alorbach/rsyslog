@@ -49,13 +49,12 @@ namespace logs_sdk = opentelemetry::sdk::logs;
 namespace resource = opentelemetry::sdk::resource;
 namespace otlp = opentelemetry::exporter::otlp;
 
-#ifdef ENABLE_OMOTLP_GRPC
-
 struct omotlp_grpc_bridge_s {
     std::shared_ptr<logs_sdk::LoggerProvider> logger_provider;
     std::shared_ptr<logs_api::Logger> logger;
     std::shared_ptr<logs_sdk::LogRecordProcessor> processor;
     std::shared_ptr<otlp::OtlpGrpcLogRecordExporter> exporter;
+    bool initialized;
 };
 
 /* Thread-local error message storage */
@@ -129,7 +128,14 @@ int omotlp_grpc_init(const omotlp_grpc_config_t *config, omotlp_grpc_bridge_t **
         return -1;
     }
 
+    if (*bridge && (*bridge)->initialized) {
+        set_error("Bridge already initialized");
+        return -1;
+    }
+
     try {
+        /* Note: OpenTelemetry SDK initialization is handled by the logger provider */
+
         /* Create resource with service information */
         auto resource_attributes = resource::ResourceAttributes{
             {resource::SemanticConventions::kServiceName, "rsyslog"},
@@ -195,7 +201,8 @@ int omotlp_grpc_init(const omotlp_grpc_config_t *config, omotlp_grpc_bridge_t **
             logger_provider,
             logger,
             processor,
-            exporter
+            exporter,
+            true
         };
 
         *bridge = bridge_instance;
@@ -308,6 +315,11 @@ int omotlp_grpc_shutdown(omotlp_grpc_bridge_t **bridge) {
         return -1;
     }
 
+    if (!(*bridge)->initialized) {
+        set_error("Bridge not initialized");
+        return -1;
+    }
+
     try {
         /* Flush any remaining records */
         omotlp_grpc_flush(*bridge);
@@ -316,6 +328,9 @@ int omotlp_grpc_shutdown(omotlp_grpc_bridge_t **bridge) {
         if ((*bridge)->logger_provider) {
             (*bridge)->logger_provider->Shutdown();
         }
+
+        /* Mark as not initialized */
+        (*bridge)->initialized = false;
 
         /* Clean up */
         delete *bridge;
@@ -334,5 +349,3 @@ const char *omotlp_grpc_get_error(void) {
 }
 
 } /* extern "C" */
-
-#endif /* ENABLE_OMOTLP_GRPC */
