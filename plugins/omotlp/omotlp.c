@@ -76,10 +76,14 @@ ENDcreateInstance
 
 BEGINcreateWrkrInstance
     CODESTARTcreateWrkrInstance;
+    ((wrkrInstanceData_t *)pWrkrData)->restURL = NULL;
+    ((wrkrInstanceData_t *)pWrkrData)->curlPostHandle = NULL;
+    ((wrkrInstanceData_t *)pWrkrData)->curlHeader = NULL;
 ENDcreateWrkrInstance
 
 BEGINfreeWrkrInstance
     CODESTARTfreeWrkrInstance;
+    omotlp_http_cleanup((wrkrInstanceData_t *)pWrkrData);
 ENDfreeWrkrInstance
 
 BEGINfreeInstance
@@ -93,18 +97,17 @@ ENDdbgPrintInstInfo
 
 BEGINdoAction
     CODESTARTdoAction;
-    /* build minimal one-record payload and POST; this is a placeholder */
     es_str_t *buf = NULL;
     long httpCode = 0;
     const uchar *body = (ppString != NULL && ppString[0] != NULL) ? ppString[0] : (uchar *)"";
     CHKiRet(omotlp_json_begin(&buf, NULL));
     CHKiRet(omotlp_json_add_record(buf, (smsg_t *)pMsgData, body, (uchar *)"INFO", 9, NULL, NULL, 0));
     CHKiRet(omotlp_json_end(buf));
-    /* dummy URL; real code will compute from instance config */
-    pWrkrData->restURL = (uchar *)strdup("http://127.0.0.1:4318/v1/logs");
-    CHKiRet(omotlp_http_setup((omotlp_wrkr_instance_t *)pWrkrData));
-    CHKiRet(omotlp_http_post((omotlp_wrkr_instance_t *)pWrkrData, es_str2cstr(buf, NULL), es_strlen(buf), &httpCode, 1000, 0, -1));
-    (void)httpCode;
+    if (((wrkrInstanceData_t *)pWrkrData)->restURL == NULL) {
+        ((wrkrInstanceData_t *)pWrkrData)->restURL = (uchar *)strdup("http://127.0.0.1:4318/v1/logs");
+        CHKiRet(omotlp_http_setup((wrkrInstanceData_t *)pWrkrData));
+    }
+    CHKiRet(omotlp_http_post((wrkrInstanceData_t *)pWrkrData, (uchar *)es_str2cstr(buf, NULL), es_strlen(buf), &httpCode, 1000, 0, -1));
     es_deleteStr(buf);
 ENDdoAction
 

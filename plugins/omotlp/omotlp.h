@@ -8,9 +8,13 @@
 #include "syslogd-types.h"
 #include <curl/curl.h>
 #include <json.h>
+#include "srUtils.h"
 
 typedef struct omotlp_instance_s omotlp_instance_t;
 typedef struct omotlp_wrkr_instance_s omotlp_wrkr_instance_t;
+/* adapt names to module-template expected aliases */
+typedef struct omotlp_instance_s instanceData;
+typedef struct omotlp_wrkr_instance_s wrkrInstanceData_t;
 
 struct omotlp_instance_s {
     int defaultPort;

@@ -40,7 +40,11 @@ rsRetVal omotlp_json_add_record(es_str_t *buf, smsg_t *const pMsg, const uchar *
     nvlst_t *lst = NULL;
     (void)lst;
 
-    if (buf->len > 0 && buf->buf[buf->len - 1] != '[') json_append(buf, ",");
+    /* if not first log record, add comma */
+    if (es_strlen(buf) > 0) {
+        const char *cbuf = es_str2cstr(buf, NULL);
+        if (cbuf != NULL && cbuf[strlen(cbuf) - 1] != '[') json_append(buf, ",");
+    }
 
     /* timestamp in ns since epoch */
     tsNsec = (unsigned long long)msgGetTSUSec(pMsg) * 1000ULL; /* us to ns */
