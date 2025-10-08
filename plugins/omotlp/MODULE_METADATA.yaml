@@ -1,0 +1,16 @@
+support_status: core-supported
+maturity_level: tech-preview
+primary_contact: "GitHub Discussions & Issues <https://github.com/rsyslog/rsyslog/discussions>"
+last_reviewed: 2025-10-08
+build_dependencies:
+  - libcurl development headers (`./devtools/codex-setup.sh`)
+  - libfastjson development headers
+runtime_dependencies:
+  - OpenTelemetry Collector (HTTP receiver enabled)
+ci_targets:
+  - omotlp-http-basic.sh
+  - omotlp-http-retry.sh
+documentation:
+  - doc/source/configuration/modules/omotlp.rst
+notes:
+  - Phase 1 implements OTLP/HTTP JSON; gRPC optional in Phase 2.

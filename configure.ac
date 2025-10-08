@@ -1,3 +1,29 @@
+# OTLP output module (HTTP/JSON v1)
+AC_ARG_ENABLE(omotlp,
+        [AS_HELP_STRING([--enable-omotlp],[Compiles OpenTelemetry Logs output module @<:@default=auto@:>@])],
+        [case "${enableval}" in
+         yes) enable_omotlp="yes" ;;
+          no) enable_omotlp="no" ;;
+         auto) enable_omotlp="auto" ;;
+           *) AC_MSG_ERROR(bad value ${enableval} for --enable-omotlp) ;;
+         esac],
+        [enable_omotlp=auto]
+)
+
+AS_IF([test "x$enable_omotlp" != "xno"],[
+  have_omotlp_deps=yes
+  PKG_CHECK_MODULES([CURL], [libcurl],, [have_omotlp_deps=no])
+  PKG_CHECK_MODULES([LIBFASTJSON], [libfastjson >= 0.99.8],, [have_omotlp_deps=no])
+  AS_IF([test "x$enable_omotlp" = "xyes" -a "x$have_omotlp_deps" = "xno"],[
+    AC_MSG_ERROR([omotlp requested but required dependencies not found (need libcurl, libfastjson)])
+  ])
+  AS_IF([test "x$enable_omotlp" = "xauto" -a "x$have_omotlp_deps" = "xno"],[
+    enable_omotlp=no
+  ],[
+    enable_omotlp=yes
+  ])
+])
+AM_CONDITIONAL(ENABLE_OMOTLP, test x$enable_omotlp = xyes)
 #                                               -*- Autoconf -*-
 # Process this file with autoconf to produce a configure script.
 
@@ -3169,6 +3195,7 @@ AC_CONFIG_FILES([Makefile \
 		plugins/pmlastmsg/Makefile \
 		plugins/mmdblookup/Makefile \
 		plugins/omazureeventhubs/Makefile \
+		plugins/omotlp/Makefile \
 		plugins/imdtls/Makefile \
 		plugins/omdtls/Makefile \
 		contrib/mmdarwin/Makefile \

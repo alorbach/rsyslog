@@ -167,6 +167,10 @@ if ENABLE_OMHTTP
 SUBDIRS += contrib/omhttp
 endif
 
+if ENABLE_OMOTLP
+SUBDIRS += plugins/omotlp
+endif
+
 if ENABLE_SNMP
 SUBDIRS += plugins/omsnmp
 endif
