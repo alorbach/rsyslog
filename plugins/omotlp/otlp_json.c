@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <inttypes.h>
 #include <json.h>
+#include "datetime.h"
 #include "srUtils.h"
 #include "msg.h"
 #include "template.h"
@@ -37,8 +38,6 @@ rsRetVal omotlp_json_add_record(es_str_t *buf, smsg_t *const pMsg, const uchar *
                                 const int traceFlags) {
     DEFiRet;
     unsigned long long tsNsec;
-    nvlst_t *lst = NULL;
-    (void)lst;
 
     /* if not first log record, add comma */
     if (es_strlen(buf) > 0) {
@@ -46,8 +45,12 @@ rsRetVal omotlp_json_add_record(es_str_t *buf, smsg_t *const pMsg, const uchar *
         if (cbuf != NULL && cbuf[strlen(cbuf) - 1] != '[') json_append(buf, ",");
     }
 
-    /* timestamp in ns since epoch */
-    tsNsec = (unsigned long long)msgGetTSUSec(pMsg) * 1000ULL; /* us to ns */
+    /* timestamp in ns since epoch from message timestamp */
+    {
+        time_t secs = (time_t)datetime.syslogTime2time_t(&pMsg->tTIMESTAMP);
+        unsigned long usec = (unsigned long)pMsg->tTIMESTAMP.secfrac; /* microseconds */
+        tsNsec = ((unsigned long long)secs * 1000000000ULL) + ((unsigned long long)usec * 1000ULL);
+    }
 
     es_addBuf(buf, (const uchar *)"{\"timeUnixNano\":", 18);
     es_addNumAsStr(buf, tsNsec);
@@ -62,10 +65,12 @@ rsRetVal omotlp_json_add_record(es_str_t *buf, smsg_t *const pMsg, const uchar *
     json_append(buf, ",\"severityNumber\":");
     es_addInt(buf, severityNumber);
     if (traceId != NULL && spanId != NULL) {
-        json_append(buf, ",\"traceId\":");
-        es_addQuotedStr(buf, traceId);
-        json_append(buf, ",\"spanId\":");
-        es_addQuotedStr(buf, spanId);
+        json_append(buf, ",\"traceId\":\"");
+        es_addBuf(buf, (const uchar *)traceId, strlen((const char *)traceId));
+        es_addChar(buf, '"');
+        json_append(buf, ",\"spanId\":\"");
+        es_addBuf(buf, (const uchar *)spanId, strlen((const char *)spanId));
+        es_addChar(buf, '"');
         json_append(buf, ",\"flags\":");
         es_addInt(buf, traceFlags);
     }

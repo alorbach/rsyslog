@@ -100,8 +100,22 @@ BEGINdoAction
     es_str_t *buf = NULL;
     long httpCode = 0;
     const uchar *body = (ppString != NULL && ppString[0] != NULL) ? ppString[0] : (uchar *)"";
+    int sev = 0;
+    CHKiRet(MsgGetSeverity((smsg_t *)pMsgData, &sev));
+    const uchar *sevText = (uchar *)"DEBUG";
+    int sevNum = 1;
+    switch (sev) {
+        case 0: sevText = (uchar *)"EMERGENCY"; sevNum = 1; break;
+        case 1: sevText = (uchar *)"ALERT"; sevNum = 2; break;
+        case 2: sevText = (uchar *)"CRITICAL"; sevNum = 3; break;
+        case 3: sevText = (uchar *)"ERROR"; sevNum = 17; break;
+        case 4: sevText = (uchar *)"WARNING"; sevNum = 13; break;
+        case 5: sevText = (uchar *)"NOTICE"; sevNum = 9; break;
+        case 6: sevText = (uchar *)"INFO"; sevNum = 9; break;
+        case 7: sevText = (uchar *)"DEBUG"; sevNum = 5; break;
+    }
     CHKiRet(omotlp_json_begin(&buf, NULL));
-    CHKiRet(omotlp_json_add_record(buf, (smsg_t *)pMsgData, body, (uchar *)"INFO", 9, NULL, NULL, 0));
+    CHKiRet(omotlp_json_add_record(buf, (smsg_t *)pMsgData, body, sevText, sevNum, NULL, NULL, 0));
     CHKiRet(omotlp_json_end(buf));
     if (((wrkrInstanceData_t *)pWrkrData)->restURL == NULL) {
         ((wrkrInstanceData_t *)pWrkrData)->restURL = (uchar *)strdup("http://127.0.0.1:4318/v1/logs");
@@ -124,7 +138,72 @@ BEGINnewActInst
     CHKiRet(createInstance(&pData));
     for (i = 0; i < actpblk.nParams; ++i) {
         if (!pvals[i].bUsed) continue;
-        /* placeholder; real parsing implemented later */
+        if (!strcmp(actpblk.descr[i].name, "endpoint")) {
+            /* accept one URL for now */
+            pData->numServers = pvals[i].val.d.ar ? pvals[i].val.d.ar->nmemb : 1;
+            CHKmalloc(pData->serverBaseUrls = calloc(pData->numServers, sizeof(uchar *)));
+            if (pvals[i].val.d.ar) {
+                for (int j = 0; j < pvals[i].val.d.ar->nmemb; ++j) {
+                    pData->serverBaseUrls[j] = (uchar *)es_str2cstr(pvals[i].val.d.ar->arr[j], NULL);
+                }
+            } else {
+                pData->serverBaseUrls[0] = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+            }
+        } else if (!strcmp(actpblk.descr[i].name, "path")) {
+            pData->path = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+        } else if (!strcmp(actpblk.descr[i].name, "timeout.ms")) {
+            pData->timeoutMs = (long)pvals[i].val.d.n;
+        } else if (!strcmp(actpblk.descr[i].name, "bearer_token")) {
+            pData->bearerToken = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+        } else if (!strcmp(actpblk.descr[i].name, "httpheaders")) {
+            pData->nHttpHeaders = pvals[i].val.d.ar->nmemb;
+            CHKmalloc(pData->httpHeaders = calloc(pData->nHttpHeaders, sizeof(uchar *)));
+            for (int j = 0; j < pvals[i].val.d.ar->nmemb; ++j) {
+                pData->httpHeaders[j] = (uchar *)es_str2cstr(pvals[i].val.d.ar->arr[j], NULL);
+            }
+        } else if (!strcmp(actpblk.descr[i].name, "usehttps")) {
+            pData->useHttps = pvals[i].val.d.n;
+        } else if (!strcmp(actpblk.descr[i].name, "allowunsignedcerts")) {
+            pData->allowUnsignedCerts = pvals[i].val.d.n;
+        } else if (!strcmp(actpblk.descr[i].name, "skipverifyhost")) {
+            pData->skipVerifyHost = pvals[i].val.d.n;
+        } else if (!strcmp(actpblk.descr[i].name, "tls.cacert")) {
+            pData->caCertFile = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+        } else if (!strcmp(actpblk.descr[i].name, "tls.mycert")) {
+            pData->myCertFile = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+        } else if (!strcmp(actpblk.descr[i].name, "tls.myprivkey")) {
+            pData->myPrivKeyFile = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+        } else if (!strcmp(actpblk.descr[i].name, "compress")) {
+            pData->compress = pvals[i].val.d.n;
+        } else if (!strcmp(actpblk.descr[i].name, "compress.level")) {
+            pData->compressionLevel = (int)pvals[i].val.d.n;
+        } else if (!strcmp(actpblk.descr[i].name, "batch.max_items")) {
+            pData->maxBatchItems = (size_t)pvals[i].val.d.n;
+        } else if (!strcmp(actpblk.descr[i].name, "batch.max_bytes")) {
+            pData->maxBatchBytes = (size_t)pvals[i].val.d.n;
+        } else if (!strcmp(actpblk.descr[i].name, "batch.timeout.ms")) {
+            pData->batchTimeoutMs = (long)pvals[i].val.d.n;
+        } else if (!strcmp(actpblk.descr[i].name, "retry")) {
+            pData->retryFailures = pvals[i].val.d.n;
+        } else if (!strcmp(actpblk.descr[i].name, "httpretrycodes")) {
+            pData->nhttpRetryCodes = pvals[i].val.d.ar->nmemb;
+            CHKmalloc(pData->httpRetryCodes = calloc(pData->nhttpRetryCodes, sizeof(unsigned int)));
+            for (int j = 0; j < pvals[i].val.d.ar->nmemb; ++j) {
+                int ok = 0; long long n = es_str2num(pvals[i].val.d.ar->arr[j], &ok);
+                if (ok) pData->httpRetryCodes[j] = (unsigned int)n;
+            }
+        } else if (!strcmp(actpblk.descr[i].name, "httpignorablecodes")) {
+            pData->nIgnorableCodes = pvals[i].val.d.ar->nmemb;
+            CHKmalloc(pData->ignorableCodes = calloc(pData->nIgnorableCodes, sizeof(unsigned int)));
+            for (int j = 0; j < pvals[i].val.d.ar->nmemb; ++j) {
+                int ok = 0; long long n = es_str2num(pvals[i].val.d.ar->arr[j], &ok);
+                if (ok) pData->ignorableCodes[j] = (unsigned int)n;
+            }
+        } else if (!strcmp(actpblk.descr[i].name, "resource")) {
+            pData->resourceJson = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+        } else if (!strcmp(actpblk.descr[i].name, "template")) {
+            pData->tplName = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+        }
     }
     /* template for message body */
     CHKiRet(OMSRsetEntry(*ppOMSR, 0, (uchar *)"RSYSLOG_TraditionalFileFormat", OMSR_NO_RQD_TPL_OPTS));

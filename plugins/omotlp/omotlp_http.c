@@ -15,6 +15,22 @@ rsRetVal omotlp_http_setup(omotlp_wrkr_instance_t *wi) {
     /* basic defaults */
     curl_easy_setopt(wi->curlPostHandle, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(wi->curlPostHandle, CURLOPT_MAXREDIRS, 5L);
+    /* headers baseline */
+    struct curl_slist *hdr = NULL;
+    hdr = curl_slist_append(hdr, "Content-Type: application/json");
+    hdr = curl_slist_append(hdr, "Accept: application/json");
+    if (wi->pData != NULL && wi->pData->bearerToken != NULL) {
+        es_str_t *auth = es_newStr(64);
+        es_addBuf(&auth, "Authorization: Bearer ", 22);
+        es_addBuf(&auth, (const char *)wi->pData->bearerToken, strlen((const char *)wi->pData->bearerToken));
+        hdr = curl_slist_append(hdr, (const char *)es_str2cstr(auth, NULL));
+        es_deleteStr(auth);
+    }
+    if (wi->pData != NULL && wi->pData->nHttpHeaders > 0) {
+        for (int i = 0; i < wi->pData->nHttpHeaders; ++i) hdr = curl_slist_append(hdr, (const char *)wi->pData->httpHeaders[i]);
+    }
+    wi->curlHeader = hdr;
+    curl_easy_setopt(wi->curlPostHandle, CURLOPT_HTTPHEADER, hdr);
 finalize_it:
     RETiRet;
 }
@@ -38,13 +54,6 @@ rsRetVal omotlp_http_post(omotlp_wrkr_instance_t *wi, const uchar *payload, cons
     CURLcode res;
     *httpCode = 0;
     if (wi->curlPostHandle == NULL) ABORT_FINALIZE(RS_RET_INVALID_PARAMS);
-
-    /* headers */
-    struct curl_slist *hdr = NULL;
-    hdr = curl_slist_append(hdr, "Content-Type: application/json");
-    hdr = curl_slist_append(hdr, "Accept: application/json");
-    curl_easy_setopt(wi->curlPostHandle, CURLOPT_HTTPHEADER, hdr);
-    wi->curlHeader = hdr;
 
     curl_easy_setopt(wi->curlPostHandle, CURLOPT_URL, (char *)wi->restURL);
     curl_easy_setopt(wi->curlPostHandle, CURLOPT_POST, 1L);
