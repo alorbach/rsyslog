@@ -8,6 +8,7 @@
 #include "syslogd-types.h"
 #include <curl/curl.h>
 #include <json.h>
+#include <stdint.h>
 #include "srUtils.h"
 
 typedef struct omotlp_instance_s omotlp_instance_t;
@@ -57,7 +58,7 @@ struct omotlp_wrkr_instance_s {
         struct fjson_object *records; /* array of logRecords */
         size_t items;
         size_t bytes;
-        nsec_t firstItemNsec;
+        int64_t firstItemNsec;
     } batch;
 };
 

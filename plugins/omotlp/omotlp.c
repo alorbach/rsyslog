@@ -149,6 +149,8 @@ BEGINdbgPrintInstInfo
     dbgprintf("omotlp\n");
 ENDdbgPrintInstInfo
 
+static inline rsRetVal otlp_flush_batch(wrkrInstanceData_t *const wi);
+
 BEGINendTransaction
     CODESTARTendTransaction;
     CHKiRet(otlp_flush_batch((wrkrInstanceData_t *)pWrkrData));
@@ -262,7 +264,7 @@ BEGINdoAction
     if (recStrTmp != NULL) ((wrkrInstanceData_t *)pWrkrData)->batch.bytes += strlen(recStrTmp) + 1; /* + comma */
     ((wrkrInstanceData_t *)pWrkrData)->batch.items++;
     if (((wrkrInstanceData_t *)pWrkrData)->batch.items == 1) {
-        ((wrkrInstanceData_t *)pWrkrData)->batch.firstItemNsec = (nsec_t)currentTimeMills();
+        ((wrkrInstanceData_t *)pWrkrData)->batch.firstItemNsec = (int64_t)currentTimeMills();
     }
     /* flush on thresholds */
     if ((((wrkrInstanceData_t *)pWrkrData)->pData && ((wrkrInstanceData_t *)pWrkrData)->pData->maxBatchItems > 0 &&

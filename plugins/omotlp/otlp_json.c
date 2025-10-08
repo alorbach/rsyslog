@@ -7,6 +7,7 @@
 #include <inttypes.h>
 #include <json.h>
 #include "datetime.h"
+#include "msg.h"
 struct fjson_object *omotlp_json_build_record_obj(smsg_t *const pMsg, const uchar *body, const uchar *severityText,
                                                   const int severityNumber, const uchar *traceId, const uchar *spanId,
                                                   const int traceFlags) {
@@ -37,7 +38,7 @@ struct fjson_object *omotlp_json_build_record_obj(smsg_t *const pMsg, const ucha
 #include "omotlp.h"
 
 static inline void json_append(es_str_t *dest, const char *s) {
-    es_addBuf(dest, (const uchar *)s, strlen(s));
+    es_addBuf(&dest, s, strlen(s));
 }
 
 rsRetVal omotlp_json_begin(es_str_t **pBuf, const uchar *resourceJson) {
@@ -48,7 +49,7 @@ rsRetVal omotlp_json_begin(es_str_t **pBuf, const uchar *resourceJson) {
     json_append(buf, "\"resource\":{\"attributes\":[");
     if (resourceJson != NULL && resourceJson[0] != '\0') {
         /* assume resourceJson is a JSON object; map to attributes if needed later */
-        es_addBuf(buf, resourceJson, strlen((const char *)resourceJson));
+        es_addBuf(&buf, (const char *)resourceJson, strlen((const char *)resourceJson));
     }
     json_append(buf, "]},\"scopeLogs\":[{\"logRecords\":[");
     *pBuf = buf;
@@ -80,7 +81,7 @@ rsRetVal omotlp_json_add_record(es_str_t *buf, smsg_t *const pMsg, const uchar *
         ABORT_FINALIZE(RS_RET_ERR);
     }
 
-    if (es_strlen(buf) > 0) es_addChar(buf, ',');
+    if (es_strlen(buf) > 0) es_addChar(&buf, ',');
     es_addBuf(&buf, recStr, strlen(recStr));
 
     fjson_object_put(rec);
