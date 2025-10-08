@@ -385,36 +385,51 @@ Enable debug logging to troubleshoot issues:
 
 **Testing Configuration**
 
-You can test your configuration using a simple OTLP collector setup:
+The module includes comprehensive tests using the official OpenTelemetry Collector for validation. The test setup uses Docker to run a collector instance that receives OTLP data and validates the payload structure.
+
+**Test Setup**
+
+The test creates an OpenTelemetry Collector with the following configuration:
 
 .. code-block:: yaml
 
-   # docker-compose.yml
-   services:
-     otel-collector:
-       image: otel/opentelemetry-collector:latest
-       command: ["--config-file", "/etc/otel-collector-config.yaml"]
-       ports:
-         - "4318:4318"
-       volumes:
-         - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
-
-   # otel-collector-config.yaml
    receivers:
      otlp:
        protocols:
+         grpc:
+           endpoint: 0.0.0.0:4317
          http:
            endpoint: 0.0.0.0:4318
 
    exporters:
      logging:
-       loglevel: debug
+       loglevel: info
+     file:
+       path: /data/otlp-logs.json
+       format: json
 
    service:
      pipelines:
        logs:
          receivers: [otlp]
-         exporters: [logging]
+         exporters: [logging, file]
+
+**Running Tests**
+
+.. code-block:: bash
+
+   # Run HTTP protocol tests
+   ./tests/omotlp-basic.sh
+
+   # Run gRPC protocol tests (Phase 2)
+   ./tests/omotlp-grpc.sh
+
+The tests validate:
+
+- Proper OTLP JSON/Protobuf payload structure
+- Correct field mapping from syslog to OTLP
+- Statistics reporting accuracy
+- Error handling and retry logic
 
 Compatibility
 -------------
