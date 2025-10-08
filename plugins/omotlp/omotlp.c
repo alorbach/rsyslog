@@ -483,7 +483,7 @@ BEGINdoAction
     if (ppString != NULL) {
         body = (char *)ppString[0];
         if (ppString[1] != NULL) {
-            msg = (smsg_t *)ppString[1];
+            msg = (smsg_t *)(uintptr_t)ppString[1];
         }
     }
 
