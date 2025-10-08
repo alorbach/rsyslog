@@ -194,6 +194,7 @@ AC_CHECK_HEADERS([libgen.h],[],[],[
      #endif
   ]
 ])
+AC_CHECK_HEADERS([nss_dbdefs.h])
 AC_CHECK_HEADERS([malloc.h],[],[],[
   [#ifdef HAVE_MALLOC_H
      # include <malloc.h>

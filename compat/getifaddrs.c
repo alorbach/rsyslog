@@ -26,7 +26,8 @@
  */
 
     #include <netdb.h>
-    #if !defined(_AIX)
+    /* nss_dbdefs.h is Solaris-specific; guard by configure check */
+    #if defined(HAVE_NSS_DBDEFS_H)
         #include <nss_dbdefs.h>
     #endif
 
