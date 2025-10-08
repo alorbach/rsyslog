@@ -72,6 +72,33 @@ static struct cnfparamblk actpblk = {CNFPARAMBLK_VERSION, sizeof(actpdescr) / si
 
 BEGINcreateInstance
     CODESTARTcreateInstance;
+    /* defaults */
+    pData->defaultPort = 4318;
+    pData->numServers = 0;
+    pData->serverBaseUrls = NULL;
+    pData->path = (uchar *)strdup("/v1/logs");
+    pData->timeoutMs = 5000;
+    pData->bearerToken = NULL;
+    pData->httpHeaders = NULL;
+    pData->nHttpHeaders = 0;
+    pData->useHttps = 0;
+    pData->allowUnsignedCerts = 0;
+    pData->skipVerifyHost = 0;
+    pData->caCertFile = NULL;
+    pData->myCertFile = NULL;
+    pData->myPrivKeyFile = NULL;
+    pData->compress = 0;
+    pData->compressionLevel = -1;
+    pData->maxBatchItems = 0;
+    pData->maxBatchBytes = 0;
+    pData->batchTimeoutMs = 0;
+    pData->retryFailures = 1;
+    pData->nhttpRetryCodes = 0;
+    pData->httpRetryCodes = NULL;
+    pData->nIgnorableCodes = 0;
+    pData->ignorableCodes = NULL;
+    pData->resourceJson = NULL;
+    pData->tplName = NULL;
 ENDcreateInstance
 
 BEGINcreateWrkrInstance
@@ -166,6 +193,7 @@ BEGINdoAction
     }
     /* lazy CURL setup */
     if (((wrkrInstanceData_t *)pWrkrData)->restURL == NULL) {
+        /* if endpoint not set, use default */
         ((wrkrInstanceData_t *)pWrkrData)->restURL = (uchar *)strdup("http://127.0.0.1:4318/v1/logs");
     }
     CHKiRet(omotlp_http_setup((wrkrInstanceData_t *)pWrkrData));
@@ -173,12 +201,22 @@ BEGINdoAction
     CHKiRet(omotlp_json_add_record(((wrkrInstanceData_t *)pWrkrData)->batch.buf, (smsg_t *)pMsgData, body, sevText, sevNum, NULL, NULL, 0));
     ((wrkrInstanceData_t *)pWrkrData)->batch.items++;
     ((wrkrInstanceData_t *)pWrkrData)->batch.bytes = es_strlen(((wrkrInstanceData_t *)pWrkrData)->batch.buf);
+    if (((wrkrInstanceData_t *)pWrkrData)->batch.items == 1) {
+        ((wrkrInstanceData_t *)pWrkrData)->batch.firstItemNsec = (nsec_t)currentTimeMills();
+    }
     /* flush on thresholds */
     if ((((wrkrInstanceData_t *)pWrkrData)->pData && ((wrkrInstanceData_t *)pWrkrData)->pData->maxBatchItems > 0 &&
          ((wrkrInstanceData_t *)pWrkrData)->batch.items >= ((wrkrInstanceData_t *)pWrkrData)->pData->maxBatchItems) ||
         (((wrkrInstanceData_t *)pWrkrData)->pData && ((wrkrInstanceData_t *)pWrkrData)->pData->maxBatchBytes > 0 &&
          ((wrkrInstanceData_t *)pWrkrData)->batch.bytes >= ((wrkrInstanceData_t *)pWrkrData)->pData->maxBatchBytes)) {
         CHKiRet(otlp_flush_batch((wrkrInstanceData_t *)pWrkrData));
+    }
+    if (((wrkrInstanceData_t *)pWrkrData)->pData && ((wrkrInstanceData_t *)pWrkrData)->pData->batchTimeoutMs > 0) {
+        long long nowMs = currentTimeMills();
+        long long firstMs = (long long)((wrkrInstanceData_t *)pWrkrData)->batch.firstItemNsec;
+        if (((wrkrInstanceData_t *)pWrkrData)->batch.items > 0 && (nowMs - firstMs) >= ((wrkrInstanceData_t *)pWrkrData)->pData->batchTimeoutMs) {
+            CHKiRet(otlp_flush_batch((wrkrInstanceData_t *)pWrkrData));
+        }
     }
 ENDdoAction
 
