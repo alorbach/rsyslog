@@ -157,20 +157,35 @@ ENDendTransaction
 static inline rsRetVal otlp_flush_batch(wrkrInstanceData_t *const wi) {
     DEFiRet;
     if (wi->batch.items == 0) RETiRet;
-    es_str_t *payload = es_newStr(256);
-    CHKiRet(omotlp_json_begin(&payload, wi->pData ? wi->pData->resourceJson : NULL));
-    es_addBuf(&payload, (const char *)es_str2cstr(wi->batch.buf, NULL), es_strlen(wi->batch.buf));
-    CHKiRet(omotlp_json_end(payload));
+    /* Build top-level ExportLogsServiceRequest with fjson */
+    struct fjson_object *req = fjson_object_new_object();
+    struct fjson_object *resourceLogs = fjson_object_new_array();
+    struct fjson_object *resLog = fjson_object_new_object();
+    struct fjson_object *resource = fjson_object_new_object();
+    struct fjson_object *attributes = fjson_object_new_array();
+    /* If resourceJson provided, parse and add raw attributes if possible (future work). */
+    fjson_object_object_add(resource, "attributes", attributes);
+    fjson_object_object_add(resLog, "resource", resource);
+    struct fjson_object *scopeLogs = fjson_object_new_array();
+    struct fjson_object *scopeLog = fjson_object_new_object();
+    fjson_object_object_add(scopeLog, "logRecords", wi->batch.records ? wi->batch.records : fjson_object_new_array());
+    fjson_object_array_add(scopeLogs, scopeLog);
+    fjson_object_object_add(resLog, "scopeLogs", scopeLogs);
+    fjson_object_array_add(resourceLogs, resLog);
+    fjson_object_object_add(req, "resourceLogs", resourceLogs);
+    const char *payloadStr = fjson_object_to_json_string_ext(req, FJSON_TO_STRING_PLAIN);
     long httpCode = 0;
-    CHKiRet(omotlp_http_post(wi, (uchar *)es_str2cstr(payload, NULL), es_strlen(payload), &httpCode,
+    CHKiRet(omotlp_http_post(wi, (uchar *)payloadStr, strlen(payloadStr), &httpCode,
                              wi->pData ? wi->pData->timeoutMs : 1000, wi->pData ? wi->pData->compress : 0,
                              wi->pData ? wi->pData->compressionLevel : -1));
     if (httpCode >= 200 && httpCode < 300) {
         STATSCOUNTER_ADD(ctrSent, mutCtrSent, wi->batch.items);
         wi->batch.items = 0;
         wi->batch.bytes = 0;
-        es_deleteStr(wi->batch.buf);
-        wi->batch.buf = es_newStr(2048);
+        if (wi->batch.records) {
+            fjson_object_put(wi->batch.records);
+            wi->batch.records = NULL;
+        }
         iRet = RS_RET_OK;
     } else if ((wi->pData && wi->pData->retryFailures && (httpCode == 429 || (httpCode >= 500 && httpCode < 600))) ||
                (wi->pData && wi->pData->nhttpRetryCodes > 0)) {
@@ -202,11 +217,13 @@ static inline rsRetVal otlp_flush_batch(wrkrInstanceData_t *const wi) {
         iRet = RS_RET_OK; /* drop */
         wi->batch.items = 0;
         wi->batch.bytes = 0;
-        es_deleteStr(wi->batch.buf);
-        wi->batch.buf = es_newStr(2048);
+        if (wi->batch.records) {
+            fjson_object_put(wi->batch.records);
+            wi->batch.records = NULL;
+        }
     }
 finalize_it:
-    if (payload) es_deleteStr(payload);
+    if (req) fjson_object_put(req);
     RETiRet;
 }
 
@@ -235,10 +252,15 @@ BEGINdoAction
         ((wrkrInstanceData_t *)pWrkrData)->restURL = (uchar *)strdup("http://127.0.0.1:4318/v1/logs");
     }
     CHKiRet(omotlp_http_setup((wrkrInstanceData_t *)pWrkrData));
-    /* append record into batch */
-    CHKiRet(omotlp_json_add_record(((wrkrInstanceData_t *)pWrkrData)->batch.buf, (smsg_t *)pMsgData, body, sevText, sevNum, NULL, NULL, 0));
+    /* append record into batch (fjson array + size tracking) */
+    if (((wrkrInstanceData_t *)pWrkrData)->batch.records == NULL) {
+        ((wrkrInstanceData_t *)pWrkrData)->batch.records = fjson_object_new_array();
+    }
+    struct fjson_object *recObj = omotlp_json_build_record_obj((smsg_t *)pMsgData, body, sevText, sevNum, NULL, NULL, 0);
+    fjson_object_array_add(((wrkrInstanceData_t *)pWrkrData)->batch.records, recObj);
+    const char *recStrTmp = fjson_object_to_json_string_ext(recObj, FJSON_TO_STRING_PLAIN);
+    if (recStrTmp != NULL) ((wrkrInstanceData_t *)pWrkrData)->batch.bytes += strlen(recStrTmp) + 1; /* + comma */
     ((wrkrInstanceData_t *)pWrkrData)->batch.items++;
-    ((wrkrInstanceData_t *)pWrkrData)->batch.bytes = es_strlen(((wrkrInstanceData_t *)pWrkrData)->batch.buf);
     if (((wrkrInstanceData_t *)pWrkrData)->batch.items == 1) {
         ((wrkrInstanceData_t *)pWrkrData)->batch.firstItemNsec = (nsec_t)currentTimeMills();
     }

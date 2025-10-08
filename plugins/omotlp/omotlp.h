@@ -54,6 +54,7 @@ struct omotlp_wrkr_instance_s {
     uchar *restURL;
     struct {
         es_str_t *buf;
+        struct fjson_object *records; /* array of logRecords */
         size_t items;
         size_t bytes;
         nsec_t firstItemNsec;
@@ -66,6 +67,11 @@ rsRetVal omotlp_json_add_record(es_str_t *buf, smsg_t *const pMsg, const uchar *
                                 const int severityNumber, const uchar *traceId, const uchar *spanId,
                                 const int traceFlags);
 rsRetVal omotlp_json_end(es_str_t *buf);
+
+/* Build a single LogRecord as a libfastjson object */
+struct fjson_object *omotlp_json_build_record_obj(smsg_t *const pMsg, const uchar *body, const uchar *severityText,
+                                                  const int severityNumber, const uchar *traceId, const uchar *spanId,
+                                                  const int traceFlags);
 
 /* HTTP transport */
 rsRetVal omotlp_http_setup(omotlp_wrkr_instance_t *wi);
