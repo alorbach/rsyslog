@@ -1,0 +1,19 @@
+# OTLP (OpenTelemetry Protocol) Output Module
+support_status: contributor-supported
+maturity_level: fresh
+primary_contact: "GitHub Discussions & Issues <https://github.com/rsyslog/rsyslog/discussions>"
+last_reviewed: 2024-10-08
+build_dependencies:
+  - libcurl >= 7.28.0
+  - json-c
+runtime_dependencies:
+  - libcurl >= 7.28.0
+  - json-c
+ci_targets: []
+documentation:
+  - "doc/source/configuration/modules/omotlp.rst"
+support_channels:
+  - "GitHub Issues <https://github.com/rsyslog/rsyslog/issues>"
+notes: |
+  OTLP output module for exporting rsyslog messages as OpenTelemetry Logs.
+  Phase 1 supports HTTP/JSON transport. Phase 2 will add optional gRPC support.

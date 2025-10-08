@@ -167,6 +167,10 @@ if ENABLE_OMHTTP
 SUBDIRS += contrib/omhttp
 endif
 
+if ENABLE_OMOTLP
+SUBDIRS += plugins/omotlp
+endif
+
 if ENABLE_SNMP
 SUBDIRS += plugins/omsnmp
 endif
@@ -486,6 +490,10 @@ endif
 
 if ENABLE_OMHTTP
 DISTCHECK_CONFIGURE_FLAGS+= --enable-omhttp
+endif
+
+if ENABLE_OMOTLP
+DISTCHECK_CONFIGURE_FLAGS+= --enable-omotlp
 endif
 
 if ENABLE_OMHTTPFS
