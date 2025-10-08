@@ -327,11 +327,22 @@ BEGINmodInit()
     CODESTARTmodInit;
     INITLegCnfVars;
     *ipIFVersProvided = CURR_MOD_IF_VERSION;
-    /* nothing to register beyond std queries */
+    /* global stats registration */
+    statsobj.Destruct(&otlpStats);
+    CHKiRet(statsobj.Construct(&otlpStats));
+    CHKiRet(statsobj.SetName(otlpStats, (uchar *)"omotlp"));
+    CHKiRet(statsobj.SetOrigin(otlpStats, (uchar *)"omotlp"));
+    CHKiRet(statsobj.AddCounter(otlpStats, (uchar *)"sent", ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrSent));
+    CHKiRet(statsobj.AddCounter(otlpStats, (uchar *)"retried", ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrRetried));
+    CHKiRet(statsobj.AddCounter(otlpStats, (uchar *)"dropped", ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrDropped));
+    CHKiRet(statsobj.AddCounter(otlpStats, (uchar *)"http.4xx", ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttp4xx));
+    CHKiRet(statsobj.AddCounter(otlpStats, (uchar *)"http.5xx", ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttp5xx));
+    CHKiRet(statsobj.ConstructFinalize(otlpStats));
 ENDmodInit
 
 BEGINmodExit
     CODESTARTmodExit;
+    statsobj.Destruct(&otlpStats);
 ENDmodExit
 
 BEGINqueryEtryPt
