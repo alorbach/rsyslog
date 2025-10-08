@@ -32,50 +32,50 @@ finalize_it:
     RETiRet;
 }
 
-/* minimal mapping: body as string, severity number/text, timestamp */
+/* minimal mapping: body as string, severity number/text, timestamp
+ * Build each LogRecord as JSON with libfastjson (see mmsnareparse, omhttp patterns).
+ */
 rsRetVal omotlp_json_add_record(es_str_t *buf, smsg_t *const pMsg, const uchar *body, const uchar *severityText,
                                 const int severityNumber, const uchar *traceId, const uchar *spanId,
                                 const int traceFlags) {
     DEFiRet;
-    unsigned long long tsNsec;
-
-    /* if not first log record, add comma */
-    if (es_strlen(buf) > 0) {
-        const char *cbuf = es_str2cstr(buf, NULL);
-        if (cbuf != NULL && cbuf[strlen(cbuf) - 1] != '[') json_append(buf, ",");
-    }
-
+    int64_t tsNsec;
+    
     /* timestamp in ns since epoch from message timestamp */
     {
         time_t secs = (time_t)datetime.syslogTime2time_t(&pMsg->tTIMESTAMP);
         unsigned long usec = (unsigned long)pMsg->tTIMESTAMP.secfrac; /* microseconds */
-        tsNsec = ((unsigned long long)secs * 1000000000ULL) + ((unsigned long long)usec * 1000ULL);
+        tsNsec = ((int64_t)secs * 1000000000LL) + ((int64_t)usec * 1000LL);
     }
 
-    es_addBuf(buf, (const uchar *)"{\"timeUnixNano\":", 18);
-    es_addNumAsStr(buf, tsNsec);
-    json_append(buf, ",\"body\":{\"stringValue\":");
-    es_addChar(buf, '"');
-    es_addStr(buf, body == NULL ? (uchar *)"" : body);
-    es_addChar(buf, '"');
-    json_append(buf, ",\"severityText\":");
-    es_addChar(buf, '"');
-    es_addStr(buf, severityText == NULL ? (uchar *)"" : severityText);
-    es_addChar(buf, '"');
-    json_append(buf, ",\"severityNumber\":");
-    es_addInt(buf, severityNumber);
+    /* Build LogRecord as fjson object */
+    struct fjson_object *rec = fjson_object_new_object();
+    fjson_object_object_add(rec, "timeUnixNano", fjson_object_new_int64(tsNsec));
+
+    struct fjson_object *bodyObj = fjson_object_new_object();
+    fjson_object_object_add(bodyObj, "stringValue", fjson_object_new_string((const char *)(body ? body : (uchar *)"")));
+    fjson_object_object_add(rec, "body", bodyObj);
+
+    fjson_object_object_add(rec, "severityText",
+                            fjson_object_new_string((const char *)(severityText ? severityText : (uchar *)"")));
+    fjson_object_object_add(rec, "severityNumber", fjson_object_new_int(severityNumber));
+
     if (traceId != NULL && spanId != NULL) {
-        json_append(buf, ",\"traceId\":\"");
-        es_addBuf(buf, (const uchar *)traceId, strlen((const char *)traceId));
-        es_addChar(buf, '"');
-        json_append(buf, ",\"spanId\":\"");
-        es_addBuf(buf, (const uchar *)spanId, strlen((const char *)spanId));
-        es_addChar(buf, '"');
-        json_append(buf, ",\"flags\":");
-        es_addInt(buf, traceFlags);
+        fjson_object_object_add(rec, "traceId", fjson_object_new_string((const char *)traceId));
+        fjson_object_object_add(rec, "spanId", fjson_object_new_string((const char *)spanId));
+        fjson_object_object_add(rec, "flags", fjson_object_new_int(traceFlags));
     }
-    json_append(buf, "}");
 
+    const char *recStr = fjson_object_to_json_string_ext(rec, FJSON_TO_STRING_PLAIN);
+    if (recStr == NULL) {
+        fjson_object_put(rec);
+        ABORT_FINALIZE(RS_RET_ERR);
+    }
+
+    if (es_strlen(buf) > 0) es_addChar(buf, ',');
+    es_addBuf(&buf, recStr, strlen(recStr));
+
+    fjson_object_put(rec);
 finalize_it:
     RETiRet;
 }
