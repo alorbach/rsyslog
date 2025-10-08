@@ -8,6 +8,7 @@
 #include <json.h>
 #include "datetime.h"
 #include "msg.h"
+DEFobjCurrIf(datetime)
 struct fjson_object *omotlp_json_build_record_obj(smsg_t *const pMsg, const uchar *body, const uchar *severityText,
                                                   const int severityNumber, const uchar *traceId, const uchar *spanId,
                                                   const int traceFlags) {

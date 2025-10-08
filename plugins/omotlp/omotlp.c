@@ -231,8 +231,7 @@ finalize_it:
 
 BEGINdoAction
     CODESTARTdoAction;
-    es_str_t *buf = NULL;
-    long httpCode = 0;
+    /* build record and append into batch */
     const uchar *body = (ppString != NULL && ppString[0] != NULL) ? ppString[0] : (uchar *)"";
     int sev = 0;
     CHKiRet(MsgGetSeverity((smsg_t *)pMsgData, &sev));
@@ -247,6 +246,7 @@ BEGINdoAction
         case 5: sevText = (uchar *)"NOTICE"; sevNum = 9; break;
         case 6: sevText = (uchar *)"INFO"; sevNum = 9; break;
         case 7: sevText = (uchar *)"DEBUG"; sevNum = 5; break;
+        default: break;
     }
     /* lazy CURL setup */
     if (((wrkrInstanceData_t *)pWrkrData)->restURL == NULL) {
