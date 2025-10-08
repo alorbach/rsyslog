@@ -1,7 +1,8 @@
 pkglib_LTLIBRARIES = omotlp.la
 
 omotlp_la_SOURCES = \
-        omotlp.c
+        omotlp.c \
+        otlp_json.c
 
 omotlp_la_CPPFLAGS = \
         -I$(top_srcdir) \

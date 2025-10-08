@@ -11,21 +11,29 @@
 #include "rsyslog.h"
 
 #include <ctype.h>
+#include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "conf.h"
-#include "syslogd-types.h"
+#include "datetime.h"
+#include "msg.h"
 #include "srUtils.h"
+#include "stringbuf.h"
+#include "syslogd-types.h"
 #include "template.h"
 #include "module-template.h"
 #include "errmsg.h"
+
+#include "otlp_json.h"
 
 MODULE_TYPE_OUTPUT;
 MODULE_TYPE_NOKEEP;
 MODULE_CNFNAME("omotlp")
 
 DEF_OMOD_STATIC_DATA;
+DEFobjCurrIf(datetime)
 
 typedef struct _instanceData {
     uchar *endpoint;
@@ -195,6 +203,137 @@ finalize_it:
     RETiRet;
 }
 
+typedef struct severity_mapping_s {
+    uint32_t number;
+    const char *text;
+} severity_mapping_t;
+
+static const severity_mapping_t severity_lookup[8] = {{24u, "EMERGENCY"}, {23u, "ALERT"},   {22u, "CRITICAL"},
+                                                      {17u, "ERROR"},     {13u, "WARNING"}, {11u, "NOTICE"},
+                                                      {9u, "INFO"},       {5u, "DEBUG"}};
+
+static void mapSeverity(int syslogSeverity, omotlp_log_record_t *record) {
+    if (syslogSeverity < 0 || syslogSeverity > 7) {
+        record->severity_number = 0u;
+        record->severity_text = NULL;
+        return;
+    }
+
+    record->severity_number = severity_lookup[syslogSeverity].number;
+    record->severity_text = severity_lookup[syslogSeverity].text;
+}
+
+static uint64_t scaleFractionToNanos(int fraction, int precision) {
+    uint64_t value;
+
+    if (precision <= 0 || fraction <= 0) {
+        return 0u;
+    }
+
+    value = (uint64_t)fraction;
+    if (precision > 9) {
+        int diff = precision - 9;
+        while (diff-- > 0 && value > 0u) {
+            value /= 10u;
+        }
+    } else if (precision < 9) {
+        int diff = 9 - precision;
+        while (diff-- > 0) {
+            value *= 10u;
+        }
+    }
+
+    return value;
+}
+
+static uint64_t syslogTimeToUnixNanos(const struct syslogTime *timestamp) {
+    if (timestamp == NULL) {
+        return 0u;
+    }
+
+    return ((uint64_t)datetime.syslogTime2time_t(timestamp) * 1000000000ull) +
+           scaleFractionToNanos(timestamp->secfrac, timestamp->secfracPrecision);
+}
+
+static const char *cstrToConst(cstr_t *value) {
+    return value == NULL ? NULL : (const char *)rsCStrGetSzStrNoNULL(value);
+}
+
+static const char *extractAppName(const smsg_t *msg) {
+    const char *candidate;
+
+    if (msg == NULL) {
+        return NULL;
+    }
+
+    candidate = cstrToConst(msg->pCSAPPNAME);
+    if (candidate != NULL && candidate[0] != '\0') {
+        return candidate;
+    }
+
+    if (msg->iLenPROGNAME > 0 && msg->PROGNAME.ptr != NULL) {
+        return (const char *)msg->PROGNAME.ptr;
+    }
+
+    return NULL;
+}
+
+static const char *extractProcId(const smsg_t *msg) {
+    const char *candidate;
+
+    if (msg == NULL) {
+        return NULL;
+    }
+
+    candidate = cstrToConst(msg->pCSPROCID);
+    if (candidate != NULL && candidate[0] != '\0') {
+        return candidate;
+    }
+
+    return NULL;
+}
+
+static const char *extractMsgId(const smsg_t *msg) {
+    const char *candidate;
+
+    if (msg == NULL) {
+        return NULL;
+    }
+
+    candidate = cstrToConst(msg->pCSMSGID);
+    if (candidate != NULL && candidate[0] != '\0') {
+        return candidate;
+    }
+
+    return NULL;
+}
+
+static rsRetVal populateLogRecord(smsg_t *msg, const char *body, omotlp_log_record_t *record) {
+    int severity;
+
+    DEFiRet;
+
+    memset(record, 0, sizeof(*record));
+
+    CHKiRet(MsgGetSeverity(msg, &severity));
+    mapSeverity(severity, record);
+
+    record->body = body;
+    record->hostname = (msg->pszHOSTNAME != NULL) ? (const char *)msg->pszHOSTNAME : NULL;
+    record->app_name = extractAppName(msg);
+    record->proc_id = extractProcId(msg);
+    record->msg_id = extractMsgId(msg);
+    record->facility = (uint16_t)msg->iFacility;
+    record->time_unix_nano = syslogTimeToUnixNanos(&msg->tTIMESTAMP);
+    record->observed_time_unix_nano = syslogTimeToUnixNanos(&msg->tRcvdAt);
+    record->trace_id = NULL;
+    record->span_id = NULL;
+    record->trace_flags = 0u;
+
+finalize_it:
+    RETiRet;
+}
+
 static inline void setInstParamDefaults(instanceData *pData) {
     pData->endpoint = NULL;
     pData->path = NULL;
@@ -318,35 +457,64 @@ BEGINnewActInst
     lowercaseInPlace(pData->protocol);
     CHKiRet(validateProtocol(pData));
 
-    CODE_STD_STRING_REQUESTnewActInst(1);
+    CODE_STD_STRING_REQUESTnewActInst(2);
     tplToUse = (uchar *)strdup((char *)pData->bodyTemplateName);
     if (tplToUse == NULL) {
         ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
     }
     CHKiRet(OMSRsetEntry(*ppOMSR, 0, tplToUse, OMSR_NO_RQD_TPL_OPTS));
+    CHKiRet(OMSRsetEntry(*ppOMSR, 1, NULL, OMSR_TPL_AS_MSG));
 
     CODE_STD_FINALIZERnewActInst;
     cnfparamvalsDestruct(pvals, &actpblk);
 ENDnewActInst
 
 BEGINdoAction
+    void **params = (void **)pMsgData;
+    char *payload = NULL;
+    char *body = NULL;
+    smsg_t *msg = NULL;
+    omotlp_log_record_t record;
     CODESTARTdoAction;
 
-    if (pWrkrData->pData != NULL && !pWrkrData->pData->warnedNotImplemented) {
-        LogError(0, RS_RET_NOT_IMPLEMENTED, "omotlp: transport layer not yet implemented; message dropped");
+    if (pWrkrData->pData == NULL) {
+        ABORT_FINALIZE(RS_RET_INTERNAL_ERROR);
+    }
+
+    if (params != NULL) {
+        body = (char *)params[0];
+        msg = (smsg_t *)params[1];
+    }
+
+    if (msg == NULL) {
+        LogError(0, RS_RET_INTERNAL_ERROR, "omotlp: missing message context for OTLP serialization");
+        ABORT_FINALIZE(RS_RET_INTERNAL_ERROR);
+    }
+
+    CHKiRet(populateLogRecord(msg, body, &record));
+    CHKiRet(omotlp_json_build_export(&record, 1, &payload));
+
+    if (Debug && payload != NULL) {
+        dbgprintf("omotlp: preview OTLP/HTTP payload: %s\n", payload);
+    }
+
+    if (!pWrkrData->pData->warnedNotImplemented) {
+        LogError(0, RS_RET_NOT_IMPLEMENTED, "omotlp: transport layer not yet implemented; dropping after JSON preview");
         pWrkrData->pData->warnedNotImplemented = 1;
     }
 
     ABORT_FINALIZE(RS_RET_NOT_IMPLEMENTED);
+finalize_it:
+    free(payload);
 ENDdoAction
 
 NO_LEGACY_CONF_parseSelectorAct
 
 BEGINmodInit() CODESTARTmodInit;
-/* no module-level initialization required for the scaffolding phase */
+CHKiRet(objUse(datetime, CORE_COMPONENT));
 ENDmodInit
 
 BEGINmodExit()
     CODESTARTmodExit;
-    /* nothing to clean up yet */
+    objRelease(datetime, CORE_COMPONENT);
 ENDmodExit
