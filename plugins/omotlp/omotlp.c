@@ -280,6 +280,7 @@ BEGINdoAction
             CHKiRet(otlp_flush_batch((wrkrInstanceData_t *)pWrkrData));
         }
     }
+finalize_it:
 ENDdoAction
 
 BEGINnewActInst

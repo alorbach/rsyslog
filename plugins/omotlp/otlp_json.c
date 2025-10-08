@@ -9,7 +9,7 @@
 #include "datetime.h"
 #include "msg.h"
 DEFobjCurrIf(datetime)
-struct fjson_object *omotlp_json_build_record_obj(smsg_t *const pMsg, const uchar *body, const uchar *severityText,
+static struct fjson_object *omotlp_json_build_record_obj(smsg_t *const pMsg, const uchar *body, const uchar *severityText,
                                                   const int severityNumber, const uchar *traceId, const uchar *spanId,
                                                   const int traceFlags) {
     int64_t tsNsec;
@@ -65,15 +65,6 @@ rsRetVal omotlp_json_add_record(es_str_t *buf, smsg_t *const pMsg, const uchar *
                                 const int severityNumber, const uchar *traceId, const uchar *spanId,
                                 const int traceFlags) {
     DEFiRet;
-    int64_t tsNsec;
-    
-    /* timestamp in ns since epoch from message timestamp */
-    {
-        time_t secs = (time_t)datetime.syslogTime2time_t(&pMsg->tTIMESTAMP);
-        unsigned long usec = (unsigned long)pMsg->tTIMESTAMP.secfrac; /* microseconds */
-        tsNsec = ((int64_t)secs * 1000000000LL) + ((int64_t)usec * 1000LL);
-    }
-
     /* Build LogRecord as fjson object */
     struct fjson_object *rec = omotlp_json_build_record_obj(pMsg, body, severityText, severityNumber, traceId, spanId, traceFlags);
     const char *recStr = fjson_object_to_json_string_ext(rec, FJSON_TO_STRING_PLAIN);
