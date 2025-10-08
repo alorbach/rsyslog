@@ -364,9 +364,10 @@ BEGINnewActInst
         }
     }
     /* template for message body */
+    CODE_STD_STRING_REQUESTnewActInst(1);
     CHKiRet(OMSRsetEntry(*ppOMSR, 0, (uchar *)"RSYSLOG_TraditionalFileFormat", OMSR_NO_RQD_TPL_OPTS));
+    CODE_STD_FINALIZERnewActInst;
     if (pvals != NULL) cnfparamvalsDestruct(pvals, &actpblk);
-    CODE_STD_FINALIZERnewActInst
 ENDnewActInst
 
 BEGINparseSelectorAct
