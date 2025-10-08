@@ -7,6 +7,7 @@ if ENABLE_OMOTLP_GRPC
 omotlp_la_SOURCES += grpc_bridge.cc
 endif
 
+# Base flags for all builds
 omotlp_la_CPPFLAGS = $(RSRT_CFLAGS) $(PTHREADS_CFLAGS) $(CURL_CFLAGS) $(JSON_CFLAGS)
 
 # Additional flags for gRPC builds
