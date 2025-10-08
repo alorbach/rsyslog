@@ -93,11 +93,16 @@ BEGINcreateWrkrInstance
             es_deleteStr(url);
         }
     }
+    /* init batch buffer */
+    ((wrkrInstanceData_t *)pWrkrData)->batch.buf = es_newStr(2048);
+    ((wrkrInstanceData_t *)pWrkrData)->batch.items = 0;
+    ((wrkrInstanceData_t *)pWrkrData)->batch.bytes = 0;
 ENDcreateWrkrInstance
 
 BEGINfreeWrkrInstance
     CODESTARTfreeWrkrInstance;
     omotlp_http_cleanup((wrkrInstanceData_t *)pWrkrData);
+    if (((wrkrInstanceData_t *)pWrkrData)->batch.buf) es_deleteStr(((wrkrInstanceData_t *)pWrkrData)->batch.buf);
 ENDfreeWrkrInstance
 
 BEGINfreeInstance
@@ -108,6 +113,37 @@ BEGINdbgPrintInstInfo
     CODESTARTdbgPrintInstInfo;
     dbgprintf("omotlp\n");
 ENDdbgPrintInstInfo
+
+static inline rsRetVal otlp_flush_batch(wrkrInstanceData_t *const wi) {
+    DEFiRet;
+    if (wi->batch.items == 0) RETiRet;
+    es_str_t *payload = es_newStr(256);
+    CHKiRet(omotlp_json_begin(&payload, wi->pData ? wi->pData->resourceJson : NULL));
+    es_addBuf(&payload, (const char *)es_str2cstr(wi->batch.buf, NULL), es_strlen(wi->batch.buf));
+    CHKiRet(omotlp_json_end(payload));
+    long httpCode = 0;
+    CHKiRet(omotlp_http_post(wi, (uchar *)es_str2cstr(payload, NULL), es_strlen(payload), &httpCode,
+                             wi->pData ? wi->pData->timeoutMs : 1000, wi->pData ? wi->pData->compress : 0,
+                             wi->pData ? wi->pData->compressionLevel : -1));
+    if (httpCode >= 200 && httpCode < 300) {
+        wi->batch.items = 0;
+        wi->batch.bytes = 0;
+        es_deleteStr(wi->batch.buf);
+        wi->batch.buf = es_newStr(2048);
+        iRet = RS_RET_OK;
+    } else if (httpCode == 429 || (httpCode >= 500 && httpCode < 600)) {
+        ABORT_FINALIZE(RS_RET_SUSPENDED);
+    } else {
+        iRet = RS_RET_OK; /* drop */
+        wi->batch.items = 0;
+        wi->batch.bytes = 0;
+        es_deleteStr(wi->batch.buf);
+        wi->batch.buf = es_newStr(2048);
+    }
+finalize_it:
+    if (payload) es_deleteStr(payload);
+    RETiRet;
+}
 
 BEGINdoAction
     CODESTARTdoAction;
@@ -128,15 +164,22 @@ BEGINdoAction
         case 6: sevText = (uchar *)"INFO"; sevNum = 9; break;
         case 7: sevText = (uchar *)"DEBUG"; sevNum = 5; break;
     }
-    CHKiRet(omotlp_json_begin(&buf, NULL));
-    CHKiRet(omotlp_json_add_record(buf, (smsg_t *)pMsgData, body, sevText, sevNum, NULL, NULL, 0));
-    CHKiRet(omotlp_json_end(buf));
+    /* lazy CURL setup */
     if (((wrkrInstanceData_t *)pWrkrData)->restURL == NULL) {
         ((wrkrInstanceData_t *)pWrkrData)->restURL = (uchar *)strdup("http://127.0.0.1:4318/v1/logs");
-        CHKiRet(omotlp_http_setup((wrkrInstanceData_t *)pWrkrData));
     }
-    CHKiRet(omotlp_http_post((wrkrInstanceData_t *)pWrkrData, (uchar *)es_str2cstr(buf, NULL), es_strlen(buf), &httpCode, 1000, 0, -1));
-    es_deleteStr(buf);
+    CHKiRet(omotlp_http_setup((wrkrInstanceData_t *)pWrkrData));
+    /* append record into batch */
+    CHKiRet(omotlp_json_add_record(((wrkrInstanceData_t *)pWrkrData)->batch.buf, (smsg_t *)pMsgData, body, sevText, sevNum, NULL, NULL, 0));
+    ((wrkrInstanceData_t *)pWrkrData)->batch.items++;
+    ((wrkrInstanceData_t *)pWrkrData)->batch.bytes = es_strlen(((wrkrInstanceData_t *)pWrkrData)->batch.buf);
+    /* flush on thresholds */
+    if ((((wrkrInstanceData_t *)pWrkrData)->pData && ((wrkrInstanceData_t *)pWrkrData)->pData->maxBatchItems > 0 &&
+         ((wrkrInstanceData_t *)pWrkrData)->batch.items >= ((wrkrInstanceData_t *)pWrkrData)->pData->maxBatchItems) ||
+        (((wrkrInstanceData_t *)pWrkrData)->pData && ((wrkrInstanceData_t *)pWrkrData)->pData->maxBatchBytes > 0 &&
+         ((wrkrInstanceData_t *)pWrkrData)->batch.bytes >= ((wrkrInstanceData_t *)pWrkrData)->pData->maxBatchBytes)) {
+        CHKiRet(otlp_flush_batch((wrkrInstanceData_t *)pWrkrData));
+    }
 ENDdoAction
 
 BEGINnewActInst
