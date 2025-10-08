@@ -418,11 +418,13 @@ The test creates an OpenTelemetry Collector with the following configuration:
 
 .. code-block:: bash
 
-   # Run HTTP protocol tests
+   # Run HTTP protocol tests (uses randomized ports)
    ./tests/omotlp-basic.sh
 
-   # Run gRPC protocol tests (Phase 2)
+   # Run gRPC protocol tests (Phase 2 - uses randomized ports)
    ./tests/omotlp-grpc.sh
+
+The tests automatically assign randomized ports to avoid conflicts during parallel test execution.
 
 The tests validate:
 

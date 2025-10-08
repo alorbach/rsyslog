@@ -1,9 +1,11 @@
 #!/bin/bash
 # This file is part of the rsyslog project, released under ASL 2.0
+# OTLP HTTP Protocol Test using OpenTelemetry Collector
+#
+# This test uses randomized ports to avoid conflicts during parallel test execution.
+# The get_free_port() function from diag.sh provides dynamic port assignment.
 . ${srcdir:=.}/diag.sh init
 
-export OTLP_HTTP_PORT=4318
-export OTLP_GRPC_PORT=4317
 export NUMMESSAGES=100
 export OTLP_CONTAINER_NAME="otlp-collector-test"
 
@@ -12,6 +14,12 @@ if ! command -v docker &> /dev/null; then
     echo "ERROR: Docker is not available. Cannot run OTLP Collector tests."
     exit 77  # Skip test in test harness
 fi
+
+# Get randomized ports for OTLP endpoints
+export OTLP_GRPC_PORT=$(get_free_port)
+export OTLP_HTTP_PORT=$(get_free_port)
+
+echo "Using randomized ports: gRPC=${OTLP_GRPC_PORT}, HTTP=${OTLP_HTTP_PORT}"
 
 # Create OTLP Collector configuration
 create_otlp_config() {

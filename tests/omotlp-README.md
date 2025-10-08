@@ -138,9 +138,11 @@ You can also manually test the module:
 
 ## Environment Variables
 
-The tests use these environment variables:
+The tests automatically assign randomized ports for OTLP endpoints:
 
-- `OTLP_HTTP_PORT=4318` - HTTP port for OTLP collector
-- `OTLP_GRPC_PORT=4317` - gRPC port for OTLP collector
+- `OTLP_HTTP_PORT` - HTTP port for OTLP collector (randomized)
+- `OTLP_GRPC_PORT` - gRPC port for OTLP collector (randomized)
 - `NUMMESSAGES=100` - Number of test messages to send
 - `OTLP_CONTAINER_NAME` - Docker container name for cleanup
+
+Ports are randomized using the `get_free_port()` function from `diag.sh` to avoid conflicts in parallel test environments.
