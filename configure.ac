@@ -1133,7 +1133,6 @@ AC_ARG_ENABLE(omotlp-grpc,
 
 if test "x$enable_omotlp_grpc" = "xyes"; then
     # Check for C++17 compiler support
-    AC_LANG_PUSH([C++])
     AC_MSG_CHECKING([for C++17 support])
     AC_COMPILE_IFELSE([
         AC_LANG_PROGRAM([[
@@ -1151,7 +1150,6 @@ if test "x$enable_omotlp_grpc" = "xyes"; then
         AC_MSG_RESULT([no])
         AC_MSG_ERROR([C++17 compiler support is required for OTLP gRPC bridge])
     ])
-    AC_LANG_POP([C++])
 
     # Check for OpenTelemetry C++ SDK
     PKG_CHECK_MODULES([OPENTELEMETRY_CPP], [opentelemetry-cpp >= 1.8.0],
@@ -1159,10 +1157,8 @@ if test "x$enable_omotlp_grpc" = "xyes"; then
 
     if test "$have_opentelemetry_cpp" = "yes"; then
         # Check for OpenTelemetry headers
-        AC_LANG_PUSH([C++])
         AC_CHECK_HEADER([opentelemetry/sdk/logs/logger_provider.h],
                        [have_otlp_headers=yes], [have_otlp_headers=no])
-        AC_LANG_POP([C++])
 
         if test "$have_otlp_headers" = "no"; then
             AC_MSG_ERROR([OpenTelemetry C++ SDK headers not found. Please install opentelemetry-cpp development package.])
