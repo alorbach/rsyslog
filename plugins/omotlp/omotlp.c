@@ -49,6 +49,17 @@ typedef struct configSettings_s {
     int dummy;
 } configSettings_t;
 static configSettings_t cs;
+/* module config data for conf2 interface */
+struct modConfData_s {
+    rsconf_t *pConf; /* overall config object */
+};
+static modConfData_t *loadModConf = NULL; /* during load */
+static modConfData_t *runModConf = NULL;  /* during runtime */
+
+BEGINinitConfVars /* (re)set config variables to default values */
+    CODESTARTinitConfVars;
+ENDinitConfVars
+
 
 /* action (instance) parameters */
 static struct cnfparamdescr actpdescr[] = {
@@ -143,6 +154,30 @@ ENDfreeWrkrInstance
 BEGINfreeInstance
     CODESTARTfreeInstance;
 ENDfreeInstance
+BEGINbeginCnfLoad
+    CODESTARTbeginCnfLoad;
+    loadModConf = pModConf;
+    pModConf->pConf = pConf;
+ENDbeginCnfLoad
+
+BEGINendCnfLoad
+    CODESTARTendCnfLoad;
+    loadModConf = NULL;
+ENDendCnfLoad
+
+BEGINcheckCnf
+    CODESTARTcheckCnf;
+ENDcheckCnf
+
+BEGINactivateCnf
+    CODESTARTactivateCnf;
+    runModConf = pModConf;
+ENDactivateCnf
+
+BEGINfreeCnf
+    CODESTARTfreeCnf;
+ENDfreeCnf
+
 
 BEGINdbgPrintInstInfo
     CODESTARTdbgPrintInstInfo;
@@ -153,7 +188,7 @@ static inline rsRetVal otlp_flush_batch(wrkrInstanceData_t *const wi);
 
 BEGINendTransaction
     CODESTARTendTransaction;
-    CHKiRet(otlp_flush_batch((wrkrInstanceData_t *)pWrkrData));
+    (void) otlp_flush_batch((wrkrInstanceData_t *)pWrkrData);
 ENDendTransaction
 
 static inline rsRetVal otlp_flush_batch(wrkrInstanceData_t *const wi) {
@@ -378,7 +413,7 @@ ENDparseSelectorAct
 
 BEGINmodInit()
     CODESTARTmodInit;
-    INITLegCnfVars;
+    /* no legacy conf vars to init */
     *ipIFVersProvided = CURR_MOD_IF_VERSION;
     /* global stats registration */
     statsobj.Destruct(&otlpStats);
@@ -406,4 +441,13 @@ BEGINqueryEtryPt
     CODEqueryEtryPt_STD_CONF2_QUERIES;
     CODEqueryEtryPt_STD_CONF2_OMOD_QUERIES;
 ENDqueryEtryPt
+
+BEGINisCompatibleWithFeature
+    CODESTARTisCompatibleWithFeature;
+    if (eFeat == sFEATURERepeatedMsgReduction) iRet = RS_RET_OK;
+ENDisCompatibleWithFeature
+
+BEGINtryResume
+    CODESTARTtryResume;
+ENDtryResume
 
