@@ -33,7 +33,7 @@ MODULE_TYPE_NOKEEP;
 MODULE_CNFNAME("omotlp")
 
 DEF_OMOD_STATIC_DATA;
-DEFobjCurrIf(datetime)
+DEFobjCurrIf(datetime);
 
 typedef struct _instanceData {
     uchar *endpoint;
@@ -470,7 +470,6 @@ BEGINnewActInst
 ENDnewActInst
 
 BEGINdoAction
-    void **params = (void **)pMsgData;
     char *payload = NULL;
     char *body = NULL;
     smsg_t *msg = NULL;
@@ -481,9 +480,11 @@ BEGINdoAction
         ABORT_FINALIZE(RS_RET_INTERNAL_ERROR);
     }
 
-    if (params != NULL) {
-        body = (char *)params[0];
-        msg = (smsg_t *)params[1];
+    if (ppString != NULL) {
+        body = (char *)ppString[0];
+        if (ppString[1] != NULL) {
+            msg = (smsg_t *)ppString[1];
+        }
     }
 
     if (msg == NULL) {
@@ -508,13 +509,25 @@ finalize_it:
     free(payload);
 ENDdoAction
 
-NO_LEGACY_CONF_parseSelectorAct
-
-BEGINmodInit() CODESTARTmodInit;
-CHKiRet(objUse(datetime, CORE_COMPONENT));
-ENDmodInit
-
-BEGINmodExit()
+NO_LEGACY_CONF_parseSelectorAct /* clang-format off */
+BEGINmodExit
     CODESTARTmodExit;
     objRelease(datetime, CORE_COMPONENT);
 ENDmodExit
+
+BEGINisCompatibleWithFeature
+    CODESTARTisCompatibleWithFeature;
+ENDisCompatibleWithFeature
+
+BEGINqueryEtryPt
+    CODESTARTqueryEtryPt;
+    CODEqueryEtryPt_STD_OMOD_QUERIES;
+    CODEqueryEtryPt_STD_OMOD8_QUERIES;
+    CODEqueryEtryPt_STD_CONF2_OMOD_QUERIES;
+    CODEqueryEtryPt_STD_CONF2_QUERIES;
+ENDqueryEtryPt /* clang-format on */
+
+BEGINmodInit()
+    CODESTARTmodInit;
+    CHKiRet(objUse(datetime, CORE_COMPONENT));
+ENDmodInit
