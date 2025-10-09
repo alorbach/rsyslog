@@ -411,6 +411,10 @@ BEGINparseSelectorAct
     CODE_STD_FINALIZERparseSelectorAct
 ENDparseSelectorAct
 
+/* forward declarations for queryEtryPt symbols */
+static rsRetVal isCompatibleWithFeature(syslogFeature eFeat);
+static rsRetVal tryResume(void);
+
 BEGINmodInit(omotlp)
     CODESTARTmodInit;
     /* no legacy conf vars to init */
