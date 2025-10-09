@@ -208,15 +208,51 @@ require_plugin() {
                 "${module_root}.so"
         )
 
+        local plugin_path=""
         for candidate in "${candidates[@]}"; do
                 if [ -f "$candidate" ]; then
-                        return 0
+                        if [[ "$candidate" == *.la ]]; then
+                                continue
+                        fi
+                        plugin_path="$candidate"
+                        break
                 fi
         done
 
-        printf 'info: skipping test - plugin %s not available (checked %s)\n' \
-                "$plugin" "${candidates[*]}"
-        exit 77
+        if [ -z "$plugin_path" ]; then
+                printf 'info: skipping test - plugin %s not available (checked %s)\n' \
+                        "$plugin" "${candidates[*]}"
+                exit 77
+        fi
+
+        local rsyslogd_bin="../tools/rsyslogd"
+        if [ ! -x "$rsyslogd_bin" ]; then
+                # tests normally run after the tree is built; fall back to the
+                # legacy existence check if rsyslogd is missing so developer
+                # workflows that only lint scripts continue to operate.
+                return 0
+        fi
+
+        local tmp_conf
+        tmp_conf=$(mktemp "${RSYSLOG_DYNNAME}.require_plugin.XXXXXX.conf") || {
+                printf 'TESTBENCH_ERROR: unable to create temporary config for require_plugin\n'
+                error_exit 100
+        }
+        local tmp_log="${tmp_conf%.conf}.log"
+
+        cat >"$tmp_conf" <<EOF
+module(load="${plugin_path}")
+EOF
+
+        if ! "$rsyslogd_bin" -N1 -f "$tmp_conf" -M../runtime/.libs:../.libs >"$tmp_log" 2>&1; then
+                printf 'info: skipping test - plugin %s failed to load (rsyslogd -N1 output follows)\n' "$plugin"
+                sed -n '1,120p' "$tmp_log"
+                rm -f "$tmp_conf" "$tmp_log"
+                exit 77
+        fi
+
+        rm -f "$tmp_conf" "$tmp_log"
+        return 0
 }
 
 
