@@ -43,12 +43,7 @@ STATSCOUNTER_DEF(ctrDropped, mutCtrDropped)
 STATSCOUNTER_DEF(ctrHttp4xx, mutCtrHttp4xx)
 STATSCOUNTER_DEF(ctrHttp5xx, mutCtrHttp5xx)
 
-static prop_t *pInputName = NULL;
-
-typedef struct configSettings_s {
-    int dummy;
-} configSettings_t;
-static configSettings_t cs;
+/* no legacy config state */
 /* module config data for conf2 interface */
 struct modConfData_s {
     rsconf_t *pConf; /* overall config object */
@@ -413,11 +408,13 @@ ENDparseSelectorAct
 
 /* forward declarations for queryEtryPt symbols */
 static rsRetVal isCompatibleWithFeature(syslogFeature eFeat);
-static rsRetVal tryResume(void);
+static rsRetVal tryResume(wrkrInstanceData_t *pWrkrData);
+static rsRetVal queryEtryPt(uchar *name, rsRetVal (**pEtryPoint)());
 
 BEGINmodInit(omotlp)
     CODESTARTmodInit;
-    /* no legacy conf vars to init */
+    /* init legacy conf vars function to avoid unused warnings */
+    INITLegCnfVars;
     *ipIFVersProvided = CURR_MOD_IF_VERSION;
     /* global stats registration */
     statsobj.Destruct(&otlpStats);
@@ -430,7 +427,6 @@ BEGINmodInit(omotlp)
     CHKiRet(statsobj.AddCounter(otlpStats, (uchar *)"http.4xx", ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttp4xx));
     CHKiRet(statsobj.AddCounter(otlpStats, (uchar *)"http.5xx", ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttp5xx));
     CHKiRet(statsobj.ConstructFinalize(otlpStats));
-finalize_it:
 ENDmodInit
 
 BEGINmodExit
@@ -454,5 +450,6 @@ ENDisCompatibleWithFeature
 
 BEGINtryResume
     CODESTARTtryResume;
+    /* nothing to do; no paused state */
 ENDtryResume
 
