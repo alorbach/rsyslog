@@ -63,6 +63,15 @@ mysql -u root < ../plugins/ommysql/createDB.sql
 echo "grant all on Syslog.* to 'rsyslog'@'localhost';" | mysql -u root
 ```
 
+### OpenTelemetry Collector helper
+
+The `otelcol_start` helper in `diag.sh` downloads the `otelcol-contrib`
+distribution (version `0.103.1` by default) and caches it under
+`.dep_cache`. Override `OTELCOL_VERSION`, `OTELCOL_DIST`, or `OTELCOL_ARCH`
+before sourcing the test to point at a different release or architecture.
+When `/local_dep_cache` contains the matching archive, the helper reuses it
+instead of hitting GitHub.
+
 ### openSUSE tips
 
 Use the graphical `yast2` tool to adjust hostname and firewall rules. SSH

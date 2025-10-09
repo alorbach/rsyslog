@@ -159,6 +159,30 @@ skip_TSAN() {
         fi
 }
 
+rstb_python_cmd() {
+        local python_bin="${PYTHON:-}"
+        if [ -n "$python_bin" ]; then
+                if command -v "$python_bin" >/dev/null 2>&1; then
+                        printf '%s' "$python_bin"
+                        return 0
+                fi
+                python_bin=""
+        fi
+
+        if command -v python3 >/dev/null 2>&1; then
+                printf '%s' "$(command -v python3)"
+                return 0
+        fi
+
+        if command -v python >/dev/null 2>&1; then
+                printf '%s' "$(command -v python)"
+                return 0
+        fi
+
+        printf 'No suitable python interpreter found (tried $PYTHON, python3, python)\n' >&2
+        return 1
+}
+
 
 # ensure a dynamically loaded rsyslog plugin is available before continuing.
 # $1 - plugin name (without the leading im/om/mm prefix differentiation)
@@ -1814,8 +1838,11 @@ df -hP . | tail -1 | awk '{
 		dump_kafka_serverlog
 	fi
 
-	# Extended Exit handling for kafka / zookeeper instances
-	kafka_exit_handling "false"
+        # Extended Exit handling for otelcol instances
+        otelcol_exit_handling "false"
+
+        # Extended Exit handling for kafka / zookeeper instances
+        kafka_exit_handling "false"
 
 	# Ensure redis instance is stopped
 	if [ -n "$REDIS_DYN_DIR" ]; then
@@ -2038,8 +2065,11 @@ exit_test() {
 	rm -fr $RSYSLOG_DYNNAME*  # delete all of our dynamic files
 	unset TCPFLOOD_EXTRA_OPTS
 
-	# Extended Exit handling for kafka / zookeeper instances
-	kafka_exit_handling "true"
+        # Extended Exit handling for otelcol instances
+        otelcol_exit_handling "true"
+
+        # Extended Exit handling for kafka / zookeeper instances
+        kafka_exit_handling "true"
 
 	# Ensure redis is stopped
 	stop_redis
@@ -2130,8 +2160,24 @@ check_command_available() {
 # result for some preprocessing. Note that a later seqchk will sort
 # again, but that's not an issue.
 presort() {
-	rm -f $RSYSLOG_DYNNAME.presort
-	$RS_SORTCMD $RS_SORT_NUMERIC_OPT < ${RSYSLOG_OUT_LOG} > $RSYSLOG_DYNNAME.presort
+        rm -f $RSYSLOG_DYNNAME.presort
+        $RS_SORTCMD $RS_SORT_NUMERIC_OPT < ${RSYSLOG_OUT_LOG} > $RSYSLOG_DYNNAME.presort
+}
+
+otelcol_default_arch() {
+        local machine
+        machine=$(uname -m 2>/dev/null || echo unknown)
+        case "$machine" in
+                x86_64|amd64)
+                        printf 'linux_amd64'
+                        ;;
+                aarch64|arm64)
+                        printf 'linux_arm64'
+                        ;;
+                *)
+                        printf ''
+                        ;;
+        esac
 }
 
 
@@ -2146,8 +2192,31 @@ export RS_KAFKA_DOWNLOAD=kafka_2.13-2.8.0.tgz
 dep_kafka_url="https://www.rsyslog.com/files/download/rsyslog/$RS_KAFKA_DOWNLOAD"
 dep_kafka_cached_file=$dep_cache_dir/$RS_KAFKA_DOWNLOAD
 
+if [ -z "${OTELCOL_VERSION:-}" ]; then
+        export OTELCOL_VERSION="0.103.1"
+fi
+if [ -z "${OTELCOL_DIST:-}" ]; then
+        export OTELCOL_DIST="otelcol-contrib"
+fi
+if [ -z "${OTELCOL_ARCH:-}" ]; then
+        detected_otelcol_arch="$(otelcol_default_arch)"
+        if [ -n "$detected_otelcol_arch" ]; then
+                export OTELCOL_ARCH="$detected_otelcol_arch"
+        fi
+        unset detected_otelcol_arch
+fi
+if [ -n "${OTELCOL_ARCH:-}" ]; then
+        OTELCOL_TARBALL="${OTELCOL_DIST}_${OTELCOL_VERSION}_${OTELCOL_ARCH}.tar.gz"
+        OTELCOL_DOWNLOAD_URL="https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${OTELCOL_VERSION}/${OTELCOL_TARBALL}"
+        otelcol_cached_file="$dep_cache_dir/$OTELCOL_TARBALL"
+else
+        OTELCOL_TARBALL=""
+        OTELCOL_DOWNLOAD_URL=""
+        otelcol_cached_file=""
+fi
+
 if [ -z "$ES_DOWNLOAD" ]; then
-	export ES_DOWNLOAD=elasticsearch-7.14.1-linux-x86_64.tar.gz
+        export ES_DOWNLOAD=elasticsearch-7.14.1-linux-x86_64.tar.gz
 fi
 if [ -z "$ES_PORT" ]; then
 	export ES_PORT=19200
@@ -2297,35 +2366,515 @@ dep_work_dir=$(pwd)/.dep_wrk
 
 kafka_exit_handling() {
 
-	# Extended Exit handling for kafka / zookeeper instances
-	if [[ "$EXTRA_EXIT" == 'kafka' ]]; then
+        # Extended Exit handling for kafka / zookeeper instances
+        if [[ "$EXTRA_EXIT" == 'kafka' ]]; then
 
-		echo "stop kafka instance"
-		stop_kafka '.dep_wrk' $1
+                echo "stop kafka instance"
+                stop_kafka '.dep_wrk' $1
 
-		echo "stop zookeeper instance"
-		stop_zookeeper '.dep_wrk' $1
-	fi
+                echo "stop zookeeper instance"
+                stop_zookeeper '.dep_wrk' $1
+        fi
 
-	# Extended Exit handling for kafka / zookeeper instances
-	if [[ "$EXTRA_EXIT" == 'kafkamulti' ]]; then
-		echo "stop kafka instances"
-		stop_kafka '.dep_wrk1' $1
-		stop_kafka '.dep_wrk2' $1
-		stop_kafka '.dep_wrk3' $1
+        # Extended Exit handling for kafka / zookeeper instances
+        if [[ "$EXTRA_EXIT" == 'kafkamulti' ]]; then
+                echo "stop kafka instances"
+                stop_kafka '.dep_wrk1' $1
+                stop_kafka '.dep_wrk2' $1
+                stop_kafka '.dep_wrk3' $1
 
-		echo "stop zookeeper instances"
-		stop_zookeeper '.dep_wrk1' $1
-		stop_zookeeper '.dep_wrk2' $1
-		stop_zookeeper '.dep_wrk3' $1
-	fi
+                echo "stop zookeeper instances"
+                stop_zookeeper '.dep_wrk1' $1
+                stop_zookeeper '.dep_wrk2' $1
+                stop_zookeeper '.dep_wrk3' $1
+        fi
+}
+
+## OpenTelemetry Collector helpers
+## otelcol_start -- boot a local otelcol instance with the file exporter
+## otelcol_stop  -- terminate the collector (optionally cleaning artefacts)
+## otelcol_wait_for_logs -- wait until N JSONL records are flushed to disk
+otelcol_download() {
+        if [ -z "${OTELCOL_ARCH:-}" ] || [ -z "${OTELCOL_TARBALL:-}" ]; then
+                printf 'info: OpenTelemetry collector downloads are unsupported on %s\n' "$(uname -m 2>/dev/null || echo unknown)"
+                error_exit 77
+        fi
+
+        if [ ! -d "$dep_cache_dir" ]; then
+                mkdir -p "$dep_cache_dir"
+        fi
+
+        if [ -f "$otelcol_cached_file" ]; then
+                return 0
+        fi
+
+        if [ -f "/local_dep_cache/$OTELCOL_TARBALL" ]; then
+                printf 'OpenTelemetry collector: satisfying dependency %s from system cache.\n' "$OTELCOL_TARBALL"
+                cp "/local_dep_cache/$OTELCOL_TARBALL" "$otelcol_cached_file"
+                return 0
+        fi
+
+        if [ -z "${OTELCOL_DOWNLOAD_URL:-}" ]; then
+                printf 'info: OpenTelemetry collector download URL unavailable\n'
+                error_exit 77
+        fi
+
+        printf 'Downloading OpenTelemetry collector from %s\n' "$OTELCOL_DOWNLOAD_URL"
+        if ! wget -q "$OTELCOL_DOWNLOAD_URL" -O "$otelcol_cached_file"; then
+                rm -f "$otelcol_cached_file"
+                printf 'Skipping test - unable to download OpenTelemetry collector archive\n'
+                error_exit 77
+        fi
+}
+
+otelcol_prepare() {
+        otelcol_download
+
+        if [ ! -d "$dep_work_dir" ]; then
+                mkdir -p "$dep_work_dir"
+        fi
+
+        local work_dir="$dep_work_dir/otelcol"
+        local marker="$work_dir/.version"
+        local expected="${OTELCOL_DIST}:${OTELCOL_VERSION}:${OTELCOL_ARCH}"
+        local needs_unpack=0
+
+        if [ ! -x "$work_dir/$OTELCOL_DIST" ]; then
+                needs_unpack=1
+        elif [ ! -f "$marker" ]; then
+                needs_unpack=1
+        else
+                local current
+                current=$(cat "$marker" 2>/dev/null)
+                if [ "$current" != "$expected" ]; then
+                        needs_unpack=1
+                fi
+        fi
+
+        if [ $needs_unpack -ne 0 ]; then
+                rm -rf "$work_dir"
+                mkdir -p "$work_dir"
+                if ! tar -xzf "$otelcol_cached_file" -C "$work_dir"; then
+                        printf 'Failed to extract %s\n' "$otelcol_cached_file"
+                        error_exit 77
+                fi
+                printf '%s' "$expected" > "$marker"
+        fi
+
+        otelcol_binary="$work_dir/$OTELCOL_DIST"
+        if [ ! -x "$otelcol_binary" ]; then
+                printf 'Unable to locate OpenTelemetry collector binary at %s\n' "$otelcol_binary"
+                error_exit 77
+        fi
+}
+
+otelcol_start() {
+        check_command_available timeout
+        check_command_available curl
+        check_command_available nc
+
+        otelcol_stop "true"
+        otelcol_prepare
+
+        local work_dir="$RSYSLOG_DYNNAME/otelcol"
+        local pidfile="$work_dir/otelcol.pid"
+        local config="$work_dir/collector.yaml"
+        otelcol_logfile="$work_dir/collector.log"
+        otelcol_output_file="$work_dir/logs.jsonl"
+        otelcol_http_port="$(get_free_port)"
+        otelcol_health_port="$(get_free_port)"
+
+        mkdir -p "$work_dir"
+        : > "$otelcol_output_file"
+        : > "$otelcol_logfile"
+
+        cat > "$config" <<EOF
+extensions:
+  health_check:
+    endpoint: 127.0.0.1:${otelcol_health_port}
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 127.0.0.1:${otelcol_http_port}
+processors:
+  batch:
+    send_batch_size: 256
+    timeout: 1s
+exporters:
+  file:
+    path: "${otelcol_output_file}"
+    rotation:
+      max_megabytes: 5
+      max_backups: 1
+service:
+  extensions: [health_check]
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [file]
+EOF
+
+        printf '%s starting OpenTelemetry collector on HTTP port %s (health %s)\n' "$(tb_timestamp)" "$otelcol_http_port" "$otelcol_health_port"
+        timeout 30m "$otelcol_binary" --config "$config" >> "$otelcol_logfile" 2>&1 &
+        local collector_pid=$!
+        if [ -z "$collector_pid" ]; then
+                printf 'Failed to spawn OpenTelemetry collector\n'
+                otelcol_stop "false"
+                error_exit 1
+        fi
+
+        printf '%s\n' "$collector_pid" > "$pidfile"
+
+        if ! wait_for_tcp_service "127.0.0.1" "$otelcol_http_port" 30 "OpenTelemetry collector HTTP port"; then
+                printf '%s OpenTelemetry collector HTTP port %s failed readiness probe\n' "$(tb_timestamp)" "$otelcol_http_port"
+                cat "$otelcol_logfile" 2>/dev/null || true
+                otelcol_stop "false"
+                error_exit 1
+        fi
+        local health_url="http://127.0.0.1:${otelcol_health_port}"
+        local attempts=0
+        local health_ready=0
+        while [ $attempts -lt 150 ]; do
+                if curl --silent --fail --max-time 1 "$health_url" >/dev/null 2>&1; then
+                        health_ready=1
+                        break
+                fi
+
+                if ! kill -0 "$collector_pid" 2>/dev/null; then
+                        printf '%s OpenTelemetry collector exited during startup\n' "$(tb_timestamp)"
+                        cat "$otelcol_logfile" 2>/dev/null || true
+                        otelcol_stop "false"
+                        error_exit 1
+                fi
+
+                attempts=$((attempts + 1))
+                $TESTTOOL_DIR/msleep 200
+        done
+
+        if [ "$health_ready" -ne 1 ]; then
+                printf '%s OpenTelemetry collector failed health check at %s\n' "$(tb_timestamp)" "$health_url"
+                cat "$otelcol_logfile" 2>/dev/null || true
+                otelcol_stop "false"
+                error_exit 1
+        fi
+
+        local probe_url="http://127.0.0.1:${otelcol_http_port}/"
+        local probe_output
+        probe_output=$(curl --silent --show-error --max-time 2 --output /dev/null --write-out '%{http_code}' "$probe_url" 2>&1)
+        local probe_status=$?
+        if [ $probe_status -ne 0 ]; then
+                printf '%s OpenTelemetry collector HTTP probe failed for %s: %s\n' "$(tb_timestamp)" "$probe_url" "$probe_output"
+                cat "$otelcol_logfile" 2>/dev/null || true
+                otelcol_stop "false"
+                error_exit 1
+        fi
+
+        printf '%s OpenTelemetry collector HTTP probe returned %s from %s\n' "$(tb_timestamp)" "$probe_output" "$probe_url"
+
+        return 0
+}
+
+otelcol_stop() {
+        local cleanup_flag="$1"
+        local work_dir="$RSYSLOG_DYNNAME/otelcol"
+        local pidfile="$work_dir/otelcol.pid"
+        local logfile="$work_dir/collector.log"
+
+        if [ ! -d "$work_dir" ]; then
+                return 0
+        fi
+
+        if [ -f "$pidfile" ]; then
+                local pid
+                pid=$(cat "$pidfile" 2>/dev/null)
+                if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+                        printf '%s stopping OpenTelemetry collector (pid %s)\n' "$(tb_timestamp)" "$pid"
+                        kill "$pid" 2>/dev/null || true
+                        wait_pid_termination "$pid"
+                fi
+                rm -f "$pidfile"
+        fi
+
+        if [ "$cleanup_flag" = "true" ]; then
+                rm -rf "$work_dir"
+        else
+                printf '%s OpenTelemetry collector log retained at %s\n' "$(tb_timestamp)" "$logfile"
+        fi
+}
+
+otelcol_wait_for_logs() {
+        local expected="${1:-1}"
+        local timeout_seconds="${2:-30}"
+
+        if [ -z "${otelcol_output_file:-}" ]; then
+                printf 'otelcol_wait_for_logs: collector output file unknown\n'
+                error_exit 100
+        fi
+
+        local deadline=$(( $(date +%s) + timeout_seconds ))
+        local last_count=-1
+        while [ $(date +%s) -le $deadline ]; do
+                if [ -f "$otelcol_output_file" ]; then
+                        local count
+                        count=$(awk 'NF{c++} END{print c+0}' "$otelcol_output_file" 2>/dev/null)
+                        if [ "${count:-0}" -ne "$last_count" ]; then
+                                printf '%s otelcol_wait_for_logs: observed %s/%s records in %s\n' "$(tb_timestamp)" "${count:-0}" "$expected" "$otelcol_output_file"
+                                last_count="${count:-0}"
+                        fi
+                        if [ "${count:-0}" -ge "$expected" ]; then
+                                return 0
+                        fi
+                fi
+                $TESTTOOL_DIR/msleep 200
+        done
+
+        printf '%s Timeout waiting for %s OpenTelemetry log records in %s\n' "$(tb_timestamp)" "$expected" "$otelcol_output_file"
+        tail -n 20 "$otelcol_output_file" 2>/dev/null || true
+        if [ -n "${otelcol_logfile:-}" ] && [ -f "$otelcol_logfile" ]; then
+                printf '%s Last 20 lines of OpenTelemetry collector log (%s):\n' "$(tb_timestamp)" "$otelcol_logfile"
+                tail -n 20 "$otelcol_logfile" 2>/dev/null || true
+        fi
+        return 1
+}
+
+otelcol_expect_record() {
+        local expected_body="$1"
+        local expected_service="$2"
+
+        if [ -z "${otelcol_output_file:-}" ]; then
+                printf 'otelcol_expect_record: collector output file unknown\n'
+                return 1
+        fi
+
+        if [ ! -f "$otelcol_output_file" ]; then
+                printf '%s otelcol_expect_record failed: missing collector output %s\n' "$(tb_timestamp)" "$otelcol_output_file"
+                return 1
+        fi
+
+        local match_body
+        match_body=$(grep -F '"stringValue":"'"$expected_body"'"' "$otelcol_output_file" 2>/dev/null || true)
+        if [ -z "$match_body" ]; then
+                printf '%s otelcol_expect_record failed: body "%s" not found in %s\n' "$(tb_timestamp)" "$expected_body" "$otelcol_output_file"
+                tail -n 20 "$otelcol_output_file" 2>/dev/null || true
+                return 1
+        fi
+
+        if [ -n "$expected_service" ]; then
+                local service_match
+                service_match=$(grep -F '"service.name"' "$otelcol_output_file" 2>/dev/null | grep -F '"stringValue":"'"$expected_service"'"' || true)
+                if [ -z "$service_match" ]; then
+                        printf '%s otelcol_expect_record failed: service.name "%s" not found in %s\n' "$(tb_timestamp)" "$expected_service" "$otelcol_output_file"
+                        tail -n 20 "$otelcol_output_file" 2>/dev/null || true
+                        return 1
+                fi
+        fi
+
+        printf '%s otelcol_expect_record succeeded: body="%s" service.name="%s"\n' "$(tb_timestamp)" "$expected_body" "${expected_service:-}"
+        return 0
+}
+
+otlp_http_expect_sequence() {
+        local port="$1"
+        local expected_records_csv="$2"
+        local expected_batches_csv="$3"
+        local attempts="${4:-30}"
+        local path="${5:-/v1/logs}"
+
+        if [ -z "$port" ]; then
+                printf 'otlp_http_expect_sequence: missing port argument\n'
+                return 1
+        fi
+
+        local python_bin
+        if ! python_bin=$(rstb_python_cmd); then
+                printf 'otlp_http_expect_sequence: unable to locate python interpreter\n'
+                return 1
+        fi
+
+        local old_ifs="$IFS"
+        local -a expected_records_array=()
+        local -a expected_batches_array=()
+        IFS=','
+        read -r -a expected_records_array <<< "$expected_records_csv"
+        read -r -a expected_batches_array <<< "$expected_batches_csv"
+        IFS="$old_ifs"
+
+        local -a python_args
+        python_args=()
+        python_args+=("$port")
+        python_args+=("$path")
+        python_args+=("${#expected_batches_array[@]}")
+        local batch
+        for batch in "${expected_batches_array[@]}"; do
+                python_args+=("$batch")
+        done
+        python_args+=("--")
+        local record
+        for record in "${expected_records_array[@]}"; do
+                python_args+=("$record")
+        done
+
+        local last_output=""
+        local last_status=1
+        while [ "$attempts" -gt 0 ]; do
+                local tmp_out
+                tmp_out=$(mktemp "$RSYSLOG_DYNNAME.otlp_http.XXXXXX")
+                if "$python_bin" - "${python_args[@]}" >"$tmp_out" 2>&1 <<'PY'
+import json
+import sys
+import urllib.error
+import urllib.request
+
+port = int(sys.argv[1])
+raw_path = sys.argv[2]
+batch_count = int(sys.argv[3])
+
+cursor = 4
+batch_sizes = []
+for _ in range(batch_count):
+    try:
+        batch_sizes.append(int(sys.argv[cursor].strip()))
+    except ValueError:
+        print(f"invalid batch size: {sys.argv[cursor]!r}", file=sys.stderr)
+        sys.exit(2)
+    cursor += 1
+
+if cursor >= len(sys.argv) or sys.argv[cursor] != "--":
+    print("internal argument parsing error", file=sys.stderr)
+    sys.exit(2)
+
+expected_records = [value.strip() for value in sys.argv[cursor + 1:]]
+
+def normalise(candidate: str) -> str:
+    if not candidate:
+        return "/"
+    if not candidate.startswith("/"):
+        candidate = "/" + candidate
+    return candidate
+
+candidates = []
+
+def add_candidate(candidate: str) -> None:
+    candidate = normalise(candidate)
+    if candidate and candidate not in candidates:
+        candidates.append(candidate)
+
+if raw_path:
+    add_candidate(raw_path)
+    stripped = raw_path.rstrip("/")
+    if stripped:
+        add_candidate(stripped)
+        add_candidate(stripped + "/")
+else:
+    add_candidate("/")
+
+payloads = None
+used_path = None
+errors = []
+
+for candidate in candidates:
+    url = f"http://127.0.0.1:{port}{candidate}"
+    try:
+        with urllib.request.urlopen(url) as resp:
+            data = json.load(resp)
+    except urllib.error.URLError as exc:
+        errors.append(f"{candidate}: {exc}")
+        continue
+
+    used_path = candidate
+    payloads = data
+    if data:
+        break
+
+if payloads is None:
+    if errors:
+        print("http fetch failed: " + "; ".join(errors), file=sys.stderr)
+    else:
+        print("http fetch failed: no response", file=sys.stderr)
+    sys.exit(1)
+
+if len(payloads) != batch_count:
+    print(f"payload count {len(payloads)} != expected {batch_count}", file=sys.stderr)
+    print(json.dumps(payloads, indent=2), file=sys.stderr)
+    sys.exit(1)
+
+actual_batches = []
+actual_records = []
+
+for payload in payloads:
+    try:
+        document = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        print(f"payload decode failed: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    resource_logs = document.get("resourceLogs", [])
+    if not resource_logs:
+        actual_batches.append(0)
+        continue
+
+    scope_logs = resource_logs[0].get("scopeLogs", [])
+    if not scope_logs:
+        actual_batches.append(0)
+        continue
+
+    log_records = scope_logs[0].get("logRecords", [])
+    actual_batches.append(len(log_records))
+    for entry in log_records:
+        body = entry.get("body", {}).get("stringValue", "")
+        actual_records.append(body)
+
+if actual_batches != batch_sizes or actual_records != expected_records:
+    print(f"unexpected batches={actual_batches} records={actual_records}", file=sys.stderr)
+    print(json.dumps(payloads, indent=2), file=sys.stderr)
+    sys.exit(1)
+
+print("batches=" + ",".join(str(x) for x in actual_batches) + f" path={used_path}")
+print("records=" + "|".join(actual_records))
+PY
+                then
+                        local output
+                        output=$(cat "$tmp_out")
+                        rm -f "$tmp_out"
+                        local batches_line
+                        local records_line
+                        batches_line=$(printf '%s\n' "$output" | sed -n '1p')
+                        records_line=$(printf '%s\n' "$output" | sed -n '2p')
+                        printf '%s otlp_http_expect_sequence matched: %s %s\n' "$(tb_timestamp)" "$batches_line" "$records_line"
+                        return 0
+                else
+                        last_status=$?
+                        last_output=$(cat "$tmp_out")
+                        rm -f "$tmp_out"
+                        if [ -n "$last_output" ]; then
+                                printf '%s otlp_http_expect_sequence retry: %s\n' "$(tb_timestamp)" "$last_output"
+                        fi
+                        if [ "$last_status" -eq 2 ]; then
+                                break
+                        fi
+                fi
+                attempts=$((attempts - 1))
+                $TESTTOOL_DIR/msleep 200
+        done
+
+        printf '%s otlp_http_expect_sequence failed: %s\n' "$(tb_timestamp)" "$last_output"
+        return 1
+}
+
+otelcol_exit_handling() {
+        local cleanup_flag="$1"
+        if [ "$EXTRA_EXIT" = "otelcol" ]; then
+                otelcol_stop "$cleanup_flag"
+        fi
 }
 
 download_kafka() {
-	if [ ! -d $dep_cache_dir ]; then
-		echo "Creating dependency cache dir $dep_cache_dir"
-		mkdir $dep_cache_dir
-	fi
+        if [ ! -d $dep_cache_dir ]; then
+                echo "Creating dependency cache dir $dep_cache_dir"
+                mkdir $dep_cache_dir
+        fi
 	if [ ! -f $dep_zk_cached_file ]; then
 		if [ -f /local_dep_cache/$RS_ZK_DOWNLOAD ]; then
 			printf 'Zookeeper: satisfying dependency %s from system cache.\n' "$RS_ZK_DOWNLOAD"
