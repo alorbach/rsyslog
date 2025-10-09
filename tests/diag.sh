@@ -1814,8 +1814,11 @@ df -hP . | tail -1 | awk '{
 		dump_kafka_serverlog
 	fi
 
-	# Extended Exit handling for kafka / zookeeper instances
-	kafka_exit_handling "false"
+        # Extended Exit handling for otelcol instances
+        otelcol_exit_handling "false"
+
+        # Extended Exit handling for kafka / zookeeper instances
+        kafka_exit_handling "false"
 
 	# Ensure redis instance is stopped
 	if [ -n "$REDIS_DYN_DIR" ]; then
@@ -2038,8 +2041,11 @@ exit_test() {
 	rm -fr $RSYSLOG_DYNNAME*  # delete all of our dynamic files
 	unset TCPFLOOD_EXTRA_OPTS
 
-	# Extended Exit handling for kafka / zookeeper instances
-	kafka_exit_handling "true"
+        # Extended Exit handling for otelcol instances
+        otelcol_exit_handling "true"
+
+        # Extended Exit handling for kafka / zookeeper instances
+        kafka_exit_handling "true"
 
 	# Ensure redis is stopped
 	stop_redis
@@ -2130,8 +2136,24 @@ check_command_available() {
 # result for some preprocessing. Note that a later seqchk will sort
 # again, but that's not an issue.
 presort() {
-	rm -f $RSYSLOG_DYNNAME.presort
-	$RS_SORTCMD $RS_SORT_NUMERIC_OPT < ${RSYSLOG_OUT_LOG} > $RSYSLOG_DYNNAME.presort
+        rm -f $RSYSLOG_DYNNAME.presort
+        $RS_SORTCMD $RS_SORT_NUMERIC_OPT < ${RSYSLOG_OUT_LOG} > $RSYSLOG_DYNNAME.presort
+}
+
+otelcol_default_arch() {
+        local machine
+        machine=$(uname -m 2>/dev/null || echo unknown)
+        case "$machine" in
+                x86_64|amd64)
+                        printf 'linux_amd64'
+                        ;;
+                aarch64|arm64)
+                        printf 'linux_arm64'
+                        ;;
+                *)
+                        printf ''
+                        ;;
+        esac
 }
 
 
@@ -2146,8 +2168,31 @@ export RS_KAFKA_DOWNLOAD=kafka_2.13-2.8.0.tgz
 dep_kafka_url="https://www.rsyslog.com/files/download/rsyslog/$RS_KAFKA_DOWNLOAD"
 dep_kafka_cached_file=$dep_cache_dir/$RS_KAFKA_DOWNLOAD
 
+if [ -z "${OTELCOL_VERSION:-}" ]; then
+        export OTELCOL_VERSION="0.103.1"
+fi
+if [ -z "${OTELCOL_DIST:-}" ]; then
+        export OTELCOL_DIST="otelcol-contrib"
+fi
+if [ -z "${OTELCOL_ARCH:-}" ]; then
+        detected_otelcol_arch="$(otelcol_default_arch)"
+        if [ -n "$detected_otelcol_arch" ]; then
+                export OTELCOL_ARCH="$detected_otelcol_arch"
+        fi
+        unset detected_otelcol_arch
+fi
+if [ -n "${OTELCOL_ARCH:-}" ]; then
+        OTELCOL_TARBALL="${OTELCOL_DIST}_${OTELCOL_VERSION}_${OTELCOL_ARCH}.tar.gz"
+        OTELCOL_DOWNLOAD_URL="https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${OTELCOL_VERSION}/${OTELCOL_TARBALL}"
+        otelcol_cached_file="$dep_cache_dir/$OTELCOL_TARBALL"
+else
+        OTELCOL_TARBALL=""
+        OTELCOL_DOWNLOAD_URL=""
+        otelcol_cached_file=""
+fi
+
 if [ -z "$ES_DOWNLOAD" ]; then
-	export ES_DOWNLOAD=elasticsearch-7.14.1-linux-x86_64.tar.gz
+        export ES_DOWNLOAD=elasticsearch-7.14.1-linux-x86_64.tar.gz
 fi
 if [ -z "$ES_PORT" ]; then
 	export ES_PORT=19200
@@ -2297,35 +2342,255 @@ dep_work_dir=$(pwd)/.dep_wrk
 
 kafka_exit_handling() {
 
-	# Extended Exit handling for kafka / zookeeper instances
-	if [[ "$EXTRA_EXIT" == 'kafka' ]]; then
+        # Extended Exit handling for kafka / zookeeper instances
+        if [[ "$EXTRA_EXIT" == 'kafka' ]]; then
 
-		echo "stop kafka instance"
-		stop_kafka '.dep_wrk' $1
+                echo "stop kafka instance"
+                stop_kafka '.dep_wrk' $1
 
-		echo "stop zookeeper instance"
-		stop_zookeeper '.dep_wrk' $1
-	fi
+                echo "stop zookeeper instance"
+                stop_zookeeper '.dep_wrk' $1
+        fi
 
-	# Extended Exit handling for kafka / zookeeper instances
-	if [[ "$EXTRA_EXIT" == 'kafkamulti' ]]; then
-		echo "stop kafka instances"
-		stop_kafka '.dep_wrk1' $1
-		stop_kafka '.dep_wrk2' $1
-		stop_kafka '.dep_wrk3' $1
+        # Extended Exit handling for kafka / zookeeper instances
+        if [[ "$EXTRA_EXIT" == 'kafkamulti' ]]; then
+                echo "stop kafka instances"
+                stop_kafka '.dep_wrk1' $1
+                stop_kafka '.dep_wrk2' $1
+                stop_kafka '.dep_wrk3' $1
 
-		echo "stop zookeeper instances"
-		stop_zookeeper '.dep_wrk1' $1
-		stop_zookeeper '.dep_wrk2' $1
-		stop_zookeeper '.dep_wrk3' $1
-	fi
+                echo "stop zookeeper instances"
+                stop_zookeeper '.dep_wrk1' $1
+                stop_zookeeper '.dep_wrk2' $1
+                stop_zookeeper '.dep_wrk3' $1
+        fi
+}
+
+## OpenTelemetry Collector helpers
+## otelcol_start -- boot a local otelcol instance with the file exporter
+## otelcol_stop  -- terminate the collector (optionally cleaning artefacts)
+## otelcol_wait_for_logs -- wait until N JSONL records are flushed to disk
+otelcol_download() {
+        if [ -z "${OTELCOL_ARCH:-}" ] || [ -z "${OTELCOL_TARBALL:-}" ]; then
+                printf 'info: OpenTelemetry collector downloads are unsupported on %s\n' "$(uname -m 2>/dev/null || echo unknown)"
+                error_exit 77
+        fi
+
+        if [ ! -d "$dep_cache_dir" ]; then
+                mkdir -p "$dep_cache_dir"
+        fi
+
+        if [ -f "$otelcol_cached_file" ]; then
+                return 0
+        fi
+
+        if [ -f "/local_dep_cache/$OTELCOL_TARBALL" ]; then
+                printf 'OpenTelemetry collector: satisfying dependency %s from system cache.\n' "$OTELCOL_TARBALL"
+                cp "/local_dep_cache/$OTELCOL_TARBALL" "$otelcol_cached_file"
+                return 0
+        fi
+
+        if [ -z "${OTELCOL_DOWNLOAD_URL:-}" ]; then
+                printf 'info: OpenTelemetry collector download URL unavailable\n'
+                error_exit 77
+        fi
+
+        printf 'Downloading OpenTelemetry collector from %s\n' "$OTELCOL_DOWNLOAD_URL"
+        if ! wget -q "$OTELCOL_DOWNLOAD_URL" -O "$otelcol_cached_file"; then
+                rm -f "$otelcol_cached_file"
+                printf 'Skipping test - unable to download OpenTelemetry collector archive\n'
+                error_exit 77
+        fi
+}
+
+otelcol_prepare() {
+        otelcol_download
+
+        if [ ! -d "$dep_work_dir" ]; then
+                mkdir -p "$dep_work_dir"
+        fi
+
+        local work_dir="$dep_work_dir/otelcol"
+        local marker="$work_dir/.version"
+        local expected="${OTELCOL_DIST}:${OTELCOL_VERSION}:${OTELCOL_ARCH}"
+        local needs_unpack=0
+
+        if [ ! -x "$work_dir/$OTELCOL_DIST" ]; then
+                needs_unpack=1
+        elif [ ! -f "$marker" ]; then
+                needs_unpack=1
+        else
+                local current
+                current=$(cat "$marker" 2>/dev/null)
+                if [ "$current" != "$expected" ]; then
+                        needs_unpack=1
+                fi
+        fi
+
+        if [ $needs_unpack -ne 0 ]; then
+                rm -rf "$work_dir"
+                mkdir -p "$work_dir"
+                if ! tar -xzf "$otelcol_cached_file" -C "$work_dir"; then
+                        printf 'Failed to extract %s\n' "$otelcol_cached_file"
+                        error_exit 77
+                fi
+                printf '%s' "$expected" > "$marker"
+        fi
+
+        otelcol_binary="$work_dir/$OTELCOL_DIST"
+        if [ ! -x "$otelcol_binary" ]; then
+                printf 'Unable to locate OpenTelemetry collector binary at %s\n' "$otelcol_binary"
+                error_exit 77
+        fi
+}
+
+otelcol_start() {
+        check_command_available timeout
+        check_command_available curl
+
+        otelcol_stop "true"
+        otelcol_prepare
+
+        local work_dir="$RSYSLOG_DYNNAME/otelcol"
+        local pidfile="$work_dir/otelcol.pid"
+        local config="$work_dir/collector.yaml"
+        otelcol_logfile="$work_dir/collector.log"
+        otelcol_output_file="$work_dir/logs.jsonl"
+        otelcol_http_port="$(get_free_port)"
+        otelcol_health_port="$(get_free_port)"
+
+        mkdir -p "$work_dir"
+        : > "$otelcol_output_file"
+        : > "$otelcol_logfile"
+
+        cat > "$config" <<EOF
+extensions:
+  health_check:
+    endpoint: 127.0.0.1:${otelcol_health_port}
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 127.0.0.1:${otelcol_http_port}
+processors:
+  batch:
+    send_batch_size: 256
+    timeout: 1s
+exporters:
+  file:
+    path: "${otelcol_output_file}"
+    rotation:
+      max_megabytes: 5
+      max_backups: 1
+service:
+  extensions: [health_check]
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [file]
+EOF
+
+        printf '%s starting OpenTelemetry collector on HTTP port %s (health %s)\n' "$(tb_timestamp)" "$otelcol_http_port" "$otelcol_health_port"
+        timeout 30m "$otelcol_binary" --config "$config" >> "$otelcol_logfile" 2>&1 &
+        local collector_pid=$!
+        if [ -z "$collector_pid" ]; then
+                printf 'Failed to spawn OpenTelemetry collector\n'
+                otelcol_stop "false"
+                error_exit 1
+        fi
+
+        printf '%s\n' "$collector_pid" > "$pidfile"
+        local health_url="http://127.0.0.1:${otelcol_health_port}"
+        local attempts=0
+        while [ $attempts -lt 150 ]; do
+                if curl --silent --fail --max-time 1 "$health_url" >/dev/null 2>&1; then
+                        return 0
+                fi
+
+                if ! kill -0 "$collector_pid" 2>/dev/null; then
+                        printf '%s OpenTelemetry collector exited during startup\n' "$(tb_timestamp)"
+                        cat "$otelcol_logfile" 2>/dev/null || true
+                        otelcol_stop "false"
+                        error_exit 1
+                fi
+
+                attempts=$((attempts + 1))
+                $TESTTOOL_DIR/msleep 200
+        done
+
+        printf '%s OpenTelemetry collector failed health check at %s\n' "$(tb_timestamp)" "$health_url"
+        cat "$otelcol_logfile" 2>/dev/null || true
+        otelcol_stop "false"
+        error_exit 1
+}
+
+otelcol_stop() {
+        local cleanup_flag="$1"
+        local work_dir="$RSYSLOG_DYNNAME/otelcol"
+        local pidfile="$work_dir/otelcol.pid"
+        local logfile="$work_dir/collector.log"
+
+        if [ ! -d "$work_dir" ]; then
+                return 0
+        fi
+
+        if [ -f "$pidfile" ]; then
+                local pid
+                pid=$(cat "$pidfile" 2>/dev/null)
+                if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+                        printf '%s stopping OpenTelemetry collector (pid %s)\n' "$(tb_timestamp)" "$pid"
+                        kill "$pid" 2>/dev/null || true
+                        wait_pid_termination "$pid"
+                fi
+                rm -f "$pidfile"
+        fi
+
+        if [ "$cleanup_flag" = "true" ]; then
+                rm -rf "$work_dir"
+        else
+                printf '%s OpenTelemetry collector log retained at %s\n' "$(tb_timestamp)" "$logfile"
+        fi
+}
+
+otelcol_wait_for_logs() {
+        local expected="${1:-1}"
+        local timeout_seconds="${2:-30}"
+
+        if [ -z "${otelcol_output_file:-}" ]; then
+                printf 'otelcol_wait_for_logs: collector output file unknown\n'
+                error_exit 100
+        fi
+
+        local deadline=$(( $(date +%s) + timeout_seconds ))
+        while [ $(date +%s) -le $deadline ]; do
+                if [ -f "$otelcol_output_file" ]; then
+                        local count
+                        count=$(awk 'NF{c++} END{print c+0}' "$otelcol_output_file" 2>/dev/null)
+                        if [ "${count:-0}" -ge "$expected" ]; then
+                                return 0
+                        fi
+                fi
+                $TESTTOOL_DIR/msleep 200
+        done
+
+        printf '%s Timeout waiting for %s OpenTelemetry log records in %s\n' "$(tb_timestamp)" "$expected" "$otelcol_output_file"
+        tail -n 20 "$otelcol_output_file" 2>/dev/null || true
+        return 1
+}
+
+otelcol_exit_handling() {
+        local cleanup_flag="$1"
+        if [ "$EXTRA_EXIT" = "otelcol" ]; then
+                otelcol_stop "$cleanup_flag"
+        fi
 }
 
 download_kafka() {
-	if [ ! -d $dep_cache_dir ]; then
-		echo "Creating dependency cache dir $dep_cache_dir"
-		mkdir $dep_cache_dir
-	fi
+        if [ ! -d $dep_cache_dir ]; then
+                echo "Creating dependency cache dir $dep_cache_dir"
+                mkdir $dep_cache_dir
+        fi
 	if [ ! -f $dep_zk_cached_file ]; then
 		if [ -f /local_dep_cache/$RS_ZK_DOWNLOAD ]; then
 			printf 'Zookeeper: satisfying dependency %s from system cache.\n' "$RS_ZK_DOWNLOAD"
