@@ -181,6 +181,10 @@ ENDdbgPrintInstInfo
 
 static inline rsRetVal otlp_flush_batch(wrkrInstanceData_t *const wi);
 
+BEGINbeginTransaction
+    CODESTARTbeginTransaction;
+ENDbeginTransaction
+
 BEGINendTransaction
     CODESTARTendTransaction;
     (void) otlp_flush_batch((wrkrInstanceData_t *)pWrkrData);
@@ -438,6 +442,7 @@ BEGINqueryEtryPt
     CODESTARTqueryEtryPt;
     CODEqueryEtryPt_STD_OMOD_QUERIES;
     CODEqueryEtryPt_STD_OMOD8_QUERIES;
+    CODEqueryEtryPt_TXIF_OMOD_QUERIES;
     CODEqueryEtryPt_STD_CONF2_CNFNAME_QUERIES;
     CODEqueryEtryPt_STD_CONF2_QUERIES;
     CODEqueryEtryPt_STD_CONF2_OMOD_QUERIES;
