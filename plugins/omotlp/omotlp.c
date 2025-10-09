@@ -27,6 +27,7 @@
 #include "errmsg.h"
 
 #include "otlp_json.h"
+#include "omotlp_http.h"
 
 MODULE_TYPE_OUTPUT;
 MODULE_TYPE_NOKEEP;
@@ -40,11 +41,13 @@ typedef struct _instanceData {
     uchar *path;
     uchar *protocol;
     uchar *bodyTemplateName;
-    int warnedNotImplemented;
+    uchar *url;
+    long requestTimeoutMs;
 } instanceData;
 
 typedef struct wrkrInstanceData {
     instanceData *pData;
+    omotlp_http_client_t *http_client;
 } wrkrInstanceData_t;
 
 struct modConfData_s {
@@ -203,6 +206,61 @@ finalize_it:
     RETiRet;
 }
 
+static rsRetVal buildEffectiveUrl(instanceData *pData) {
+    const char *endpoint = (const char *)pData->endpoint;
+    const char *path = (const char *)pData->path;
+    size_t endpoint_len;
+    size_t path_len;
+    size_t total;
+    int endpoint_has_slash;
+    int path_has_slash;
+    char *buffer = NULL;
+    size_t cursor = 0;
+
+    DEFiRet;
+
+    if (endpoint == NULL) {
+        ABORT_FINALIZE(RS_RET_PARAM_ERROR);
+    }
+
+    endpoint_len = strlen(endpoint);
+    path_len = (path != NULL) ? strlen(path) : 0u;
+    endpoint_has_slash = (endpoint_len > 0 && endpoint[endpoint_len - 1] == '/');
+    path_has_slash = (path_len > 0 && path[0] == '/');
+
+    total = endpoint_len + path_len + 2u;
+    buffer = malloc(total);
+    if (buffer == NULL) {
+        ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+    }
+
+    memcpy(buffer, endpoint, endpoint_len);
+    cursor = endpoint_len;
+
+    if (path_len > 0) {
+        if (!endpoint_has_slash && !path_has_slash) {
+            buffer[cursor++] = '/';
+        } else if (endpoint_has_slash && path_has_slash) {
+            ++path;
+            --path_len;
+        }
+
+        memcpy(buffer + cursor, path, path_len);
+        cursor += path_len;
+    }
+
+    buffer[cursor] = '\0';
+
+    free(pData->url);
+    pData->url = (uchar *)buffer;
+
+finalize_it:
+    if (iRet != RS_RET_OK && buffer != NULL) {
+        free(buffer);
+    }
+    RETiRet;
+}
+
 typedef struct severity_mapping_s {
     uint32_t number;
     const char *text;
@@ -339,7 +397,8 @@ static inline void setInstParamDefaults(instanceData *pData) {
     pData->path = NULL;
     pData->protocol = NULL;
     pData->bodyTemplateName = NULL;
-    pData->warnedNotImplemented = 0;
+    pData->url = NULL;
+    pData->requestTimeoutMs = 10000;
 }
 
 BEGINbeginCnfLoad
@@ -371,7 +430,30 @@ BEGINcreateInstance
 ENDcreateInstance
 
 BEGINcreateWrkrInstance
+    omotlp_http_client_config_t http_cfg;
     CODESTARTcreateWrkrInstance;
+    pWrkrData->pData = pData;
+    pWrkrData->http_client = NULL;
+
+    if (pData == NULL || pData->url == NULL) {
+        iRet = RS_RET_INTERNAL_ERROR;
+        goto finalize_it;
+    }
+
+    http_cfg.url = (const char *)pData->url;
+    http_cfg.timeout_ms = pData->requestTimeoutMs;
+    http_cfg.user_agent = "rsyslog-omotlp/" VERSION;
+    iRet = omotlp_http_client_create(&http_cfg, &pWrkrData->http_client);
+    if (iRet != RS_RET_OK) {
+        goto finalize_it;
+    }
+
+finalize_it:
+    if (iRet != RS_RET_OK) {
+        omotlp_http_client_destroy(&pWrkrData->http_client);
+        free(pWrkrData);
+        pWrkrData = NULL;
+    }
 ENDcreateWrkrInstance
 
 BEGINfreeInstance
@@ -381,11 +463,15 @@ BEGINfreeInstance
         free(pData->path);
         free(pData->protocol);
         free(pData->bodyTemplateName);
+        free(pData->url);
     }
 ENDfreeInstance
 
 BEGINfreeWrkrInstance
     CODESTARTfreeWrkrInstance;
+    if (pWrkrData != NULL) {
+        omotlp_http_client_destroy(&pWrkrData->http_client);
+    }
 ENDfreeWrkrInstance
 
 BEGINdbgPrintInstInfo
@@ -395,6 +481,8 @@ BEGINdbgPrintInstInfo
     dbgprintf("\tpath='%s'\n", pData->path ? (char *)pData->path : "(default)");
     dbgprintf("\tprotocol='%s'\n", pData->protocol ? (char *)pData->protocol : "(default)");
     dbgprintf("\ttemplate='%s'\n", pData->bodyTemplateName ? (char *)pData->bodyTemplateName : "RSYSLOG_FileFormat");
+    dbgprintf("\turl='%s'\n", pData->url ? (char *)pData->url : "(unresolved)");
+    dbgprintf("\ttimeout.ms=%ld\n", pData->requestTimeoutMs);
 ENDdbgPrintInstInfo
 
 BEGINtryResume
@@ -456,6 +544,7 @@ BEGINnewActInst
 
     lowercaseInPlace(pData->protocol);
     CHKiRet(validateProtocol(pData));
+    CHKiRet(buildEffectiveUrl(pData));
 
     CODE_STD_STRING_REQUESTnewActInst(2);
     tplToUse = (uchar *)strdup((char *)pData->bodyTemplateName);
@@ -474,9 +563,14 @@ BEGINdoAction
     char *body = NULL;
     smsg_t *msg = NULL;
     omotlp_log_record_t record;
+    size_t payload_len = 0u;
     CODESTARTdoAction;
 
     if (pWrkrData->pData == NULL) {
+        ABORT_FINALIZE(RS_RET_INTERNAL_ERROR);
+    }
+
+    if (pWrkrData->http_client == NULL) {
         ABORT_FINALIZE(RS_RET_INTERNAL_ERROR);
     }
 
@@ -495,16 +589,15 @@ BEGINdoAction
     CHKiRet(populateLogRecord(msg, body, &record));
     CHKiRet(omotlp_json_build_export(&record, 1, &payload));
 
+    if (payload != NULL) {
+        payload_len = strlen(payload);
+    }
+
     if (Debug && payload != NULL) {
         dbgprintf("omotlp: preview OTLP/HTTP payload: %s\n", payload);
     }
 
-    if (!pWrkrData->pData->warnedNotImplemented) {
-        LogError(0, RS_RET_NOT_IMPLEMENTED, "omotlp: transport layer not yet implemented; dropping after JSON preview");
-        pWrkrData->pData->warnedNotImplemented = 1;
-    }
-
-    ABORT_FINALIZE(RS_RET_NOT_IMPLEMENTED);
+    CHKiRet(omotlp_http_client_post(pWrkrData->http_client, payload, payload_len));
 finalize_it:
     free(payload);
 ENDdoAction
@@ -512,6 +605,7 @@ ENDdoAction
 NO_LEGACY_CONF_parseSelectorAct /* clang-format off */
 BEGINmodExit
     CODESTARTmodExit;
+    omotlp_http_global_cleanup();
     objRelease(datetime, CORE_COMPONENT);
 ENDmodExit
 
@@ -529,5 +623,6 @@ ENDqueryEtryPt /* clang-format on */
 
 BEGINmodInit()
     CODESTARTmodInit;
+    CHKiRet(omotlp_http_global_init());
     CHKiRet(objUse(datetime, CORE_COMPONENT));
 ENDmodInit

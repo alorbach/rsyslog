@@ -3,4 +3,4 @@ maturity_level: fresh
 primary_contact: "GitHub Discussions & Issues <https://github.com/rsyslog/rsyslog/discussions>"
 last_reviewed: 2024-04-09
 notes:
-  - "Phase 1 scaffolding only; transports are still under active development."
+  - "Phase 1 HTTP/JSON transport streams events immediately; batching, retries, and gRPC remain under development."

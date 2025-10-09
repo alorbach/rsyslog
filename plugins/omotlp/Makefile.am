@@ -2,10 +2,12 @@ pkglib_LTLIBRARIES = omotlp.la
 
 omotlp_la_SOURCES = \
        omotlp.c \
-       otlp_json.c
+       otlp_json.c \
+       omotlp_http.c
 
 noinst_HEADERS = \
-       otlp_json.h
+       otlp_json.h \
+       omotlp_http.h
 
 omotlp_la_CPPFLAGS = \
        -I$(srcdir) \
