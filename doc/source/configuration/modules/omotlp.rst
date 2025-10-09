@@ -6,8 +6,9 @@
 
 .. summary-start
 
-Initial scaffolding for the omotlp output plugin, which will export rsyslog
-messages to OpenTelemetry collectors once transport support is implemented.
+Initial scaffolding for the omotlp output plugin, which currently renders
+preview OpenTelemetry payloads but still lacks a transport layer to deliver
+them to collectors.
 
 .. summary-end
 
@@ -26,7 +27,9 @@ Overview
 ``omotlp`` prepares rsyslog for native :abbr:`OTLP (OpenTelemetry Log Protocol)`
 exports. The module introduces configuration hooks for the default OTLP HTTP
 endpoint, request path, protocol selection, and body template that will shape
-future transport integrations.
+future transport integrations. The current build maps rsyslog metadata into an
+OTLP JSON document for debugging, but it still returns ``not yet implemented``
+so production pipelines remain unaffected.
 
 Availability
 ------------
@@ -83,13 +86,21 @@ which keeps existing pipelines safe while development continues.
      template="RSYSLOG_SyslogProtocol23Format"
    )
 
+Implementation status
+---------------------
+
+The module is being implemented in phases. The checklist below tracks the
+original build plan and the current status of each item:
+
+* ✅ Configuration plumbing, environment-variable defaults, and JSON payload
+  assembly helpers are in place.
+* ⏳ HTTP/JSON transport, batching, retries, and associated shell tests are
+  still pending.
+* ⏳ Optional gRPC façade and HTTP/protobuf variants remain unimplemented.
+
 Roadmap
 -------
 
-The following milestones remain before ``omotlp`` becomes production ready:
-
-* Serialize batches to the OTLP JSON structure with ``libfastjson``.
-* Stream payloads to OTLP/HTTP collectors with ``libcurl`` including retry
-  handling, TLS, and optional gzip compression.
-* Add shell tests that validate happy-path exports and retry decisions.
-* Document the gRPC façade and HTTP protobuf options introduced in later phases.
+The remaining work mirrors the outstanding checklist items above. Upcoming
+patches will focus on the transport stack, batching policies, retry handling,
+and the optional gRPC integration.
