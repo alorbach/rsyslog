@@ -36,10 +36,10 @@ support.
 Availability
 ------------
 
-The module is built when ``--enable-omotlp`` is left at its default ``auto``
-value and the configure script detects both ``libcurl`` and ``libfastjson``.
-Explicitly request the module with ``--enable-omotlp=yes`` or disable it with
-``--enable-omotlp=no``. The HTTP transport depends on ``libcurl`` at runtime.
+The module is built only when ``./configure`` is invoked with
+``--enable-omotlp=yes`` and both ``libcurl`` and ``libfastjson`` are present.
+The default ``--enable-omotlp`` setting is ``no``, so you must opt in
+explicitly. The HTTP transport depends on ``libcurl`` at runtime.
 
 Configuration
 -------------

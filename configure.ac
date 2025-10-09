@@ -2519,16 +2519,21 @@ fi
 AM_CONDITIONAL(ENABLE_OMHDFS, test x$enable_omhdfs = xyes)
 
 AC_ARG_ENABLE(omotlp,
-        [AS_HELP_STRING([--enable-omotlp],[Enable OpenTelemetry output module @<:@default=auto@:>@])],
+        [AS_HELP_STRING([--enable-omotlp],[Enable OpenTelemetry output module @<:@default=no@:>@])],
         [case "${enableval}" in
          yes) enable_omotlp="yes" ;;
           no) enable_omotlp="no" ;;
-         auto) enable_omotlp="auto" ;;
             *) AC_MSG_ERROR(bad value ${enableval} for --enable-omotlp) ;;
          esac],
-        [enable_omotlp=auto]
+        [enable_omotlp=no]
 )
-RS_ENABLE_OMOTLP
+OMOTLP_HTTP_CFLAGS=""
+OMOTLP_HTTP_LIBS=""
+if test "x$enable_omotlp" = "xyes"; then
+        PKG_CHECK_MODULES([OMOTLP_HTTP], [libcurl libfastjson])
+fi
+AC_SUBST([OMOTLP_HTTP_CFLAGS])
+AC_SUBST([OMOTLP_HTTP_LIBS])
 AM_CONDITIONAL(ENABLE_OMOTLP, test x$enable_omotlp = xyes)
 
 # support for kafka input output
