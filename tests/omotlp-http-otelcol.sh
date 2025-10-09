@@ -38,64 +38,6 @@ wait_shutdown
 
 otelcol_wait_for_logs 1 30 || error_exit 1
 
-python3 - "$otelcol_output_file" <<'PY'
-import json
-import sys
-from pathlib import Path
+otelcol_expect_record "otelcol smoke test" "rsyslog" || error_exit 1
 
-path = Path(sys.argv[1])
-if not path.exists():
-    sys.stderr.write(f"missing collector output {path}\n")
-    sys.exit(1)
-
-documents = []
-with path.open("r", encoding="utf-8") as handle:
-    for line in handle:
-        line = line.strip()
-        if not line:
-            continue
-        documents.append(json.loads(line))
-
-if len(documents) != 1:
-    sys.stderr.write(f"expected 1 payload, got {len(documents)}\n")
-    sys.exit(1)
-
-payload = documents[0]
-resource_logs = payload.get("resourceLogs", [])
-if len(resource_logs) != 1:
-    sys.stderr.write(f"expected 1 resourceLogs entry, got {len(resource_logs)}\n")
-    sys.exit(1)
-
-scope_logs = resource_logs[0].get("scopeLogs", [])
-if len(scope_logs) != 1:
-    sys.stderr.write(f"expected 1 scopeLogs entry, got {len(scope_logs)}\n")
-    sys.exit(1)
-
-log_records = scope_logs[0].get("logRecords", [])
-if len(log_records) != 1:
-    sys.stderr.write(f"expected 1 logRecord, got {len(log_records)}\n")
-    sys.exit(1)
-
-record = log_records[0]
-body = record.get("body", {}).get("stringValue")
-if body != "otelcol smoke test":
-    sys.stderr.write(f"unexpected body {body!r}\n")
-    sys.exit(1)
-
-resource = resource_logs[0].get("resource", {})
-attributes = {}
-for item in resource.get("attributes", []):
-    key = item.get("key")
-    value = item.get("value", {})
-    if not isinstance(value, dict):
-        continue
-    if "stringValue" in value:
-        attributes[key] = value["stringValue"]
-
-if attributes.get("service.name") != "rsyslog":
-    sys.stderr.write(f"service.name mismatch: {attributes.get('service.name')!r}\n")
-    sys.exit(1)
-PY
-ret=$?
-
-exit_test $ret
+exit_test 0

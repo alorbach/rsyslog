@@ -159,6 +159,30 @@ skip_TSAN() {
         fi
 }
 
+rstb_python_cmd() {
+        local python_bin="${PYTHON:-}"
+        if [ -n "$python_bin" ]; then
+                if command -v "$python_bin" >/dev/null 2>&1; then
+                        printf '%s' "$python_bin"
+                        return 0
+                fi
+                python_bin=""
+        fi
+
+        if command -v python3 >/dev/null 2>&1; then
+                printf '%s' "$(command -v python3)"
+                return 0
+        fi
+
+        if command -v python >/dev/null 2>&1; then
+                printf '%s' "$(command -v python)"
+                return 0
+        fi
+
+        printf 'No suitable python interpreter found (tried $PYTHON, python3, python)\n' >&2
+        return 1
+}
+
 
 # ensure a dynamically loaded rsyslog plugin is available before continuing.
 # $1 - plugin name (without the leading im/om/mm prefix differentiation)
@@ -2563,10 +2587,15 @@ otelcol_wait_for_logs() {
         fi
 
         local deadline=$(( $(date +%s) + timeout_seconds ))
+        local last_count=-1
         while [ $(date +%s) -le $deadline ]; do
                 if [ -f "$otelcol_output_file" ]; then
                         local count
                         count=$(awk 'NF{c++} END{print c+0}' "$otelcol_output_file" 2>/dev/null)
+                        if [ "${count:-0}" -ne "$last_count" ]; then
+                                printf '%s otelcol_wait_for_logs: observed %s/%s records in %s\n' "$(tb_timestamp)" "${count:-0}" "$expected" "$otelcol_output_file"
+                                last_count="${count:-0}"
+                        fi
                         if [ "${count:-0}" -ge "$expected" ]; then
                                 return 0
                         fi
@@ -2576,6 +2605,237 @@ otelcol_wait_for_logs() {
 
         printf '%s Timeout waiting for %s OpenTelemetry log records in %s\n' "$(tb_timestamp)" "$expected" "$otelcol_output_file"
         tail -n 20 "$otelcol_output_file" 2>/dev/null || true
+        return 1
+}
+
+otelcol_expect_record() {
+        local expected_body="$1"
+        local expected_service="$2"
+
+        if [ -z "${otelcol_output_file:-}" ]; then
+                printf 'otelcol_expect_record: collector output file unknown\n'
+                return 1
+        fi
+
+        local python_bin
+        if ! python_bin=$(rstb_python_cmd); then
+                printf 'otelcol_expect_record: unable to locate python interpreter\n'
+                return 1
+        fi
+
+        local output
+        if ! output=$("$python_bin" - "$otelcol_output_file" "$expected_body" "${expected_service:-}" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+expected_body = sys.argv[2]
+expected_service = sys.argv[3] if len(sys.argv) > 3 else ""
+
+if not path.exists():
+    print(f"missing collector output {path}", file=sys.stderr)
+    sys.exit(1)
+
+records = []
+try:
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            payload = json.loads(line)
+            resource_logs = payload.get("resourceLogs", [])
+            for resource_entry in resource_logs:
+                resource = resource_entry.get("resource", {})
+                attributes = {}
+                for item in resource.get("attributes", []):
+                    if not isinstance(item, dict):
+                        continue
+                    key = item.get("key")
+                    if not key:
+                        continue
+                    value = item.get("value", {})
+                    if isinstance(value, dict) and "stringValue" in value:
+                        attributes[key] = value["stringValue"]
+
+                for scope in resource_entry.get("scopeLogs", []):
+                    for record in scope.get("logRecords", []):
+                        body = record.get("body", {}).get("stringValue")
+                        records.append((body, attributes.get("service.name")))
+except json.JSONDecodeError as exc:
+    print(f"invalid JSON from collector: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+if len(records) != 1:
+    print(f"expected 1 log record, found {len(records)}", file=sys.stderr)
+    sys.exit(1)
+
+body, service_name = records[0]
+if body != expected_body:
+    print(f"body mismatch: {body!r}", file=sys.stderr)
+    sys.exit(1)
+
+if expected_service and service_name != expected_service:
+    print(f"service.name mismatch: {service_name!r}", file=sys.stderr)
+    sys.exit(1)
+
+print(f"body={body!r} service.name={service_name!r}")
+PY
+); then
+                printf '%s otelcol_expect_record failed: %s\n' "$(tb_timestamp)" "$output"
+                return 1
+        fi
+
+        printf '%s otelcol_expect_record succeeded: %s\n' "$(tb_timestamp)" "$output"
+        return 0
+}
+
+otlp_http_expect_sequence() {
+        local port="$1"
+        local expected_records_csv="$2"
+        local expected_batches_csv="$3"
+        local attempts="${4:-30}"
+        local path="${5:-/v1/logs}"
+
+        if [ -z "$port" ]; then
+                printf 'otlp_http_expect_sequence: missing port argument\n'
+                return 1
+        fi
+
+        local python_bin
+        if ! python_bin=$(rstb_python_cmd); then
+                printf 'otlp_http_expect_sequence: unable to locate python interpreter\n'
+                return 1
+        fi
+
+        local old_ifs="$IFS"
+        local -a expected_records_array=()
+        local -a expected_batches_array=()
+        IFS=','
+        read -r -a expected_records_array <<< "$expected_records_csv"
+        read -r -a expected_batches_array <<< "$expected_batches_csv"
+        IFS="$old_ifs"
+
+        local -a python_args
+        python_args=()
+        python_args+=("$port")
+        python_args+=("$path")
+        python_args+=("${#expected_batches_array[@]}")
+        local batch
+        for batch in "${expected_batches_array[@]}"; do
+                python_args+=("$batch")
+        done
+        python_args+=("--")
+        local record
+        for record in "${expected_records_array[@]}"; do
+                python_args+=("$record")
+        done
+
+        local last_output=""
+        local last_status=1
+        while [ "$attempts" -gt 0 ]; do
+                local tmp_out
+                tmp_out=$(mktemp "$RSYSLOG_DYNNAME.otlp_http.XXXXXX")
+                if "$python_bin" - "${python_args[@]}" >"$tmp_out" 2>&1 <<'PY'
+import json
+import sys
+import urllib.error
+import urllib.request
+
+port = int(sys.argv[1])
+path = sys.argv[2]
+batch_count = int(sys.argv[3])
+
+cursor = 4
+batch_sizes = []
+for _ in range(batch_count):
+    try:
+        batch_sizes.append(int(sys.argv[cursor].strip()))
+    except ValueError:
+        print(f"invalid batch size: {sys.argv[cursor]!r}", file=sys.stderr)
+        sys.exit(2)
+    cursor += 1
+
+if cursor >= len(sys.argv) or sys.argv[cursor] != "--":
+    print("internal argument parsing error", file=sys.stderr)
+    sys.exit(2)
+
+expected_records = sys.argv[cursor + 1:]
+
+url = f"http://127.0.0.1:{port}{path}"
+try:
+    with urllib.request.urlopen(url) as resp:
+        payloads = json.load(resp)
+except urllib.error.URLError as exc:
+    print(f"http fetch failed: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+actual_batches = []
+actual_records = []
+
+for payload in payloads:
+    try:
+        document = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        print(f"payload decode failed: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    resource_logs = document.get("resourceLogs", [])
+    if not resource_logs:
+        actual_batches.append(0)
+        continue
+
+    scope_logs = resource_logs[0].get("scopeLogs", [])
+    if not scope_logs:
+        actual_batches.append(0)
+        continue
+
+    log_records = scope_logs[0].get("logRecords", [])
+    actual_batches.append(len(log_records))
+    for entry in log_records:
+        body = entry.get("body", {}).get("stringValue", "")
+        actual_records.append(body)
+
+if len(actual_batches) != batch_count:
+    print(f"payload count {len(actual_batches)} != expected {batch_count}", file=sys.stderr)
+    print(json.dumps(payloads, indent=2), file=sys.stderr)
+    sys.exit(1)
+
+if actual_batches != batch_sizes or actual_records != expected_records:
+    print(f"unexpected batches={actual_batches} records={actual_records}", file=sys.stderr)
+    print(json.dumps(payloads, indent=2), file=sys.stderr)
+    sys.exit(1)
+
+print("batches=" + ",".join(str(x) for x in actual_batches))
+print("records=" + "|".join(actual_records))
+PY
+                then
+                        local output
+                        output=$(cat "$tmp_out")
+                        rm -f "$tmp_out"
+                        local batches_line
+                        local records_line
+                        batches_line=$(printf '%s\n' "$output" | sed -n '1p')
+                        records_line=$(printf '%s\n' "$output" | sed -n '2p')
+                        printf '%s otlp_http_expect_sequence matched: %s %s\n' "$(tb_timestamp)" "$batches_line" "$records_line"
+                        return 0
+                else
+                        last_status=$?
+                        last_output=$(cat "$tmp_out")
+                        rm -f "$tmp_out"
+                        if [ -n "$last_output" ]; then
+                                printf '%s otlp_http_expect_sequence retry: %s\n' "$(tb_timestamp)" "$last_output"
+                        fi
+                        if [ "$last_status" -eq 2 ]; then
+                                break
+                        fi
+                fi
+                attempts=$((attempts - 1))
+                $TESTTOOL_DIR/msleep 200
+        done
+
+        printf '%s otlp_http_expect_sequence failed: %s\n' "$(tb_timestamp)" "$last_output"
         return 1
 }
 
