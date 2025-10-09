@@ -14,20 +14,20 @@ export EXTRA_EXIT=otelcol
 otelcol_start
 
 generate_conf
-add_conf '
+cat <<EOF >>"${TESTCONF_NM}.conf"
 module(load="../plugins/omotlp/.libs/omotlp")
 template(name="otlpBody" type="string" string="%msg%")
 action(
   type="omotlp"
   name="omotlp-otelcol"
   template="otlpBody"
-  endpoint="http://127.0.0.1:'"$otelcol_http_port"'"
+  endpoint="http://127.0.0.1:${otelcol_http_port}"
   path="/v1/logs"
-  resource='{ "service.name":"rsyslog" }'
+  resource="{ \"service.name\":\"rsyslog\" }"
   batch.max_items="1"
   batch.timeout.ms="60000"
 )
-'
+EOF
 
 startup
 

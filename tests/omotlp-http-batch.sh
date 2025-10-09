@@ -13,14 +13,14 @@ require_plugin omotlp
 omhttp_start_server 0 --decompress --fail-every 2 --fail-with 503
 
 generate_conf
-add_conf '
+cat <<EOF >>"${TESTCONF_NM}.conf"
 module(load="../plugins/omotlp/.libs/omotlp")
 template(name="otlpBody" type="string" string="%msg%")
 action(
   name="omotlp-http"
   type="omotlp"
   template="otlpBody"
-  endpoint="http://127.0.0.1:$omhttp_server_lstnport"
+  endpoint="http://127.0.0.1:${omhttp_server_lstnport}"
   path="/v1/logs"
   batch.max_items="2"
   batch.timeout.ms="60000"
@@ -30,7 +30,7 @@ action(
   retry.max_retries="3"
   headers='{ "X-Test-Header": "omotlp" }'
 )
-'
+EOF
 
 startup
 injectmsg_literal 'msg 1

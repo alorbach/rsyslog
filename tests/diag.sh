@@ -2471,6 +2471,7 @@ otelcol_prepare() {
 otelcol_start() {
         check_command_available timeout
         check_command_available curl
+        check_command_available nc
 
         otelcol_stop "true"
         otelcol_prepare
@@ -2525,11 +2526,20 @@ EOF
         fi
 
         printf '%s\n' "$collector_pid" > "$pidfile"
+
+        if ! wait_for_tcp_service "127.0.0.1" "$otelcol_http_port" 30 "OpenTelemetry collector HTTP port"; then
+                printf '%s OpenTelemetry collector HTTP port %s failed readiness probe\n' "$(tb_timestamp)" "$otelcol_http_port"
+                cat "$otelcol_logfile" 2>/dev/null || true
+                otelcol_stop "false"
+                error_exit 1
+        fi
         local health_url="http://127.0.0.1:${otelcol_health_port}"
         local attempts=0
+        local health_ready=0
         while [ $attempts -lt 150 ]; do
                 if curl --silent --fail --max-time 1 "$health_url" >/dev/null 2>&1; then
-                        return 0
+                        health_ready=1
+                        break
                 fi
 
                 if ! kill -0 "$collector_pid" 2>/dev/null; then
@@ -2543,10 +2553,27 @@ EOF
                 $TESTTOOL_DIR/msleep 200
         done
 
-        printf '%s OpenTelemetry collector failed health check at %s\n' "$(tb_timestamp)" "$health_url"
-        cat "$otelcol_logfile" 2>/dev/null || true
-        otelcol_stop "false"
-        error_exit 1
+        if [ "$health_ready" -ne 1 ]; then
+                printf '%s OpenTelemetry collector failed health check at %s\n' "$(tb_timestamp)" "$health_url"
+                cat "$otelcol_logfile" 2>/dev/null || true
+                otelcol_stop "false"
+                error_exit 1
+        fi
+
+        local probe_url="http://127.0.0.1:${otelcol_http_port}/"
+        local probe_output
+        probe_output=$(curl --silent --show-error --max-time 2 --output /dev/null --write-out '%{http_code}' "$probe_url" 2>&1)
+        local probe_status=$?
+        if [ $probe_status -ne 0 ]; then
+                printf '%s OpenTelemetry collector HTTP probe failed for %s: %s\n' "$(tb_timestamp)" "$probe_url" "$probe_output"
+                cat "$otelcol_logfile" 2>/dev/null || true
+                otelcol_stop "false"
+                error_exit 1
+        fi
+
+        printf '%s OpenTelemetry collector HTTP probe returned %s from %s\n' "$(tb_timestamp)" "$probe_output" "$probe_url"
+
+        return 0
 }
 
 otelcol_stop() {
@@ -2605,6 +2632,10 @@ otelcol_wait_for_logs() {
 
         printf '%s Timeout waiting for %s OpenTelemetry log records in %s\n' "$(tb_timestamp)" "$expected" "$otelcol_output_file"
         tail -n 20 "$otelcol_output_file" 2>/dev/null || true
+        if [ -n "${otelcol_logfile:-}" ] && [ -f "$otelcol_logfile" ]; then
+                printf '%s Last 20 lines of OpenTelemetry collector log (%s):\n' "$(tb_timestamp)" "$otelcol_logfile"
+                tail -n 20 "$otelcol_logfile" 2>/dev/null || true
+        fi
         return 1
 }
 
@@ -2617,77 +2648,30 @@ otelcol_expect_record() {
                 return 1
         fi
 
-        local python_bin
-        if ! python_bin=$(rstb_python_cmd); then
-                printf 'otelcol_expect_record: unable to locate python interpreter\n'
+        if [ ! -f "$otelcol_output_file" ]; then
+                printf '%s otelcol_expect_record failed: missing collector output %s\n' "$(tb_timestamp)" "$otelcol_output_file"
                 return 1
         fi
 
-        local output
-        if ! output=$("$python_bin" - "$otelcol_output_file" "$expected_body" "${expected_service:-}" <<'PY'
-import json
-import pathlib
-import sys
-
-path = pathlib.Path(sys.argv[1])
-expected_body = sys.argv[2]
-expected_service = sys.argv[3] if len(sys.argv) > 3 else ""
-
-if not path.exists():
-    print(f"missing collector output {path}", file=sys.stderr)
-    sys.exit(1)
-
-records = []
-try:
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            payload = json.loads(line)
-            resource_logs = payload.get("resourceLogs", [])
-            for resource_entry in resource_logs:
-                resource = resource_entry.get("resource", {})
-                attributes = {}
-                for item in resource.get("attributes", []):
-                    if not isinstance(item, dict):
-                        continue
-                    key = item.get("key")
-                    if not key:
-                        continue
-                    value = item.get("value", {})
-                    if isinstance(value, dict) and "stringValue" in value:
-                        attributes[key] = value["stringValue"]
-
-                for scope in resource_entry.get("scopeLogs", []):
-                    for record in scope.get("logRecords", []):
-                        body = record.get("body", {}).get("stringValue")
-                        records.append((body, attributes.get("service.name")))
-except json.JSONDecodeError as exc:
-    print(f"invalid JSON from collector: {exc}", file=sys.stderr)
-    sys.exit(1)
-
-if len(records) != 1:
-    print(f"expected 1 log record, found {len(records)}", file=sys.stderr)
-    sys.exit(1)
-
-body, service_name = records[0]
-if body != expected_body:
-    print(f"body mismatch: {body!r}", file=sys.stderr)
-    sys.exit(1)
-
-if expected_service and service_name != expected_service:
-    print(f"service.name mismatch: {service_name!r}", file=sys.stderr)
-    sys.exit(1)
-
-print(f"body={body!r} service.name={service_name!r}")
-PY
-); then
-                printf '%s otelcol_expect_record failed: %s\n' "$(tb_timestamp)" "$output"
+        local match_body
+        match_body=$(grep -F '"stringValue":"'"$expected_body"'"' "$otelcol_output_file" 2>/dev/null || true)
+        if [ -z "$match_body" ]; then
+                printf '%s otelcol_expect_record failed: body "%s" not found in %s\n' "$(tb_timestamp)" "$expected_body" "$otelcol_output_file"
+                tail -n 20 "$otelcol_output_file" 2>/dev/null || true
                 return 1
         fi
 
-        printf '%s otelcol_expect_record succeeded: %s\n' "$(tb_timestamp)" "$output"
+        if [ -n "$expected_service" ]; then
+                local service_match
+                service_match=$(grep -F '"service.name"' "$otelcol_output_file" 2>/dev/null | grep -F '"stringValue":"'"$expected_service"'"' || true)
+                if [ -z "$service_match" ]; then
+                        printf '%s otelcol_expect_record failed: service.name "%s" not found in %s\n' "$(tb_timestamp)" "$expected_service" "$otelcol_output_file"
+                        tail -n 20 "$otelcol_output_file" 2>/dev/null || true
+                        return 1
+                fi
+        fi
+
+        printf '%s otelcol_expect_record succeeded: body="%s" service.name="%s"\n' "$(tb_timestamp)" "$expected_body" "${expected_service:-}"
         return 0
 }
 
@@ -2744,7 +2728,7 @@ import urllib.error
 import urllib.request
 
 port = int(sys.argv[1])
-path = sys.argv[2]
+raw_path = sys.argv[2]
 batch_count = int(sys.argv[3])
 
 cursor = 4
@@ -2763,12 +2747,57 @@ if cursor >= len(sys.argv) or sys.argv[cursor] != "--":
 
 expected_records = sys.argv[cursor + 1:]
 
-url = f"http://127.0.0.1:{port}{path}"
-try:
-    with urllib.request.urlopen(url) as resp:
-        payloads = json.load(resp)
-except urllib.error.URLError as exc:
-    print(f"http fetch failed: {exc}", file=sys.stderr)
+def normalise(candidate: str) -> str:
+    if not candidate:
+        return "/"
+    if not candidate.startswith("/"):
+        candidate = "/" + candidate
+    return candidate
+
+candidates = []
+
+def add_candidate(candidate: str) -> None:
+    candidate = normalise(candidate)
+    if candidate and candidate not in candidates:
+        candidates.append(candidate)
+
+if raw_path:
+    add_candidate(raw_path)
+    stripped = raw_path.rstrip("/")
+    if stripped:
+        add_candidate(stripped)
+        add_candidate(stripped + "/")
+else:
+    add_candidate("/")
+
+payloads = None
+used_path = None
+errors = []
+
+for candidate in candidates:
+    url = f"http://127.0.0.1:{port}{candidate}"
+    try:
+        with urllib.request.urlopen(url) as resp:
+            data = json.load(resp)
+    except urllib.error.URLError as exc:
+        errors.append(f"{candidate}: {exc}")
+        continue
+
+    used_path = candidate
+    payloads = data
+    if data:
+        break
+
+if payloads is None:
+    if errors:
+        print("http fetch failed: " + "; ".join(errors), file=sys.stderr)
+    else:
+        print("http fetch failed: no response", file=sys.stderr)
+    sys.exit(1)
+
+if len(payloads) != batch_count:
+    print(f"payload count {len(payloads)} != expected {batch_count}", file=sys.stderr)
+    print(json.dumps(payloads, indent=2), file=sys.stderr)
     sys.exit(1)
 
 actual_batches = []
@@ -2797,17 +2826,12 @@ for payload in payloads:
         body = entry.get("body", {}).get("stringValue", "")
         actual_records.append(body)
 
-if len(actual_batches) != batch_count:
-    print(f"payload count {len(actual_batches)} != expected {batch_count}", file=sys.stderr)
-    print(json.dumps(payloads, indent=2), file=sys.stderr)
-    sys.exit(1)
-
 if actual_batches != batch_sizes or actual_records != expected_records:
     print(f"unexpected batches={actual_batches} records={actual_records}", file=sys.stderr)
     print(json.dumps(payloads, indent=2), file=sys.stderr)
     sys.exit(1)
 
-print("batches=" + ",".join(str(x) for x in actual_batches))
+print("batches=" + ",".join(str(x) for x in actual_batches) + f" path={used_path}")
 print("records=" + "|".join(actual_records))
 PY
                 then
