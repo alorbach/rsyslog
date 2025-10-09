@@ -426,6 +426,7 @@ BEGINmodInit()
     CHKiRet(statsobj.AddCounter(otlpStats, (uchar *)"http.4xx", ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttp4xx));
     CHKiRet(statsobj.AddCounter(otlpStats, (uchar *)"http.5xx", ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttp5xx));
     CHKiRet(statsobj.ConstructFinalize(otlpStats));
+finalize_it:
 ENDmodInit
 
 BEGINmodExit
