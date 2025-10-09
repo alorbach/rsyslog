@@ -411,7 +411,7 @@ BEGINparseSelectorAct
     CODE_STD_FINALIZERparseSelectorAct
 ENDparseSelectorAct
 
-BEGINmodInit()
+BEGINmodInit(omotlp)
     CODESTARTmodInit;
     /* no legacy conf vars to init */
     *ipIFVersProvided = CURR_MOD_IF_VERSION;
