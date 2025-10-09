@@ -96,8 +96,9 @@ finalize_it:
 
 rsRetVal omotlp_http_global_init(void) {
     if (!g_http_global_initialized) {
-        if (curl_global_init(CURL_GLOBAL_DEFAULT) != 0) {
-            LogError(0, RS_RET_INTERNAL_ERROR, "omotlp/http: curl_global_init failed");
+        CURLcode rc = curl_global_init(CURL_GLOBAL_DEFAULT);
+        if (rc != CURLE_OK) {
+            LogError(0, RS_RET_INTERNAL_ERROR, "omotlp/http: curl_global_init failed: %s", curl_easy_strerror(rc));
             return RS_RET_INTERNAL_ERROR;
         }
         g_http_global_initialized = 1;
@@ -250,6 +251,9 @@ rsRetVal omotlp_http_client_post(omotlp_http_client_t *client, const uint8_t *pa
     long delay_ms;
     DEFiRet;
 
+    DBGPRINTF("omotlp/http: omotlp_http_client_post called, payload_len=%zu, url=%s",
+              payload_len, client ? (client->url ? client->url : "(null)") : "(null client)");
+
     if (client == NULL) {
         ABORT_FINALIZE(RS_RET_PARAM_ERROR);
     }
@@ -276,7 +280,9 @@ rsRetVal omotlp_http_client_post(omotlp_http_client_t *client, const uint8_t *pa
         client->error_buffer[0] = '\0';
         status = 0;
 
+        DBGPRINTF("omotlp/http: calling curl_easy_perform, attempt %u", retries + 1);
         rc = curl_easy_perform(client->handle);
+        DBGPRINTF("omotlp/http: curl_easy_perform returned: %d (%s)", rc, curl_easy_strerror(rc));
         if (rc != CURLE_OK) {
             const char *err = client->error_buffer[0] != '\0' ? client->error_buffer : curl_easy_strerror(rc);
             LogError(0, RS_RET_SUSPENDED, "omotlp/http: HTTP POST failed: %s", err);
@@ -306,7 +312,9 @@ rsRetVal omotlp_http_client_post(omotlp_http_client_t *client, const uint8_t *pa
             ABORT_FINALIZE(RS_RET_INTERNAL_ERROR);
         }
 
+        DBGPRINTF("omotlp/http: HTTP response status: %ld", status);
         if (status >= 200 && status < 300) {
+            DBGPRINTF("omotlp/http: HTTP POST successful (status %ld)", status);
             goto finalize_it;
         }
 
@@ -338,5 +346,6 @@ rsRetVal omotlp_http_client_post(omotlp_http_client_t *client, const uint8_t *pa
     }
 
 finalize_it:
+    DBGPRINTF("omotlp/http: omotlp_http_client_post completed, iRet=%d", iRet);
     RETiRet;
 }

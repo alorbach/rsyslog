@@ -977,17 +977,31 @@ static rsRetVal populateLogRecord(smsg_t *msg, const char *body, omotlp_log_reco
 
     memset(record, 0, sizeof(*record));
 
-    CHKiRet(MsgGetSeverity(msg, &severity));
-    mapSeverity(severity, record);
-
     record->body = body;
-    record->hostname = (msg->pszHOSTNAME != NULL) ? (const char *)msg->pszHOSTNAME : NULL;
-    record->app_name = extractAppName(msg);
-    record->proc_id = extractProcId(msg);
-    record->msg_id = extractMsgId(msg);
-    record->facility = (uint16_t)msg->iFacility;
-    record->time_unix_nano = syslogTimeToUnixNanos(&msg->tTIMESTAMP);
-    record->observed_time_unix_nano = syslogTimeToUnixNanos(&msg->tRcvdAt);
+
+    if (msg != NULL) {
+        CHKiRet(MsgGetSeverity(msg, &severity));
+        mapSeverity(severity, record);
+
+        record->hostname = (msg->pszHOSTNAME != NULL) ? (const char *)msg->pszHOSTNAME : NULL;
+        record->app_name = extractAppName(msg);
+        record->proc_id = extractProcId(msg);
+        record->msg_id = extractMsgId(msg);
+        record->facility = (uint16_t)msg->iFacility;
+        record->time_unix_nano = syslogTimeToUnixNanos(&msg->tTIMESTAMP);
+        record->observed_time_unix_nano = syslogTimeToUnixNanos(&msg->tRcvdAt);
+    } else {
+        record->severity_number = 0u;
+        record->severity_text = NULL;
+        record->hostname = NULL;
+        record->app_name = NULL;
+        record->proc_id = NULL;
+        record->msg_id = NULL;
+        record->facility = 0u;
+        record->time_unix_nano = 0u;
+        record->observed_time_unix_nano = 0u;
+    }
+
     record->trace_id = NULL;
     record->span_id = NULL;
     record->trace_flags = 0u;
@@ -1133,13 +1147,18 @@ static rsRetVal omotlp_flush_batch(wrkrInstanceData_t *pWrkrData, omotlp_batch_s
 
     DEFiRet;
 
+    DBGPRINTF("omotlp: omotlp_flush_batch called, batch->count=%zu", batch ? batch->count : 0u);
+
     if (pWrkrData == NULL || batch == NULL) {
         ABORT_FINALIZE(RS_RET_PARAM_ERROR);
     }
 
     if (batch->count == 0u) {
+        DBGPRINTF("omotlp: omotlp_flush_batch: batch is empty, skipping");
         goto finalize_it;
     }
+
+    DBGPRINTF("omotlp: omotlp_flush_batch: flushing %zu records", batch->count);
 
     records = (omotlp_log_record_t *)malloc(batch->count * sizeof(*records));
     if (records == NULL) {
@@ -1150,21 +1169,27 @@ static rsRetVal omotlp_flush_batch(wrkrInstanceData_t *pWrkrData, omotlp_batch_s
         records[i] = batch->entries[i].record;
     }
 
+    DBGPRINTF("omotlp: omotlp_flush_batch: building JSON export for %zu records", batch->count);
     CHKiRet(omotlp_json_build_export(records, batch->count, &payload));
 
     if (payload != NULL) {
         payload_len = strlen(payload);
+        DBGPRINTF("omotlp: omotlp_flush_batch: JSON payload length=%zu", payload_len);
     }
 
     to_send = (const uint8_t *)payload;
     send_len = payload_len;
 
     if (pWrkrData->pData->compression_mode == OMOTLP_COMPRESSION_GZIP) {
+        DBGPRINTF("omotlp: omotlp_flush_batch: compressing payload");
         CHKiRet(gzip_compress_buffer((const uint8_t *)payload, payload_len, &compressed, &send_len));
         to_send = compressed;
+        DBGPRINTF("omotlp: omotlp_flush_batch: compressed size=%zu", send_len);
     }
 
+    DBGPRINTF("omotlp: omotlp_flush_batch: calling omotlp_http_client_post, send_len=%zu", send_len);
     CHKiRet(omotlp_http_client_post(pWrkrData->http_client, to_send, send_len));
+    DBGPRINTF("omotlp: omotlp_flush_batch: HTTP POST successful, clearing batch");
     omotlp_batch_clear(batch);
 
 finalize_it:
@@ -1426,8 +1451,10 @@ ENDbeginTransaction
 
 BEGINendTransaction
     CODESTARTendTransaction;
+    DBGPRINTF("omotlp: endTransaction called, batch->count=%zu", pWrkrData ? pWrkrData->batch.count : 0u);
     CHKiRet(omotlp_flush_batch(pWrkrData, &pWrkrData->batch));
 finalize_it:
+    DBGPRINTF("omotlp: endTransaction completed, iRet=%d", iRet);
 ENDendTransaction
 
 static rsRetVal assignParamFromEStr(uchar **target, es_str_t *value) {
@@ -1565,13 +1592,12 @@ BEGINnewActInst
     CHKiRet(validateProtocol(pData));
     CHKiRet(buildEffectiveUrl(pData));
 
-    CODE_STD_STRING_REQUESTnewActInst(2);
+    CODE_STD_STRING_REQUESTnewActInst(1);
     tplToUse = (uchar *)strdup((char *)pData->bodyTemplateName);
     if (tplToUse == NULL) {
         ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
     }
     CHKiRet(OMSRsetEntry(*ppOMSR, 0, tplToUse, OMSR_NO_RQD_TPL_OPTS));
-    CHKiRet(OMSRsetEntry(*ppOMSR, 1, NULL, OMSR_TPL_AS_MSG));
 
     CODE_STD_FINALIZERnewActInst;
     cnfparamvalsDestruct(pvals, &actpblk);
@@ -1579,6 +1605,7 @@ ENDnewActInst
 
 BEGINdoAction
     char *body = NULL;
+    char *body_allocated = NULL;
     smsg_t *msg = NULL;
     omotlp_log_record_t record;
     long long now_ms;
@@ -1592,17 +1619,15 @@ BEGINdoAction
         ABORT_FINALIZE(RS_RET_INTERNAL_ERROR);
     }
 
-    if (ppString != NULL) {
+    if (ppString != NULL && ppString[0] != NULL) {
         body = (char *)ppString[0];
-        if (ppString[1] != NULL) {
-            msg = (smsg_t *)(uintptr_t)ppString[1];
-        }
     }
 
-    if (msg == NULL) {
-        LogError(0, RS_RET_INTERNAL_ERROR, "omotlp: missing message context for OTLP serialization");
-        ABORT_FINALIZE(RS_RET_INTERNAL_ERROR);
+    if (body == NULL) {
+        body = (char *)"";
     }
+
+    msg = NULL;
 
     now_ms = currentTimeMills();
     CHKiRet(omotlp_batch_flush_if_due(pWrkrData, now_ms));
@@ -1610,15 +1635,21 @@ BEGINdoAction
     CHKiRet(populateLogRecord(msg, body, &record));
     CHKiRet(omotlp_batch_add_record(pWrkrData, &record, body));
 
+    if (body_allocated != NULL) {
+        free(body_allocated);
+        body_allocated = NULL;
+    }
+
     if (pWrkrData->batch.count == 0u) {
         iRet = RS_RET_OK;
-    } else if (pWrkrData->batch.count == 1u) {
-        iRet = RS_RET_PREVIOUS_COMMITTED;
     } else {
         iRet = RS_RET_DEFER_COMMIT;
     }
 
 finalize_it:
+    if (body_allocated != NULL) {
+        free(body_allocated);
+    }
 ENDdoAction
 
 NO_LEGACY_CONF_parseSelectorAct /* clang-format off */
@@ -1643,6 +1674,7 @@ ENDqueryEtryPt /* clang-format on */
 
 BEGINmodInit()
     CODESTARTmodInit;
+    *ipIFVersProvided = CURR_MOD_IF_VERSION; /* we only support the current interface specification */
     CHKiRet(omotlp_http_global_init());
     CHKiRet(objUse(datetime, CORE_COMPONENT));
 ENDmodInit

@@ -1,0 +1,17 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:0
+
+exporters:
+  file:
+    path: ${OTEL_OUTPUT_FILE}
+    format: json
+    flush_interval: 1s
+
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      exporters: [file]

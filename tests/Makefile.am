@@ -1059,7 +1059,10 @@ endif
 
 if ENABLE_OMOTLP
 TESTS += \
-        omotlp-http-batch.sh
+        omotlp-http-batch.sh \
+        omotlp-basic.sh \
+        omotlp-batch.sh \
+        omotlp-compression.sh
 endif
 
 if ENABLE_OMKAFKA
