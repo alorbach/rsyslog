@@ -46,9 +46,11 @@ iteration, though Automake will not capture transcripts.
 - Source `diag.sh` at the top of every shell test: `. "$srcdir/diag.sh"`.
 - Prefer helpers such as `cmp_exact` and `require_plugin` over ad-hoc shell so
   diagnostics stay consistent. `require_plugin` performs an `rsyslogd -N1`
-  validation of the target module and aborts the scenario when the load fails,
-  providing the parser output for debugging. See `tests/AGENTS.md` for a longer
-  checklist.
+  validation of the target module and skips the scenario when the load fails,
+  printing the parser output for debugging. Set
+  `RSYSLOG_REQUIRE_PLUGIN_STRICT=1` before sourcing the script to turn those
+  load failures into hard errors (useful when CI must ensure the module is
+  present). See `tests/AGENTS.md` for a longer checklist.
 - Name Valgrind-enabled wrappers with the `-vg.sh` suffix and Helgrind-enabled
   scripts with `-vgthread.sh`. `tests/timereported-utc-vg.sh` illustrates how to
   source the base scenario rather than duplicating it and how to trim emitted
