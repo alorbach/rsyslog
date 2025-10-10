@@ -245,17 +245,10 @@ module(load="${plugin_path}")
 EOF
 
         if ! "$rsyslogd_bin" -N1 -f "$tmp_conf" -M../runtime/.libs:../.libs >"$tmp_log" 2>&1; then
-                if [ "${RSYSLOG_REQUIRE_PLUGIN_STRICT:-0}" = "1" ]; then
-                        printf 'FAIL: plugin %s failed to load during require_plugin (rsyslogd -N1 output follows)\n' "$plugin"
-                        sed -n '1,120p' "$tmp_log"
-                        rm -f "$tmp_conf" "$tmp_log"
-                        error_exit 1
-                fi
-
-                printf 'info: skipping test - plugin %s failed to load (rsyslogd -N1 output follows)\n' "$plugin"
+                printf 'FAIL: plugin %s failed to load during require_plugin (rsyslogd -N1 output follows)\n' "$plugin"
                 sed -n '1,120p' "$tmp_log"
                 rm -f "$tmp_conf" "$tmp_log"
-                exit 77
+                error_exit 1
         fi
 
         rm -f "$tmp_conf" "$tmp_log"
