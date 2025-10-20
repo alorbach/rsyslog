@@ -1,3 +1,5 @@
 setup:
   run_post_create: true
   post_create_script: .cursor/post_create.sh
+  run_post_start: true
+  post_start_script: .cursor/post_create.sh
