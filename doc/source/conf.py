@@ -38,6 +38,79 @@ extensions = ['edit_on_github',
 edit_on_github_project = 'https://github.com/rsyslog/rsyslog'
 edit_on_github_branch = 'main'
 
+# Configure local copies of the JavaScript assets that power the Mermaid
+# diagrams so that the generated HTML does not fetch files from a CDN.
+MERMAID_JS_PATH = 'vendor/mermaid/mermaid.esm.min.mjs'
+MERMAID_ELK_JS_PATH = 'vendor/mermaid/mermaid-layout-elk.esm.min.mjs'
+D3_JS_PATH = 'vendor/d3/d3.min.js'
+
+mermaid_use_local = MERMAID_JS_PATH
+mermaid_elk_use_local = MERMAID_ELK_JS_PATH
+d3_use_local = D3_JS_PATH
+
+mermaid_init_js = ""
+
+try:
+    import sphinxcontrib.mermaid as _sphinx_mermaid  # type: ignore
+except Exception:  # pragma: no cover - fallback for doc builds without the extension
+    _sphinx_mermaid = None
+else:
+    _sphinx_mermaid._MERMAID_RUN_NO_D3_ZOOM = """
+(async () => {{
+    const base = (window.DOCUMENTATION_OPTIONS && window.DOCUMENTATION_OPTIONS.URL_ROOT) || './';
+    const mermaidModule = await import(base + '_static/{mermaid_js_url}');
+    const mermaid = mermaidModule.default ?? mermaidModule;
+    window.addEventListener("load", () => mermaid.run());
+}})();
+""".strip()
+
+    _sphinx_mermaid._MERMAID_RUN_D3_ZOOM = """
+(async () => {{
+    const base = (window.DOCUMENTATION_OPTIONS && window.DOCUMENTATION_OPTIONS.URL_ROOT) || './';
+    const mermaidModule = await import(base + '_static/{mermaid_js_url}');
+    const mermaid = mermaidModule.default ?? mermaidModule;
+    const load = async () => {{
+        await mermaid.run();
+        const all_mermaids = document.querySelectorAll(".mermaid");
+        const mermaids_to_add_zoom = {d3_node_count} === -1 ? all_mermaids.length : {d3_node_count};
+        const mermaids_processed = document.querySelectorAll(".mermaid[data-processed='true']");
+        if (mermaids_to_add_zoom > 0) {{
+            var svgs = d3.selectAll("{d3_selector}");
+            if (all_mermaids.length !== mermaids_processed.length) {{
+                setTimeout(load, 200);
+                return;
+            }} else if (svgs.size() !== mermaids_to_add_zoom) {{
+                setTimeout(load, 200);
+                return;
+            }} else {{
+                svgs.each(function() {{
+                    var svg = d3.select(this);
+                    svg.html("<g class='wrapper'>" + svg.html() + "</g>");
+                    var inner = svg.select("g");
+                    var zoom = d3.zoom().on("zoom", function(event) {{
+                        inner.attr("transform", event.transform);
+                    }});
+                    svg.call(zoom);
+                }});
+            }}
+        }}
+    }};
+    window.addEventListener("load", load);
+}})();
+""".strip()
+
+    mermaid_init_js = f"""
+(async () => {{
+    const base = (window.DOCUMENTATION_OPTIONS && window.DOCUMENTATION_OPTIONS.URL_ROOT) || './';
+    const mermaidModule = await import(base + '_static/{MERMAID_JS_PATH}');
+    const mermaid = mermaidModule.default ?? mermaidModule;
+    const elkModule = await import(base + '_static/{MERMAID_ELK_JS_PATH}');
+    const elkLayouts = elkModule.default ?? elkModule;
+    mermaid.registerLayoutLoaders(elkLayouts);
+    mermaid.initialize({{startOnLoad:false}});
+}})();
+""".strip()
+
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
 
