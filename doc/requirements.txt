@@ -2,4 +2,5 @@
 # Align with conf.py needs_sphinx requirement
 sphinx>=4.5.0
 furo
-sphinxcontrib.mermaid
+# Pin to a tested mermaid extension to avoid unexpected upstream changes
+sphinxcontrib-mermaid>=0.9,<1.0

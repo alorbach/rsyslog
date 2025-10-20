@@ -52,7 +52,7 @@ mermaid_init_js = ""
 
 try:
     import sphinxcontrib.mermaid as _sphinx_mermaid  # type: ignore
-except Exception:  # pragma: no cover - fallback for doc builds without the extension
+except ImportError:  # pragma: no cover - fallback for doc builds without the extension
     _sphinx_mermaid = None
 else:
     _sphinx_mermaid._MERMAID_RUN_NO_D3_ZOOM = """
