@@ -38,6 +38,39 @@ extensions = ['edit_on_github',
 edit_on_github_project = 'https://github.com/rsyslog/rsyslog'
 edit_on_github_branch = 'main'
 
+# Offline Mermaid configuration: use vendored JS assets under _static
+MERMAID_JS_PATH = 'vendor/mermaid/mermaid.esm.min.mjs'
+MERMAID_ELK_JS_PATH = 'vendor/mermaid/mermaid-layout-elk.esm.min.mjs'
+D3_JS_PATH = 'vendor/d3/d3.min.js'
+
+try:
+    import sphinxcontrib.mermaid as _sphinx_mermaid  # type: ignore
+except ImportError:  # pragma: no cover
+    _sphinx_mermaid = None
+else:
+    # Configure the extension to load vendored assets instead of CDN URLs
+    mermaid_js_url = MERMAID_JS_PATH
+    d3_js_url = D3_JS_PATH
+    # Some versions may also honor this; harmless if unused
+    mermaid_elk_js_url = MERMAID_ELK_JS_PATH
+
+    # Initialize Mermaid from vendored ESM and register ELK layouts
+    mermaid_init_js = f"""
+(async () => {{
+  const base = (window.DOCUMENTATION_OPTIONS && window.DOCUMENTATION_OPTIONS.URL_ROOT) || './';
+  const mermaidModule = await import(base + '_static/{MERMAID_JS_PATH}');
+  const mermaid = mermaidModule.default ?? mermaidModule;
+  try {{
+    const elkModule = await import(base + '_static/{MERMAID_ELK_JS_PATH}');
+    const elkLayouts = elkModule.default ?? elkModule;
+    mermaid.registerLayoutLoaders(elkLayouts);
+  }} catch (e) {{
+    // Optional: ELK layouts not available
+  }}
+  mermaid.initialize({{ startOnLoad: true }});
+}})();
+""".strip()
+
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
 
