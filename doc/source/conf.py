@@ -75,7 +75,7 @@ else:
         const mermaids_to_add_zoom = {d3_node_count} === -1 ? all_mermaids.length : {d3_node_count};
         const mermaids_processed = document.querySelectorAll(".mermaid[data-processed='true']");
         if (mermaids_to_add_zoom > 0) {{
-            var svgs = d3.selectAll("{d3_selector}");
+            const svgs = d3.selectAll("{d3_selector}");
             if (all_mermaids.length !== mermaids_processed.length) {{
                 setTimeout(load, 200);
                 return;
@@ -84,10 +84,10 @@ else:
                 return;
             }} else {{
                 svgs.each(function() {{
-                    var svg = d3.select(this);
+                    const svg = d3.select(this);
                     svg.html("<g class='wrapper'>" + svg.html() + "</g>");
-                    var inner = svg.select("g");
-                    var zoom = d3.zoom().on("zoom", function(event) {{
+                    const inner = svg.select("g");
+                    const zoom = d3.zoom().on("zoom", function(event) {{
                         inner.attr("transform", event.transform);
                     }});
                     svg.call(zoom);
@@ -110,6 +110,43 @@ else:
     mermaid.initialize({{startOnLoad:false}});
 }})();
 """.strip()
+
+    _original_install_js = _sphinx_mermaid.install_js
+
+    def _vendored_install_js(app, *args, **kwargs):
+        """Force sphinxcontrib-mermaid to load the vendored JavaScript."""
+
+        if hasattr(app.config, 'mermaid_use_local'):
+            app.config.mermaid_use_local = MERMAID_JS_PATH
+            app.config.mermaid_elk_use_local = MERMAID_ELK_JS_PATH
+            app.config.d3_use_local = D3_JS_PATH
+            app.config.mermaid_init_js = mermaid_init_js
+            return _original_install_js(app, *args, **kwargs)
+
+        original_add_js_file = app.add_js_file
+        original_init_js = getattr(app.config, 'mermaid_init_js', '')
+
+        def _rewrite_js_file(filename, **file_kwargs):
+            if filename:
+                if 'mermaid-layout-elk' in filename:
+                    filename = MERMAID_ELK_JS_PATH
+                    file_kwargs.setdefault('type', 'module')
+                elif 'mermaid' in filename:
+                    filename = MERMAID_JS_PATH
+                    file_kwargs.setdefault('type', 'module')
+                elif 'd3' in filename and filename.endswith('.js'):
+                    filename = D3_JS_PATH
+            return original_add_js_file(filename, **file_kwargs)
+
+        try:
+            app.add_js_file = _rewrite_js_file  # type: ignore[assignment]
+            app.config.mermaid_init_js = mermaid_init_js
+            return _original_install_js(app, *args, **kwargs)
+        finally:
+            app.add_js_file = original_add_js_file  # type: ignore[assignment]
+            app.config.mermaid_init_js = original_init_js
+
+    _sphinx_mermaid.install_js = _vendored_install_js
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
