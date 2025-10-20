@@ -1,0 +1,1854 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="Input" href="input.html"><link rel="prev" title="The rsyslog include() object" href="../rainerscript/include.html">
+        <link rel="canonical" href="https://www.rsyslog.com/doc/configuration/actions.html">
+
+    <!-- Generated with Sphinx 8.2.3 and Furo 2025.09.25 -->
+        <title>Actions - rsyslog 8.2510.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=fa44fd50" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo.css?v=580074bf" />
+    <link rel="stylesheet" type="text/css" href="../_static/rsyslog.css?v=6406a7f4" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo-extensions.css?v=8dab3a3b" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #eeffcc;
+  --color-code-foreground: black;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../index.html"><div class="brand">rsyslog 8.2510.0 documentation</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="../index.html">
+  
+  <span class="sidebar-brand-text">rsyslog 8.2510.0 documentation</span>
+  
+</a><form class="sidebar-search-container" method="get" action="../search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <ul class="current">
+<li class="toctree-l1 has-children"><a class="reference internal" href="../about/index.html">About rsyslog</a><input aria-label="Toggle navigation of About rsyslog" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../about/ai_first.html">AI-First (Human-Controlled): Principles and Practice</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../about/history.html">History and Future of rsyslog</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../getting_started/index.html">Getting Started with rsyslog</a><input aria-label="Toggle navigation of Getting Started with rsyslog" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../getting_started/beginner_tutorials/index.html">Beginner Tutorials</a><input aria-label="Toggle navigation of Beginner Tutorials" class="toctree-checkbox" id="toctree-checkbox-3" name="toctree-checkbox-3" role="switch" type="checkbox"/><label for="toctree-checkbox-3"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../getting_started/beginner_tutorials/01-installation.html">1. Installing rsyslog</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../getting_started/beginner_tutorials/02-first-config.html">2. Your First Configuration</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../getting_started/beginner_tutorials/03-default-config.html">3. Understanding the Default Configuration</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../getting_started/beginner_tutorials/04-message-pipeline.html">4. The Log Pipeline: Inputs → Rulesets → Actions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../getting_started/beginner_tutorials/05-order-matters.html">5. Order Matters: Config and Include Files</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../getting_started/beginner_tutorials/06-remote-server.html">6. Your First Remote Log Server</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../getting_started/ai-assistants.html">AI Assistants</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../getting_started/installation.html">Installing rsyslog</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../getting_started/basic_configuration.html">Basic Configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../getting_started/understanding_default_config.html">Understanding the Default Configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../getting_started/forwarding_logs.html">Forwarding Logs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../getting_started/next_steps.html">Next Steps</a></li>
+</ul>
+</li>
+<li class="toctree-l1 current has-children"><a class="reference internal" href="index.html">Configuration</a><input aria-label="Toggle navigation of Configuration" checked="" class="toctree-checkbox" id="toctree-checkbox-4" name="toctree-checkbox-4" role="switch" type="checkbox"/><label for="toctree-checkbox-4"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="basic_structure.html">Basic Structure</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="modules/idx_output.html">Output Modules</a><input aria-label="Toggle navigation of Output Modules" class="toctree-checkbox" id="toctree-checkbox-5" name="toctree-checkbox-5" role="switch" type="checkbox"/><label for="toctree-checkbox-5"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="modules/omamqp1.html">omamqp1: AMQP 1.0 Messaging Output Module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/omazureeventhubs.html">omazureeventhubs: Microsoft Azure Event Hubs Output Module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/omclickhouse.html">omclickhouse: ClickHouse Output Module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/omczmq.html">omczmq: Output module for ZeroMQ</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/omdtls.html">omdtls: Output Module for DTLS Protocol over UDP</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/omelasticsearch.html">omelasticsearch: Elasticsearch Output Module</a><input aria-label="Toggle navigation of omelasticsearch: Elasticsearch Output Module" class="toctree-checkbox" id="toctree-checkbox-6" name="toctree-checkbox-6" role="switch" type="checkbox"/><label for="toctree-checkbox-6"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-server.html">Server</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-serverport.html">Serverport</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-healthchecktimeout.html">HealthCheckTimeout</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-esversion-major.html">esVersion.major</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-searchindex.html">searchIndex</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-dynsearchindex.html">dynSearchIndex</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-searchtype.html">searchType</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-dynsearchtype.html">dynSearchType</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-pipelinename.html">pipelineName</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-dynpipelinename.html">dynPipelineName</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-skippipelineifempty.html">skipPipelineIfEmpty</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-asyncrepl.html">asyncrepl</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-usehttps.html">usehttps</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-timeout.html">timeout</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-indextimeout.html">indexTimeout</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-template.html">template</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-bulkmode.html">bulkmode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-maxbytes.html">maxbytes</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-parent.html">parent</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-dynparent.html">dynParent</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-uid.html">uid</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-pwd.html">pwd</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-errorfile.html">errorFile</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-tls-cacert.html">tls.cacert</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-tls-mycert.html">tls.mycert</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-tls-myprivkey.html">tls.myprivkey</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-allowunsignedcerts.html">allowunsignedcerts</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-skipverifyhost.html">skipverifyhost</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-bulkid.html">bulkid</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-dynbulkid.html">dynbulkid</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-writeoperation.html">writeoperation</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-retryfailures.html">retryfailures</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-retryruleset.html">retryruleset</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-ratelimit-interval.html">ratelimit.interval</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-ratelimit-burst.html">ratelimit.burst</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omelasticsearch-rebindinterval.html">rebindinterval</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/omfile.html">omfile: File Output Module</a><input aria-label="Toggle navigation of omfile: File Output Module" class="toctree-checkbox" id="toctree-checkbox-7" name="toctree-checkbox-7" role="switch" type="checkbox"/><label for="toctree-checkbox-7"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-asyncwriting.html">asyncWriting</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-addlf.html">addLF</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-closetimeout.html">closeTimeout</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-compression-driver.html">compression.driver</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-compression-zstd-workers.html">compression.zstd.workers</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-createdirs.html">createDirs</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-cry-provider.html">cry.Provider</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-dircreatemode.html">dirCreateMode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-dirgroup.html">dirGroup</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-dirgroupnum.html">dirGroupNum</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-dirowner.html">dirOwner</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-dirownernum.html">dirOwnerNum</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-dynafile.html">dynaFile</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-dynafile-donotsuspend.html">dynafile.donotsuspend</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-dynafilecachesize.html">dynaFileCacheSize</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-failonchownfailure.html">failOnChOwnFailure</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-file.html">File</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-filecreatemode.html">fileCreateMode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-filegroup.html">fileGroup</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-filegroupnum.html">fileGroupNum</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-fileowner.html">fileOwner</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-fileownernum.html">fileOwnerNum</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-flushinterval.html">flushInterval</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-flushontxend.html">flushOnTXEnd</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-iobuffersize.html">ioBufferSize</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-rotation-sizelimit.html">rotation.sizeLimit</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-rotation-sizelimitcommand.html">rotation.sizeLimitCommand</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-sig-provider.html">sig.Provider</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-sync.html">sync</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-template.html">Template</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-veryrobustzip.html">veryRobustZip</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omfile-ziplevel.html">zipLevel</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/omfwd.html">omfwd: syslog Forwarding Output Module</a><input aria-label="Toggle navigation of omfwd: syslog Forwarding Output Module" class="toctree-checkbox" id="toctree-checkbox-8" name="toctree-checkbox-8" role="switch" type="checkbox"/><label for="toctree-checkbox-8"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="modules/omfwd/parameters/basic.html">Basic Parameters</a></li>
+<li class="toctree-l4"><a class="reference internal" href="modules/omfwd/parameters/module.html">Module Parameters</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="modules/omhdfs.html">omhdfs: Hadoop Filesystem Output Module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/omhiredis.html">omhiredis: Redis Output Module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/omhttp.html">omhttp: HTTP Output Module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/omhttpfs.html">omhttpfs: Hadoop HTTPFS Output Module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/omjournal.html">omjournal: Systemd Journal Output</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/omkafka.html">omkafka: write to Apache Kafka</a><input aria-label="Toggle navigation of omkafka: write to Apache Kafka" class="toctree-checkbox" id="toctree-checkbox-9" name="toctree-checkbox-9" role="switch" type="checkbox"/><label for="toctree-checkbox-9"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omkafka-broker.html">Broker</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omkafka-topic.html">Topic</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omkafka-key.html">Key</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omkafka-dynakey.html">DynaKey</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omkafka-dynatopic.html">DynaTopic</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omkafka-dynatopic-cachesize.html">DynaTopic.Cachesize</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omkafka-partitions-auto.html">Partitions.Auto</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omkafka-partitions-number.html">Partitions.number</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omkafka-partitions-usefixed.html">Partitions.useFixed</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omkafka-errorfile.html">errorFile</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omkafka-statsfile.html">statsFile</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omkafka-confparam.html">ConfParam</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omkafka-topicconfparam.html">TopicConfParam</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omkafka-kafkaheader.html">KafkaHeader</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omkafka-template.html">Template</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omkafka-closetimeout.html">closeTimeout</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omkafka-resubmitonfailure.html">resubmitOnFailure</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omkafka-keepfailedmessages.html">KeepFailedMessages</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omkafka-failedmsgfile.html">failedMsgFile</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omkafka-statsname.html">statsName</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="modules/omlibdbi.html">omlibdbi: Generic Database Output Module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/ommail.html">ommail: Mail Output Module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/ommongodb.html">ommongodb: MongoDB Output Module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/ommysql.html">ommysql: MariaDB/MySQL Database Output Module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/omoracle.html">omoracle: Oracle Database Output Module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/ompgsql.html">PostgreSQL Database Output Module (ompgsql)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/ompipe.html">ompipe: Pipe Output Module</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/omprog.html">omprog: Program integration Output module</a><input aria-label="Toggle navigation of omprog: Program integration Output module" class="toctree-checkbox" id="toctree-checkbox-10" name="toctree-checkbox-10" role="switch" type="checkbox"/><label for="toctree-checkbox-10"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omprog-template.html">template</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omprog-binary.html">binary</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omprog-confirmmessages.html">confirmMessages</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omprog-confirmtimeout.html">confirmTimeout</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omprog-reportfailures.html">reportFailures</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omprog-usetransactions.html">useTransactions</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omprog-begintransactionmark.html">beginTransactionMark</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omprog-committransactionmark.html">commitTransactionMark</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omprog-output.html">output</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omprog-filecreatemode.html">fileCreateMode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omprog-hup-signal.html">hup.signal</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omprog-signalonclose.html">signalOnClose</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omprog-closetimeout.html">closeTimeout</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omprog-killunresponsive.html">killUnresponsive</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omprog-forcesingleinstance.html">forceSingleInstance</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="modules/omrabbitmq.html">omrabbitmq: RabbitMQ output module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/omrelp.html">omrelp: RELP Output Module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/omruleset.html">omruleset: ruleset output/including module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/omsendertrack.html">omsendertrack: Sender Tracking Output Module</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/omsnmp.html">omsnmp: SNMP Trap Output Module</a><input aria-label="Toggle navigation of omsnmp: SNMP Trap Output Module" class="toctree-checkbox" id="toctree-checkbox-11" name="toctree-checkbox-11" role="switch" type="checkbox"/><label for="toctree-checkbox-11"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omsnmp-server.html">Server</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omsnmp-port.html">Port</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omsnmp-transport.html">Transport</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omsnmp-version.html">Version</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omsnmp-community.html">Community</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omsnmp-trapoid.html">TrapOID</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omsnmp-messageoid.html">MessageOID</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omsnmp-enterpriseoid.html">EnterpriseOID</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omsnmp-specifictype.html">SpecificType</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omsnmp-snmpv1dynsource.html">Snmpv1DynSource</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/omsnmp-traptype.html">TrapType</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="modules/omstdout.html">omstdout: stdout output module (testbench tool)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/omudpspoof.html">omudpspoof: UDP spoofing output module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/omusrmsg.html">omusrmsg: notify users</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/omuxsock.html">omuxsock: Unix sockets Output Module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/sigprov_gt.html">GuardTime Log Signature Provider (gt)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/sigprov_ksi.html">Keyless Signature Infrastructure Provider (ksi)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/sigprov_ksi12.html">KSI Signature Provider (rsyslog-ksi-ls12)</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="modules/idx_input.html">Input Modules</a><input aria-label="Toggle navigation of Input Modules" class="toctree-checkbox" id="toctree-checkbox-12" name="toctree-checkbox-12" role="switch" type="checkbox"/><label for="toctree-checkbox-12"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/im3195.html">im3195: RFC3195 Input Module</a><input aria-label="Toggle navigation of im3195: RFC3195 Input Module" class="toctree-checkbox" id="toctree-checkbox-13" name="toctree-checkbox-13" role="switch" type="checkbox"/><label for="toctree-checkbox-13"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/im3195-input3195listenport.html">Input3195ListenPort</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="modules/imbatchreport.html">imbatchreport: Batch report input module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/imczmq.html">imczmq: Input module for ZeroMQ</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/imdiag.html">imdiag: Diagnostic instrumentation</a><input aria-label="Toggle navigation of imdiag: Diagnostic instrumentation" class="toctree-checkbox" id="toctree-checkbox-14" name="toctree-checkbox-14" role="switch" type="checkbox"/><label for="toctree-checkbox-14"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdiag-aborttimeout.html">AbortTimeout</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdiag-injectdelaymode.html">InjectDelayMode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdiag-maxsessions.html">MaxSessions</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdiag-listenportfilename.html">ListenPortFileName</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdiag-serverrun.html">ServerRun</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdiag-serverstreamdrivermode.html">ServerStreamDriverMode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdiag-serverstreamdriverauthmode.html">ServerStreamDriverAuthMode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdiag-serverstreamdriverpermittedpeer.html">ServerStreamDriverPermittedPeer</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdiag-serverinputname.html">ServerInputName</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/imdocker.html">imdocker: Docker Input Module</a><input aria-label="Toggle navigation of imdocker: Docker Input Module" class="toctree-checkbox" id="toctree-checkbox-15" name="toctree-checkbox-15" role="switch" type="checkbox"/><label for="toctree-checkbox-15"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdocker-dockerapiunixsockaddr.html">DockerApiUnixSockAddr</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdocker-apiversionstr.html">ApiVersionStr</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdocker-pollinginterval.html">PollingInterval</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdocker-listcontainersoptions.html">ListContainersOptions</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdocker-getcontainerlogoptions.html">GetContainerLogOptions</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdocker-retrievenewlogsfromstart.html">RetrieveNewLogsFromStart</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdocker-defaultfacility.html">DefaultFacility</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdocker-defaultseverity.html">DefaultSeverity</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdocker-escapelf.html">escapeLF</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/imdtls.html">imdtls: Input Module for DTLS Protocol over UDP</a><input aria-label="Toggle navigation of imdtls: Input Module for DTLS Protocol over UDP" class="toctree-checkbox" id="toctree-checkbox-16" name="toctree-checkbox-16" role="switch" type="checkbox"/><label for="toctree-checkbox-16"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdtls-address.html">Address</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdtls-port.html">Port</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdtls-timeout.html">Timeout</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdtls-name.html">Name</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdtls-ruleset.html">Ruleset</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdtls-tls-authmode.html">tls.authMode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdtls-tls-cacert.html">tls.caCert</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdtls-tls-mycert.html">tls.myCert</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdtls-tls-myprivkey.html">tls.myPrivKey</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdtls-tls-tlscfgcmd.html">tls.tlsCfgCmd</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imdtls-tls-permittedpeer.html">tls.permittedPeer</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/imfile.html">imfile: Text File Input Module</a><input aria-label="Toggle navigation of imfile: Text File Input Module" class="toctree-checkbox" id="toctree-checkbox-17" name="toctree-checkbox-17" role="switch" type="checkbox"/><label for="toctree-checkbox-17"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-addceetag.html">addCeeTag</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-addmetadata.html">addMetadata</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-deletestateonfiledelete.html">deleteStateOnFileDelete</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-deletestateonfilemove.html">deleteStateOnFileMove</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-discardtruncatedmsg.html">discardTruncatedMsg</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-endmsg-regex.html">endmsg.regex</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-escapelf.html">escapeLF</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-escapelf-replacement.html">escapeLF.replacement</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-facility.html">Facility</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-file.html">File</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-freshstarttail.html">freshStartTail</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-ignoreolderthan.html">ignoreOlderThan</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-maxbytesperminute.html">MaxBytesPerMinute</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-maxlinesatonce.html">MaxLinesAtOnce</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-maxlinesperminute.html">MaxLinesPerMinute</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-maxsubmitatonce.html">MaxSubmitAtOnce</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-mode.html">Mode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-msgdiscardingerror.html">msgDiscardingError</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-needparse.html">needParse</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-persiststateaftersubmission.html">persistStateAfterSubmission</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-persiststateinterval.html">PersistStateInterval</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-pollinginterval.html">PollingInterval</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-readmode.html">readMode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-readtimeout.html">readTimeout</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-reopenontruncate.html">reopenOnTruncate</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-ruleset.html">Ruleset</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-severity.html">Severity</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-sortfiles.html">sortFiles</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-startmsg-regex.html">startmsg.regex</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-statefile.html">stateFile</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-statefile-directory.html">statefile.directory</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-tag.html">Tag</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-timeoutgranularity.html">timeoutGranularity</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imfile-trimlineoverbytes.html">trimLineOverBytes</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/imgssapi.html">imgssapi: GSSAPI Syslog Input Module</a><input aria-label="Toggle navigation of imgssapi: GSSAPI Syslog Input Module" class="toctree-checkbox" id="toctree-checkbox-18" name="toctree-checkbox-18" role="switch" type="checkbox"/><label for="toctree-checkbox-18"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="modules/gssapi.html">GSSAPI module support in rsyslog v3</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imgssapi-inputgssserverrun.html">InputGSSServerRun</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imgssapi-inputgssserverservicename.html">InputGSSServerServiceName</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imgssapi-inputgssserverpermitplaintcp.html">InputGSSServerPermitPlainTcp</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imgssapi-inputgssservermaxsessions.html">InputGSSServerMaxSessions</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imgssapi-inputgssserverkeepalive.html">InputGSSServerKeepAlive</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imgssapi-inputgsslistenportfilename.html">InputGSSListenPortFileName</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="modules/imhiredis.html">Imhiredis: Redis input plugin</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/imhttp.html">imhttp: HTTP input module</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/imjournal.html">imjournal: Systemd Journal Input Module</a><input aria-label="Toggle navigation of imjournal: Systemd Journal Input Module" class="toctree-checkbox" id="toctree-checkbox-19" name="toctree-checkbox-19" role="switch" type="checkbox"/><label for="toctree-checkbox-19"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imjournal-persiststateinterval.html">PersistStateInterval</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imjournal-filecreatemode.html">FileCreateMode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imjournal-statefile.html">StateFile</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imjournal-ratelimit-interval.html">Ratelimit.Interval</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imjournal-ratelimit-burst.html">Ratelimit.Burst</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imjournal-ignorepreviousmessages.html">IgnorePreviousMessages</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imjournal-defaultseverity.html">DefaultSeverity</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imjournal-defaultfacility.html">DefaultFacility</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imjournal-usepidfromsystem.html">UsePidFromSystem</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imjournal-usepid.html">UsePid</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imjournal-ignorenonvalidstatefile.html">IgnoreNonValidStatefile</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imjournal-workaroundjournalbug.html">WorkAroundJournalBug</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imjournal-fsync.html">FSync</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imjournal-remote.html">Remote</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imjournal-defaulttag.html">defaultTag</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imjournal-main.html">Main</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/imkafka.html">imkafka: read from Apache Kafka</a><input aria-label="Toggle navigation of imkafka: read from Apache Kafka" class="toctree-checkbox" id="toctree-checkbox-20" name="toctree-checkbox-20" role="switch" type="checkbox"/><label for="toctree-checkbox-20"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imkafka-broker.html">broker</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imkafka-confparam.html">confparam</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imkafka-consumergroup.html">consumergroup</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imkafka-parsehostname.html">parseHostname</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imkafka-ruleset.html">ruleset</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imkafka-topic.html">topic</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/imklog.html">imklog: Kernel Log Input Module</a><input aria-label="Toggle navigation of imklog: Kernel Log Input Module" class="toctree-checkbox" id="toctree-checkbox-21" name="toctree-checkbox-21" role="switch" type="checkbox"/><label for="toctree-checkbox-21"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imklog-internalmsgfacility.html">InternalMsgFacility</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imklog-permitnonkernelfacility.html">PermitNonKernelFacility</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imklog-consoleloglevel.html">ConsoleLogLevel</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imklog-parsekerneltimestamp.html">ParseKernelTimestamp</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imklog-keepkerneltimestamp.html">KeepKernelTimestamp</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imklog-logpath.html">LogPath</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imklog-ratelimitinterval.html">RatelimitInterval</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imklog-ratelimitburst.html">RatelimitBurst</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="modules/imkmsg.html">imkmsg: /dev/kmsg Log Input Module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/immark.html">immark: Mark Message Input Module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/impcap.html">Impcap: network traffic capture</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/improg.html">improg: Program integration input module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/impstats.html">impstats: Generate Periodic Statistics of Internal Counters</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/imptcp.html">imptcp: Plain TCP Syslog</a><input aria-label="Toggle navigation of imptcp: Plain TCP Syslog" class="toctree-checkbox" id="toctree-checkbox-22" name="toctree-checkbox-22" role="switch" type="checkbox"/><label for="toctree-checkbox-22"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-threads.html">Threads</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-maxsessions.html">MaxSessions</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-processonpoller.html">ProcessOnPoller</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-port.html">Port</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-path.html">Path</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-discardtruncatedmsg.html">DiscardTruncatedMsg</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-fileowner.html">FileOwner</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-fileownernum.html">FileOwnerNum</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-filegroup.html">FileGroup</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-filegroupnum.html">FileGroupNum</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-filecreatemode.html">FileCreateMode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-failonchownfailure.html">FailOnChOwnFailure</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-unlink.html">Unlink</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-name.html">Name</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-ruleset.html">Ruleset</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-maxframesize.html">MaxFrameSize</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-address.html">Address</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-addtlframedelimiter.html">AddtlFrameDelimiter</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-supportoctetcountedframing.html">SupportOctetCountedFraming</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-notifyonconnectionclose.html">NotifyOnConnectionClose</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-notifyonconnectionopen.html">NotifyOnConnectionOpen</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-keepalive.html">KeepAlive</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-keepalive-probes.html">KeepAlive.Probes</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-keepalive-interval.html">KeepAlive.Interval</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-keepalive-time.html">KeepAlive.Time</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-ratelimit-interval.html">RateLimit.Interval</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-ratelimit-burst.html">RateLimit.Burst</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-compression-mode.html">Compression.mode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-flowcontrol.html">flowControl</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-multiline.html">MultiLine</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-framing-delimiter-regex.html">framing.delimiter.regex</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-socketbacklog.html">SocketBacklog</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-defaulttz.html">Defaulttz</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-framingfix-cisco-asa.html">Framingfix.cisco.asa</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imptcp-listenportfilename.html">ListenPortFileName</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="modules/imrelp.html">imrelp: RELP Input Module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/imsolaris.html">imsolaris: Solaris Input Module</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/imtcp.html">imtcp: TCP Syslog Input Module</a><input aria-label="Toggle navigation of imtcp: TCP Syslog Input Module" class="toctree-checkbox" id="toctree-checkbox-23" name="toctree-checkbox-23" role="switch" type="checkbox"/><label for="toctree-checkbox-23"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-addtlframedelimiter.html">AddtlFrameDelimiter</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-disablelfdelimiter.html">DisableLFDelimiter</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-maxframesize.html">MaxFrameSize</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-notifyonconnectionopen.html">NotifyOnConnectionOpen</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-notifyonconnectionclose.html">NotifyOnConnectionClose</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-keepalive.html">KeepAlive</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-keepalive-probes.html">KeepAlive.Probes</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-keepalive-time.html">KeepAlive.Time</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-keepalive-interval.html">KeepAlive.Interval</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-flowcontrol.html">FlowControl</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-maxlisteners.html">MaxListeners</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-maxsessions.html">MaxSessions</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-streamdriver-name.html">StreamDriver.Name</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-workerthreads.html">WorkerThreads</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-starvationprotection-maxreads.html">StarvationProtection.MaxReads</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-streamdriver-mode.html">StreamDriver.Mode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-streamdriver-authmode.html">StreamDriver.AuthMode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-streamdriver-permitexpiredcerts.html">StreamDriver.PermitExpiredCerts</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-streamdriver-checkextendedkeypurpose.html">streamDriver.checkExtendedKeyPurpose</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-streamdriver-prioritizesan.html">StreamDriver.PrioritizeSAN</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-streamdriver-tlsverifydepth.html">StreamDriver.TlsVerifyDepth</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-permittedpeer.html">PermittedPeer</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-discardtruncatedmsg.html">DiscardTruncatedMsg</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-gnutlsprioritystring.html">gnutlsPriorityString</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-preservecase.html">PreserveCase</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-port.html">Port</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-listenportfilename.html">ListenPortFileName</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-address.html">Address</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-name.html">Name</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-ruleset.html">Ruleset</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-supportoctetcountedframing.html">SupportOctetCountedFraming</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-socketbacklog.html">SocketBacklog</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-ratelimit-interval.html">RateLimit.Interval</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-ratelimit-burst.html">RateLimit.Burst</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-streamdriver-cafile.html">streamDriver.CAFile</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-streamdriver-crlfile.html">streamDriver.CRLFile</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-streamdriver-keyfile.html">streamDriver.KeyFile</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imtcp-streamdriver-certfile.html">streamDriver.CertFile</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="modules/imtuxedoulog.html">imtuxedoulog: Tuxedo ULOG input module</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/imudp.html">imudp: UDP Syslog Input Module</a><input aria-label="Toggle navigation of imudp: UDP Syslog Input Module" class="toctree-checkbox" id="toctree-checkbox-24" name="toctree-checkbox-24" role="switch" type="checkbox"/><label for="toctree-checkbox-24"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imudp-timerequery.html">TimeRequery</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imudp-schedulingpolicy.html">SchedulingPolicy</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imudp-schedulingpriority.html">SchedulingPriority</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imudp-batchsize.html">BatchSize</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imudp-threads.html">Threads</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imudp-preservecase.html">PreserveCase</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imudp-address.html">Address</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imudp-port.html">Port</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imudp-ipfreebind.html">IpFreeBind</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imudp-device.html">Device</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imudp-ruleset.html">Ruleset</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imudp-ratelimit-interval.html">RateLimit.Interval</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imudp-ratelimit-burst.html">RateLimit.Burst</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imudp-name.html">Name</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imudp-name-appendport.html">Name.appendPort</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imudp-defaulttz.html">DefaultTZ</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imudp-rcvbufsize.html">RcvBufSize</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/imuxsock.html">imuxsock: Unix Socket Input Module</a><input aria-label="Toggle navigation of imuxsock: Unix Socket Input Module" class="toctree-checkbox" id="toctree-checkbox-25" name="toctree-checkbox-25" role="switch" type="checkbox"/><label for="toctree-checkbox-25"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-syssock-ignoretimestamp.html">SysSock.IgnoreTimestamp</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-syssock-ignoreownmessages.html">SysSock.IgnoreOwnMessages</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-syssock-use.html">SysSock.Use</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-syssock-name.html">SysSock.Name</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-syssock-flowcontrol.html">SysSock.FlowControl</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-syssock-usepidfromsystem.html">SysSock.UsePIDFromSystem</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-syssock-ratelimit-interval.html">SysSock.RateLimit.Interval</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-syssock-ratelimit-burst.html">SysSock.RateLimit.Burst</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-syssock-ratelimit-severity.html">SysSock.RateLimit.Severity</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-syssock-usesystimestamp.html">SysSock.UseSysTimeStamp</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-syssock-annotate.html">SysSock.Annotate</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-syssock-parsetrusted.html">SysSock.ParseTrusted</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-syssock-unlink.html">SysSock.Unlink</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-syssock-usespecialparser.html">SysSock.UseSpecialParser</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-syssock-parsehostname.html">SysSock.ParseHostname</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-ruleset.html">Ruleset</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-ignoretimestamp.html">IgnoreTimestamp</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-ignoreownmessages.html">IgnoreOwnMessages</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-flowcontrol.html">FlowControl</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-ratelimit-interval.html">RateLimit.Interval</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-ratelimit-burst.html">RateLimit.Burst</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-ratelimit-severity.html">RateLimit.Severity</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-usepidfromsystem.html">UsePIDFromSystem</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-usesystimestamp.html">UseSysTimeStamp</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-createpath.html">CreatePath</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-socket.html">Socket</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-hostname.html">HostName</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-annotate.html">Annotate</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-parsetrusted.html">ParseTrusted</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-unlink.html">Unlink</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-usespecialparser.html">UseSpecialParser</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/imuxsock-parsehostname.html">ParseHostname</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="modules/idx_parser.html">Parser Modules</a><input aria-label="Toggle navigation of Parser Modules" class="toctree-checkbox" id="toctree-checkbox-26" name="toctree-checkbox-26" role="switch" type="checkbox"/><label for="toctree-checkbox-26"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="modules/pmciscoios.html">pmciscoios</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/pmdb2diag.html">pmdb2diag: DB2 Diag file parser module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/pmlastmsg.html">pmlastmsg: last message repeated n times</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/pmnormalize.html">Log Message Normalization Parser Module (pmnormalize)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/pmnull.html">pmnull: Syslog Null Parser Module</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/pmrfc3164.html">pmrfc3164: Parse RFC3164-formatted messages</a><input aria-label="Toggle navigation of pmrfc3164: Parse RFC3164-formatted messages" class="toctree-checkbox" id="toctree-checkbox-27" name="toctree-checkbox-27" role="switch" type="checkbox"/><label for="toctree-checkbox-27"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/pmrfc3164-permit-squarebracketsinhostname.html">permit.squareBracketsInHostname</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/pmrfc3164-permit-slashesinhostname.html">permit.slashesInHostname</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/pmrfc3164-permit-atsignsinhostname.html">permit.AtSignsInHostname</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/pmrfc3164-force-tagendingbycolon.html">force.tagEndingByColon</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/pmrfc3164-remove-msgfirstspace.html">remove.msgFirstSpace</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/pmrfc3164-detect-yearaftertimestamp.html">detect.YearAfterTimestamp</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/pmrfc3164-detect-headerless.html">detect.headerless</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/pmrfc3164-headerless-hostname.html">headerless.hostname</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/pmrfc3164-headerless-tag.html">headerless.tag</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/pmrfc3164-headerless-ruleset.html">headerless.ruleset</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/pmrfc3164-headerless-errorfile.html">headerless.errorfile</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/pmrfc3164-headerless-drop.html">headerless.drop</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="modules/pmrfc3164sd.html">pmrfc3164sd: Parse RFC5424 structured data inside RFC3164 messages</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/pmrfc5424.html">pmrfc5424: Parse RFC5424-formatted messages</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="modules/idx_messagemod.html">Message Modification Modules</a><input aria-label="Toggle navigation of Message Modification Modules" class="toctree-checkbox" id="toctree-checkbox-28" name="toctree-checkbox-28" role="switch" type="checkbox"/><label for="toctree-checkbox-28"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/mmaitag.html">AI-based classification (mmaitag)</a><input aria-label="Toggle navigation of AI-based classification (mmaitag)" class="toctree-checkbox" id="toctree-checkbox-29" name="toctree-checkbox-29" role="switch" type="checkbox"/><label for="toctree-checkbox-29"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmaitag-provider.html">provider</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmaitag-tag.html">tag</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmaitag-model.html">model</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmaitag-expert-initialprompt.html">expert.initialPrompt</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmaitag-inputproperty.html">inputProperty</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmaitag-apikey.html">apiKey</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmaitag-apikey_file.html">apiKeyFile</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/mmanon.html">IP Address Anonymization Module (mmanon)</a><input aria-label="Toggle navigation of IP Address Anonymization Module (mmanon)" class="toctree-checkbox" id="toctree-checkbox-30" name="toctree-checkbox-30" role="switch" type="checkbox"/><label for="toctree-checkbox-30"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmanon-ipv4-enable.html">ipv4.enable</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmanon-ipv4-mode.html">ipv4.mode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmanon-ipv4-bits.html">ipv4.bits</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmanon-ipv4-replacechar.html">ipv4.replaceChar</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmanon-ipv6-enable.html">ipv6.enable</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmanon-ipv6-anonmode.html">ipv6.anonMode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmanon-ipv6-bits.html">ipv6.bits</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmanon-embeddedipv4-enable.html">embeddedIpv4.enable</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmanon-embeddedipv4-anonmode.html">embeddedIpv4.anonMode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmanon-embeddedipv4-bits.html">embeddedIpv4.bits</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmaudit.html">Linux Audit Log Parser (mmaudit)</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/mmcount.html">mmcount</a><input aria-label="Toggle navigation of mmcount" class="toctree-checkbox" id="toctree-checkbox-31" name="toctree-checkbox-31" role="switch" type="checkbox"/><label for="toctree-checkbox-31"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmcount-appname.html">appName</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmcount-key.html">key</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmcount-value.html">value</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/mmdarwin.html">Darwin connector (mmdarwin)</a><input aria-label="Toggle navigation of Darwin connector (mmdarwin)" class="toctree-checkbox" id="toctree-checkbox-32" name="toctree-checkbox-32" role="switch" type="checkbox"/><label for="toctree-checkbox-32"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmdarwin-container.html">container</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmdarwin-key.html">key</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmdarwin-socketpath.html">socketpath</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmdarwin-response.html">response</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmdarwin-filtercode.html">filtercode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmdarwin-fields.html">fields</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmdarwin-send_partial.html">send_partial</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/mmdblookup.html">MaxMind/GeoIP DB lookup (mmdblookup)</a><input aria-label="Toggle navigation of MaxMind/GeoIP DB lookup (mmdblookup)" class="toctree-checkbox" id="toctree-checkbox-33" name="toctree-checkbox-33" role="switch" type="checkbox"/><label for="toctree-checkbox-33"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmdblookup-container.html">container</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmdblookup-key.html">key</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmdblookup-mmdbfile.html">mmdbfile</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmdblookup-fields.html">fields</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmdblookup-reloadonhup.html">reloadonhup</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/mmexternal.html">Support module for external message modification modules</a><input aria-label="Toggle navigation of Support module for external message modification modules" class="toctree-checkbox" id="toctree-checkbox-34" name="toctree-checkbox-34" role="switch" type="checkbox"/><label for="toctree-checkbox-34"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmexternal-binary.html">binary</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmexternal-interface-input.html">interface.input</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmexternal-output.html">output</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmexternal-forcesingleinstance.html">forceSingleInstance</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/mmfields.html">Fields Extraction Module (mmfields)</a><input aria-label="Toggle navigation of Fields Extraction Module (mmfields)" class="toctree-checkbox" id="toctree-checkbox-35" name="toctree-checkbox-35" role="switch" type="checkbox"/><label for="toctree-checkbox-35"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmfields-separator.html">separator</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmfields-jsonroot.html">jsonroot</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/mmjsonparse.html">JSON Structured Content Extraction Module (mmjsonparse)</a><input aria-label="Toggle navigation of JSON Structured Content Extraction Module (mmjsonparse)" class="toctree-checkbox" id="toctree-checkbox-36" name="toctree-checkbox-36" role="switch" type="checkbox"/><label for="toctree-checkbox-36"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmjsonparse-mode.html">mode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmjsonparse-cookie.html">cookie</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmjsonparse-max_scan_bytes.html">max_scan_bytes</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmjsonparse-allow_trailing.html">allow_trailing</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmjsonparse-userawmsg.html">useRawMsg</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmjsonparse-container.html">container</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmjsonrewrite.html">JSON Dotted Key Rewriter (mmjsonrewrite)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmjsonrewrite.html#purpose">Purpose</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmjsonrewrite.html#failure-conditions">Failure conditions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmjsonrewrite.html#configuration-parameters">Configuration Parameters</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmjsonrewrite.html#conflict-handling">Conflict handling</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmjsonrewrite.html#examples">Examples</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/mmjsonrewrite.html#troubleshooting">Troubleshooting</a><input aria-label="Toggle navigation of Troubleshooting" class="toctree-checkbox" id="toctree-checkbox-37" name="toctree-checkbox-37" role="switch" type="checkbox"/><label for="toctree-checkbox-37"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmjsonrewrite-input.html">input</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmjsonrewrite-output.html">output</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmjsontransform.html">JSON Dotted Key Transformer (mmjsontransform)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmjsontransform.html#purpose">Purpose</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmjsontransform.html#failure-conditions">Failure conditions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmjsontransform.html#notable-features">Notable Features</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmjsontransform.html#configuration-parameters">Configuration Parameters</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmjsontransform.html#transformation-modes">Transformation modes</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmjsontransform.html#conflict-handling">Conflict handling</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmjsontransform.html#examples">Examples</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/mmjsontransform.html#troubleshooting">Troubleshooting</a><input aria-label="Toggle navigation of Troubleshooting" class="toctree-checkbox" id="toctree-checkbox-38" name="toctree-checkbox-38" role="switch" type="checkbox"/><label for="toctree-checkbox-38"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmjsontransform-input.html">input</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmjsontransform-output.html">output</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmjsontransform-mode.html">mode</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/mmkubernetes.html">Kubernetes Metadata Module (mmkubernetes)</a><input aria-label="Toggle navigation of Kubernetes Metadata Module (mmkubernetes)" class="toctree-checkbox" id="toctree-checkbox-39" name="toctree-checkbox-39" role="switch" type="checkbox"/><label for="toctree-checkbox-39"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmkubernetes-annotation-match.html">annotation_match</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmkubernetes-allowunsignedcerts.html">allowunsignedcerts</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmkubernetes-busyretryinterval.html">busyretryinterval</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmkubernetes-cacheentryttl.html">cacheentryttl</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmkubernetes-cacheexpireinterval.html">cacheexpireinterval</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmkubernetes-containerrulebase.html">containerrulebase</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmkubernetes-containerrules.html">containerrules</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmkubernetes-de-dot.html">de_dot</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmkubernetes-de-dot-separator.html">de_dot_separator</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmkubernetes-dstmetadatapath.html">dstmetadatapath</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmkubernetes-filenamerulebase.html">filenamerulebase</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmkubernetes-filenamerules.html">filenamerules</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmkubernetes-kubernetesurl.html">KubernetesURL</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmkubernetes-skipverifyhost.html">skipverifyhost</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmkubernetes-srcmetadatapath.html">srcmetadatapath</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmkubernetes-sslpartialchain.html">sslpartialchain</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmkubernetes-tls-cacert.html">tls.cacert</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmkubernetes-tls-mycert.html">tls.mycert</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmkubernetes-tls-myprivkey.html">tls.myprivkey</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmkubernetes-token.html">token</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmkubernetes-tokenfile.html">tokenfile</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmleefparse.html">LEEF Structured Content Extraction Module (mmleefparse)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmleefparse.html#purpose">Purpose</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmleefparse.html#parsing-result">Parsing Result</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmleefparse.html#configuration-parameters">Configuration Parameters</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmleefparse.html#examples">Examples</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/mmnormalize.html">Log Message Normalization Module (mmnormalize)</a><input aria-label="Toggle navigation of Log Message Normalization Module (mmnormalize)" class="toctree-checkbox" id="toctree-checkbox-40" name="toctree-checkbox-40" role="switch" type="checkbox"/><label for="toctree-checkbox-40"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmnormalize-allowregex.html">allowRegex</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmnormalize-rulebase.html">ruleBase</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmnormalize-rule.html">rule</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmnormalize-userawmsg.html">useRawMsg</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmnormalize-path.html">path</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmnormalize-variable.html">variable</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmpstrucdata.html">RFC5424 structured data parsing module (mmpstrucdata)</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/mmpstrucdata.html#configuration-parameters">Configuration Parameters</a><input aria-label="Toggle navigation of Configuration Parameters" class="toctree-checkbox" id="toctree-checkbox-41" name="toctree-checkbox-41" role="switch" type="checkbox"/><label for="toctree-checkbox-41"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmpstrucdata-jsonroot.html">jsonRoot</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmpstrucdata-sd_name.lowercase.html">sd_name.lowercase</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/mmrfc5424addhmac.html">mmrfc5424addhmac</a><input aria-label="Toggle navigation of mmrfc5424addhmac" class="toctree-checkbox" id="toctree-checkbox-42" name="toctree-checkbox-42" role="switch" type="checkbox"/><label for="toctree-checkbox-42"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmrfc5424addhmac-key.html">key</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmrfc5424addhmac-hashfunction.html">hashFunction</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmrfc5424addhmac-sd-id.html">sdId</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmrm1stspace.html">mmrm1stspace: First Space Modification Module</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmsequence.html">Number generator and counter module (mmsequence)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="modules/mmsnareparse.html">mmsnareparse - NXLog Snare Windows Security parser</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/mmsnmptrapd.html">mmsnmptrapd message modification module</a><input aria-label="Toggle navigation of mmsnmptrapd message modification module" class="toctree-checkbox" id="toctree-checkbox-43" name="toctree-checkbox-43" role="switch" type="checkbox"/><label for="toctree-checkbox-43"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmsnmptrapd-tag.html">tag</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmsnmptrapd-severitymapping.html">severityMapping</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/mmtaghostname.html">mmtaghostname: message modification module</a><input aria-label="Toggle navigation of mmtaghostname: message modification module" class="toctree-checkbox" id="toctree-checkbox-44" name="toctree-checkbox-44" role="switch" type="checkbox"/><label for="toctree-checkbox-44"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmtaghostname-tag.html">tag</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmtaghostname-forcelocalhostname.html">forceLocalHostname</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="modules/mmutf8fix.html">Fix invalid UTF-8 Sequences (mmutf8fix)</a><input aria-label="Toggle navigation of Fix invalid UTF-8 Sequences (mmutf8fix)" class="toctree-checkbox" id="toctree-checkbox-45" name="toctree-checkbox-45" role="switch" type="checkbox"/><label for="toctree-checkbox-45"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmutf8fix-mode.html">mode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../reference/parameters/mmutf8fix-replacementchar.html">replacementChar</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="modules/idx_stringgen.html">String Generator Modules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="modules/idx_library.html">Library Modules</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="templates.html">Templates</a><input aria-label="Toggle navigation of Templates" class="toctree-checkbox" id="toctree-checkbox-46" name="toctree-checkbox-46" role="switch" type="checkbox"/><label for="toctree-checkbox-46"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../reference/templates/templates-type-list.html">List template type</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/templates/templates-type-subtree.html">Subtree template type</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/templates/templates-type-string.html">String template type</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/templates/templates-type-plugin.html">Plugin template type</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/templates/templates-statement-constant.html">Constant statement</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/templates/templates-statement-property.html">Property statement</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/templates/templates-options.html">Template options</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/templates/templates-examples.html">Template examples</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/templates/templates-reserved-names.html">Reserved template names</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/templates/templates-legacy.html">Legacy <code class="docutils literal notranslate"><span class="pre">$template</span></code> statement</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="properties.html">rsyslog Properties</a><input aria-label="Toggle navigation of rsyslog Properties" class="toctree-checkbox" id="toctree-checkbox-47" name="toctree-checkbox-47" role="switch" type="checkbox"/><label for="toctree-checkbox-47"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-msg.html">msg</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-rawmsg.html">rawmsg</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-rawmsg-after-pri.html">rawmsg-after-pri</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-hostname.html">hostname</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-source.html">source</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-fromhost.html">fromhost</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-fromhost-ip.html">fromhost-ip</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-fromhost-port.html">fromhost-port</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-syslogtag.html">syslogtag</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-programname.html">programname</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-pri.html">pri</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-pri-text.html">pri-text</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-iut.html">iut</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-syslogfacility.html">syslogfacility</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-syslogfacility-text.html">syslogfacility-text</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-syslogseverity.html">syslogseverity</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-syslogseverity-text.html">syslogseverity-text</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-syslogpriority.html">syslogpriority</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-syslogpriority-text.html">syslogpriority-text</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-timegenerated.html">timegenerated</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-timereported.html">timereported</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-timestamp.html">timestamp</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-protocol-version.html">protocol-version</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-structured-data.html">structured-data</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-app-name.html">app-name</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-procid.html">procid</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-msgid.html">msgid</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-inputname.html">inputname</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-uuid.html">uuid</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/message-jsonmesg.html">jsonmesg</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/system-bom.html">$bom</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/system-myhostname.html">$myhostname</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/system-time-now.html">$now</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/system-time-year.html">$year</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/system-time-month.html">$month</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/system-time-day.html">$day</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/system-time-wday.html">$wday</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/system-time-hour.html">$hour</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/system-time-hhour.html">$hhour</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/system-time-qhour.html">$qhour</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/system-time-minute.html">$minute</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../reference/properties/system-time-now-unixtimestamp.html">$now-unixtimestamp</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="property_replacer.html">The Property Replacer</a><input aria-label="Toggle navigation of The Property Replacer" class="toctree-checkbox" id="toctree-checkbox-48" name="toctree-checkbox-48" role="switch" type="checkbox"/><label for="toctree-checkbox-48"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="nomatch.html">Property Replacer nomatch mode</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="filters.html">Filter Conditions</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../rainerscript/index.html">RainerScript</a><input aria-label="Toggle navigation of RainerScript" class="toctree-checkbox" id="toctree-checkbox-49" name="toctree-checkbox-49" role="switch" type="checkbox"/><label for="toctree-checkbox-49"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../rainerscript/data_types.html">Data Types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../rainerscript/expressions.html">Expressions</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../rainerscript/functions/index.html">Functions</a><input aria-label="Toggle navigation of Functions" class="toctree-checkbox" id="toctree-checkbox-50" name="toctree-checkbox-50" role="switch" type="checkbox"/><label for="toctree-checkbox-50"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4 has-children"><a class="reference internal" href="../rainerscript/functions/idx_built-in_functions.html">Built-in Functions</a><input aria-label="Toggle navigation of Built-in Functions" class="toctree-checkbox" id="toctree-checkbox-51" name="toctree-checkbox-51" role="switch" type="checkbox"/><label for="toctree-checkbox-51"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-cnum.html">cnum()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-cstr.html">cstr()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-dyn_inc.html">dyn_inc()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-exec_template.html">exec_template()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-exists.html">exists()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-field.html">field()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-format_time.html">format_time()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-get_property.html">get_property()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-getenv.html">getenv()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-int2hex.html">int2hex()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-ipv4convert.html">num2ipv4() / ipv42num()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-is_time.html">is_time()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-lookup.html">lookup()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-parse_json.html">parse_json()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-parse_time.html">parse_time()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-percentile_observe.html">percentile_observe()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-previous_action_suspended.html">previous_action_suspended()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-prifilt.html">prifilt()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-random.html">random()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-re_extract.html">re_extract()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-re_extract_i.html">re_extract_i()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-re_match.html">re_match()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-re_match_i.html">re_match_i()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-replace.html">replace()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-script_error.html">script_error()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-strlen.html">strlen()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-substring.html">substring()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-tolower.html">tolower()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-toupper.html">toupper()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-trim.html">ltrim() / rtrim()</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/rs-wrap.html">wrap()</a></li>
+</ul>
+</li>
+<li class="toctree-l4 has-children"><a class="reference internal" href="../rainerscript/functions/idx_module_functions.html">Module Functions</a><input aria-label="Toggle navigation of Module Functions" class="toctree-checkbox" id="toctree-checkbox-52" name="toctree-checkbox-52" role="switch" type="checkbox"/><label for="toctree-checkbox-52"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/mo-ffaup.html">Faup</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/mo-hashXX.html">HashXX</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/mo-hashXXmod.html">HashXXmod</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/mo-http_request.html">HTTP-Request</a></li>
+<li class="toctree-l5"><a class="reference internal" href="../rainerscript/functions/mo-unflatten.html">Unflatten</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../rainerscript/control_structures.html">Control Structures</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../rainerscript/configuration_objects.html">configuration objects</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../rainerscript/constant_strings.html">Rsyslog Parameter String Constants</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../rainerscript/constant_strings.html#examples">Examples</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../rainerscript/variable_property_types.html">Variable (Property) types</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../rainerscript/lookup_tables.html">Lookup Tables</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../rainerscript/queue_parameters.html">General Queue Parameters</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../rainerscript/rainerscript_call.html">The rsyslog “call” statement</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../rainerscript/rainerscript_call_indirect.html">The rsyslog “call_indirect” statement</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../rainerscript/global.html">global() configuration object</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../rainerscript/include.html">The rsyslog include() object</a></li>
+</ul>
+</li>
+<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">Actions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="input.html">Input</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parser.html">Parser</a></li>
+<li class="toctree-l2"><a class="reference internal" href="timezone.html">timezone</a></li>
+<li class="toctree-l2"><a class="reference internal" href="examples.html">Examples</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="index_directives.html">Legacy Configuration Directives</a><input aria-label="Toggle navigation of Legacy Configuration Directives" class="toctree-checkbox" id="toctree-checkbox-53" name="toctree-checkbox-53" role="switch" type="checkbox"/><label for="toctree-checkbox-53"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="config_param_types.html">Configuration Parameter Types</a></li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="global/index.html">Legacy Global Configuration Statements</a><input aria-label="Toggle navigation of Legacy Global Configuration Statements" class="toctree-checkbox" id="toctree-checkbox-54" name="toctree-checkbox-54" role="switch" type="checkbox"/><label for="toctree-checkbox-54"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="global/options/rsconf1_abortonuncleanconfig.html">$AbortOnUncleanConfig</a></li>
+<li class="toctree-l4"><a class="reference internal" href="global/options/rsconf1_debugprintcfsyslinehandlerlist.html">$DebugPrintCFSyslineHandlerList</a></li>
+<li class="toctree-l4"><a class="reference internal" href="global/options/rsconf1_debugprintmodulelist.html">$DebugPrintModuleList</a></li>
+<li class="toctree-l4"><a class="reference internal" href="global/options/rsconf1_debugprinttemplatelist.html">$DebugPrintTemplateList</a></li>
+<li class="toctree-l4"><a class="reference internal" href="global/options/rsconf1_failonchownfailure.html">$FailOnChownFailure</a></li>
+<li class="toctree-l4"><a class="reference internal" href="global/options/rsconf1_generateconfiggraph.html">$GenerateConfigGraph</a></li>
+<li class="toctree-l4"><a class="reference internal" href="global/options/rsconf1_includeconfig.html">$IncludeConfig</a></li>
+<li class="toctree-l4"><a class="reference internal" href="global/options/rsconf1_mainmsgqueuesize.html">$MainMsgQueueSize</a></li>
+<li class="toctree-l4"><a class="reference internal" href="global/options/rsconf1_maxopenfiles.html">$MaxOpenFiles</a></li>
+<li class="toctree-l4"><a class="reference internal" href="global/options/rsconf1_moddir.html">$ModDir</a></li>
+<li class="toctree-l4"><a class="reference internal" href="global/options/rsconf1_modload.html">$ModLoad</a></li>
+<li class="toctree-l4"><a class="reference internal" href="global/options/rsconf1_umask.html">$UMASK</a></li>
+<li class="toctree-l4"><a class="reference internal" href="global/options/rsconf1_resetconfigvariables.html">$ResetConfigVariables</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="input_directives/index.html">Legacy Directives affecting Input Modules</a><input aria-label="Toggle navigation of Legacy Directives affecting Input Modules" class="toctree-checkbox" id="toctree-checkbox-55" name="toctree-checkbox-55" role="switch" type="checkbox"/><label for="toctree-checkbox-55"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="input_directives/rsconf1_allowedsender.html">$AllowedSender</a></li>
+<li class="toctree-l4"><a class="reference internal" href="input_directives/rsconf1_dropmsgswithmaliciousdnsptrrecords.html">$DropMsgsWithMaliciousDnsPTRRecords</a></li>
+<li class="toctree-l4"><a class="reference internal" href="input_directives/rsconf1_controlcharacterescapeprefix.html">$ControlCharacterEscapePrefix</a></li>
+<li class="toctree-l4"><a class="reference internal" href="input_directives/rsconf1_droptrailinglfonreception.html">$DropTrailingLFOnReception</a></li>
+<li class="toctree-l4"><a class="reference internal" href="input_directives/rsconf1_escape8bitcharsonreceive.html">$Escape8BitCharactersOnReceive</a></li>
+<li class="toctree-l4"><a class="reference internal" href="input_directives/rsconf1_escapecontrolcharactersonreceive.html">$EscapeControlCharactersOnReceive</a></li>
+<li class="toctree-l4"><a class="reference internal" href="input_directives/rsconf1_markmessageperiod.html">$MarkMessagePeriod</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="action/index.html">Deprecated Legacy Action-Specific Configuration Statements</a><input aria-label="Toggle navigation of Deprecated Legacy Action-Specific Configuration Statements" class="toctree-checkbox" id="toctree-checkbox-56" name="toctree-checkbox-56" role="switch" type="checkbox"/><label for="toctree-checkbox-56"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="action/rsconf1_actionexeconlywhenpreviousissuspended.html">How to Convert Deprecated <cite>$ActionExecOnlyWhenPreviousIsSuspended</cite> to Modern Style</a></li>
+<li class="toctree-l4"><a class="reference internal" href="action/rsconf1_actionresumeinterval.html">How to Convert Deprecated <cite>$ActionResumeInterval</cite> to Modern Style</a></li>
+<li class="toctree-l4"><a class="reference internal" href="action/rsconf1_repeatedmsgreduction.html">$RepeatedMsgReduction</a></li>
+<li class="toctree-l4"><a class="reference internal" href="action/rsconf1_omfileforcechown.html">$omfileForceChown</a></li>
+<li class="toctree-l4"><a class="reference internal" href="action/rsconf1_dirgroup.html">$DirGroup</a></li>
+<li class="toctree-l4"><a class="reference internal" href="action/rsconf1_dirowner.html">How to Convert Deprecated <cite>$DirOwner</cite> to Modern Style</a></li>
+<li class="toctree-l4"><a class="reference internal" href="action/rsconf1_dynafilecachesize.html">$DynaFileCacheSize</a></li>
+<li class="toctree-l4"><a class="reference internal" href="action/rsconf1_filecreatemode.html">$FileCreateMode</a></li>
+<li class="toctree-l4"><a class="reference internal" href="action/rsconf1_filegroup.html">$FileGroup</a></li>
+<li class="toctree-l4"><a class="reference internal" href="action/rsconf1_fileowner.html">$FileOwner</a></li>
+<li class="toctree-l4"><a class="reference internal" href="action/rsconf1_gssforwardservicename.html">$GssForwardServiceName</a></li>
+<li class="toctree-l4"><a class="reference internal" href="action/rsconf1_gssmode.html">$GssMode</a></li>
+</ul>
+</li>
+<li class="toctree-l3 has-children"><a class="reference internal" href="ruleset/index.html">Ruleset-Specific Legacy Configuration Statements</a><input aria-label="Toggle navigation of Ruleset-Specific Legacy Configuration Statements" class="toctree-checkbox" id="toctree-checkbox-57" name="toctree-checkbox-57" role="switch" type="checkbox"/><label for="toctree-checkbox-57"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="ruleset/rsconf1_rulesetcreatemainqueue.html">$RulesetCreateMainQueue</a></li>
+<li class="toctree-l4"><a class="reference internal" href="ruleset/rsconf1_rulesetparser.html">$RulesetParser</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="rsyslog_statistic_counter.html">rsyslog statistic counter</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="modules/index.html">Modules</a><input aria-label="Toggle navigation of Modules" class="toctree-checkbox" id="toctree-checkbox-58" name="toctree-checkbox-58" role="switch" type="checkbox"/><label for="toctree-checkbox-58"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="modules/workflow.html">Where are the modules integrated into the Message Flow?</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="output_channels.html">Output Channels</a></li>
+<li class="toctree-l2"><a class="reference internal" href="droppriv.html">Dropping privileges in rsyslog</a></li>
+<li class="toctree-l2"><a class="reference internal" href="ipv6.html">Notes on IPv6 Handling in Rsyslog</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cryprov_gcry.html">libgcrypt Log Crypto Provider (gcry)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cryprov_ossl.html">libossl Log Crypto Provider (ossl)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="dyn_stats.html">Dynamic Stats</a></li>
+<li class="toctree-l2"><a class="reference internal" href="lookup_tables.html">Lookup Tables</a></li>
+<li class="toctree-l2"><a class="reference internal" href="percentile_stats.html">Percentile Stats</a></li>
+<li class="toctree-l2"><a class="reference internal" href="converting_to_new_format.html">Converting older formats to <code class="docutils literal notranslate"><span class="pre">advanced</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="conf_formats.html">Configuration Formats</a></li>
+<li class="toctree-l2"><a class="reference internal" href="sysklogd_format.html">sysklogd format</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../faq/index.html">FAQ</a><input aria-label="Toggle navigation of FAQ" class="toctree-checkbox" id="toctree-checkbox-59" name="toctree-checkbox-59" role="switch" type="checkbox"/><label for="toctree-checkbox-59"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../faq/faq_overall.html">FAQ: some general topics often asked</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../faq/difference_queues.html">What is the difference between the main_queue and a queue with a ruleset tied to an input?</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../faq/encrypt_mysql_traffic_ommysql.html">FAQ: Encrypting MySQL Traffic with ommysql Plugin</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../faq/imudp-packet-loss.html">FAQ: Troubleshooting UDP Packet Loss</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../faq/common-config-mistakes.html">Common Configuration Mistakes and Misunderstandings</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../faq/imtcp-tls-gibberish.html">Why do I see gibberish when connecting with TLS?</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../tutorials/index.html">Tutorials</a><input aria-label="Toggle navigation of Tutorials" class="toctree-checkbox" id="toctree-checkbox-60" name="toctree-checkbox-60" role="switch" type="checkbox"/><label for="toctree-checkbox-60"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../tutorials/tls_cert_summary.html">Encrypting Syslog Traffic with TLS (SSL)</a><input aria-label="Toggle navigation of Encrypting Syslog Traffic with TLS (SSL)" class="toctree-checkbox" id="toctree-checkbox-61" name="toctree-checkbox-61" role="switch" type="checkbox"/><label for="toctree-checkbox-61"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../tutorials/tls_cert_scenario.html">Sample Use Case: Single Central Log Server</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../tutorials/tls_cert_ca.html">Setting up the CA</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../tutorials/tls_cert_machine.html">Generating the machine certificate</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../tutorials/tls_cert_server.html">Setting up the Central Server</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../tutorials/tls_cert_client.html">Setting up a client</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../tutorials/tls_cert_udp_relay.html">Setting up the UDP syslog relay</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../tutorials/tls_cert_errmsgs.html">Error Messages</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../tutorials/tls_cert_script.html">Creating certificates with a script</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../tutorials/tls.html">Encrypting Syslog Traffic with TLS (SSL) [short version]</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../tutorials/database.html">Writing syslog messages to MariaDB, MySQL, PostgreSQL or any other supported Database</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../tutorials/high_database_rate.html">Handling a massive syslog database insert rate with Rsyslog</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../tutorials/reliable_forwarding.html">Reliable Forwarding of syslog Messages with Rsyslog</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../tutorials/recording_pri.html">Recording the Priority of Syslog Messages</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../tutorials/failover_syslog_server.html">Failover Syslog Server</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../tutorials/log_rotation_fix_size.html">Log rotation with rsyslog</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../tutorials/gelf_forwarding.html">GELF forwarding in rsyslog</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../tutorials/log_sampling.html">Log Sampling</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../tutorials/random_sampling.html">Random sampling</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../tutorials/hash_sampling.html">Hash-based Sampling</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../troubleshooting/index.html">Troubleshooting</a><input aria-label="Toggle navigation of Troubleshooting" class="toctree-checkbox" id="toctree-checkbox-62" name="toctree-checkbox-62" role="switch" type="checkbox"/><label for="toctree-checkbox-62"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../troubleshooting/file_not_written.html">Output File is not Being Written</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../troubleshooting/selinux.html">Troubleshooting SELinux-Related Issues</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../troubleshooting/debug.html">Rsyslog Debug Support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../troubleshooting/troubleshoot.html">troubleshooting problems</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../troubleshooting/howtodebug.html">How to create a debug log</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../concepts/index.html">Concepts</a><input aria-label="Toggle navigation of Concepts" class="toctree-checkbox" id="toctree-checkbox-63" name="toctree-checkbox-63" role="switch" type="checkbox"/><label for="toctree-checkbox-63"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../concepts/log_pipeline/index.html">The Log Pipeline</a><input aria-label="Toggle navigation of The Log Pipeline" class="toctree-checkbox" id="toctree-checkbox-64" name="toctree-checkbox-64" role="switch" type="checkbox"/><label for="toctree-checkbox-64"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../concepts/log_pipeline/stages.html">Pipeline Stages</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../concepts/log_pipeline/design_patterns.html">Pipeline Design Patterns</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../concepts/log_pipeline/example_json_transform.html">Example: JSON Parse and Transformation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../concepts/log_pipeline/troubleshooting.html">Pipeline Troubleshooting</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../concepts/queues.html">Understanding rsyslog Queues</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../concepts/janitor.html">The Janitor Process</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../concepts/messageparser.html">Message parsers in rsyslog</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../concepts/multi_ruleset.html">Multiple Rulesets in rsyslog</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../concepts/netstrm_drvr.html">NetStream Drivers</a><input aria-label="Toggle navigation of NetStream Drivers" class="toctree-checkbox" id="toctree-checkbox-65" name="toctree-checkbox-65" role="switch" type="checkbox"/><label for="toctree-checkbox-65"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../concepts/ns_ptcp.html">ptcp Network Stream Driver</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../concepts/ns_gtls.html">gtls Network Stream Driver</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../concepts/ns_gtls.html#supported-driver-modes">Supported Driver Modes</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../concepts/ns_gtls.html#supported-authentication-modes">Supported Authentication Modes</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../concepts/ns_gtls.html#checkextendedkeypurpose">CheckExtendedKeyPurpose</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../concepts/ns_gtls.html#prioritizesan">PrioritizeSAN</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../concepts/ns_ossl.html">openssl Network Stream Driver</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../concepts/ns_mbedtls.html">mbedtls Network Stream Driver</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../development/index.html">Development</a><input aria-label="Toggle navigation of Development" class="toctree-checkbox" id="toctree-checkbox-66" name="toctree-checkbox-66" role="switch" type="checkbox"/><label for="toctree-checkbox-66"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../development/config_data_model.html">The rsyslog config data model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../development/config_data_model.html#objects">Objects</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../development/debugging.html">Debugging</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../development/dev_action_threads.html">Action Threads and Queue Engine (Developer-Oriented)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../development/dev_codestyle.html">rsyslog code style</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../development/dev_oplugins.html">Writing Rsyslog Output Plugins</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../development/dev_queue.html">The rsyslog queue object</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../development/dev_testbench.html">writing rsyslog tests</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../development/doc_reference_section_guidelines.html">Documentation Reference Section Structure Guidelines</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../development/doc_style_guide.html">Documentation Style Guide</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../development/engine_overview.html">Developer Overview: rsyslog Engine</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../development/generic_design.html">Generic design of a syslogd</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../development/internal_tooling.html">Internal tooling</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../idx_reference.html">Reference</a><input aria-label="Toggle navigation of Reference" class="toctree-checkbox" id="toctree-checkbox-67" name="toctree-checkbox-67" role="switch" type="checkbox"/><label for="toctree-checkbox-67"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../containers/index.html">Rsyslog Containers</a><input aria-label="Toggle navigation of Rsyslog Containers" class="toctree-checkbox" id="toctree-checkbox-68" name="toctree-checkbox-68" role="switch" type="checkbox"/><label for="toctree-checkbox-68"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l3 has-children"><a class="reference internal" href="../containers/user_images.html">User-Focused Images</a><input aria-label="Toggle navigation of User-Focused Images" class="toctree-checkbox" id="toctree-checkbox-69" name="toctree-checkbox-69" role="switch" type="checkbox"/><label for="toctree-checkbox-69"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l4"><a class="reference internal" href="../containers/minimal.html">rsyslog/rsyslog-minimal</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../containers/standard.html">rsyslog/rsyslog</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../containers/collector.html">rsyslog/rsyslog-collector</a></li>
+<li class="toctree-l4"><a class="reference internal" href="../containers/dockerlogs.html">rsyslog/rsyslog-dockerlogs</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../containers/development_images.html">Development and Historical Images</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../installation/index.html">Installation</a><input aria-label="Toggle navigation of Installation" class="toctree-checkbox" id="toctree-checkbox-70" name="toctree-checkbox-70" role="switch" type="checkbox"/><label for="toctree-checkbox-70"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../installation/packages.html">Installing rsyslog from Package</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../installation/rsyslog_docker.html">Using Rsyslog Docker Containers</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../installation/install_from_source.html">Installing rsyslog from Source</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../installation/build_from_repo.html">Installing rsyslog from the source repository</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../historical/index.html">Historical Documents</a><input aria-label="Toggle navigation of Historical Documents" class="toctree-checkbox" id="toctree-checkbox-71" name="toctree-checkbox-71" role="switch" type="checkbox"/><label for="toctree-checkbox-71"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../historical/php_syslog_ng.html">Using php-syslog-ng with rsyslog</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../historical/multi_ruleset_legacy_format_samples.html">Legacy Format Samples for Multiple Rulesets</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../historical/module_devel.html">Developing rsyslog modules (outdated)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../historical/high_performance.html">Receiving massive amounts of messages with high performance</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../historical/v8compatibility.html">Compatibility Notes for rsyslog v8</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../historical/v7compatibility.html">Compatibility Notes for rsyslog v7</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../historical/v6compatibility.html">Compatibility Notes for rsyslog v6</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../historical/v5compatibility.html">Compatibility Notes for rsyslog v5</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../historical/v4compatibility.html">Compatibility Notes for rsyslog v4</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../historical/v3compatibility.html">Compatibility Notes for rsyslog v3</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../history.html">RSyslog - History</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../licensing.html">Licensing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../how2help.html">How you can Help</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../community.html">Community Resources</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../features.html">RSyslog - Features</a></li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../proposals/index.html">Proposals</a><input aria-label="Toggle navigation of Proposals" class="toctree-checkbox" id="toctree-checkbox-72" name="toctree-checkbox-72" role="switch" type="checkbox"/><label for="toctree-checkbox-72"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../proposals/version_naming.html">Version Naming</a></li>
+</ul>
+</li>
+<li class="toctree-l2 has-children"><a class="reference internal" href="../whitepapers/index.html">Rsyslog Whitepapers</a><input aria-label="Toggle navigation of Rsyslog Whitepapers" class="toctree-checkbox" id="toctree-checkbox-73" name="toctree-checkbox-73" role="switch" type="checkbox"/><label for="toctree-checkbox-73"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l3"><a class="reference internal" href="../whitepapers/syslog_parsing.html">syslog parsing in rsyslog</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../whitepapers/syslog_protocol.html">syslog-protocol support in rsyslog</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../whitepapers/queues_analogy.html">Turning Lanes and Rsyslog Queues</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../whitepapers/preserve_in_nat.html">Preserving syslog sender over NAT</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../whitepapers/reliable_logging.html">How reliable should reliable logging be?</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="../_sources/configuration/actions.rst.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="actions">
+<h1>Actions<a class="headerlink" href="#actions" title="Link to this heading">¶</a></h1>
+<p id="cfgobj-input"><span id="index-0"></span>The Action object describes what is to be done with a message. They are
+implemented via <a class="reference internal" href="modules/idx_output.html"><span class="doc">output modules</span></a>.</p>
+<p>The action object has different parameters:</p>
+<ul class="simple">
+<li><p>those that apply to all actions and are action specific. These are
+documented below.</p></li>
+<li><p>parameters for the action queue. While they also apply to all
+parameters, they are queue-specific, not action-specific (they are
+the same that are used in rulesets, for example). They are documented
+separately under <a class="reference internal" href="../rainerscript/queue_parameters.html"><span class="doc">queue parameters</span></a>.</p></li>
+<li><p>action-specific parameters. These are specific to a certain type of
+actions. They are documented by the <a class="reference internal" href="modules/idx_output.html"><span class="doc">output modules</span></a>
+in question.</p></li>
+</ul>
+<section id="general-action-parameters">
+<h2>General Action Parameters<a class="headerlink" href="#general-action-parameters" title="Link to this heading">¶</a></h2>
+<p>Note: parameter names are case-insensitive.</p>
+<ul>
+<li><p><strong>name</strong> word</p>
+<p>This names the action. The name is used for statistics gathering
+and documentation. If no name is given, one is dynamically generated
+based on the occurrence of this action inside the rsyslog configuration.
+Actions are sequentially numbered from 1 to n.</p>
+</li>
+<li><p><strong>type</strong> string</p>
+<p>Mandatory parameter for every action. The name of the module that
+should be used.</p>
+</li>
+<li><p><strong>action.writeAllMarkMessages</strong> <em>on</em>/off</p>
+<p>This setting tells if mark messages are always written (“on”, the
+default) or only if the action was not recently executed (“off”). By
+default, recently means within the past 20 minutes. If this setting
+is “on”, mark messages are always sent to actions, no matter how
+recently they have been executed. In this mode, mark messages can be
+used as a kind of heartbeat. This mode also enables faster processing
+inside the rule engine. So it should be set to “off” only when there
+is a good reason to do so.</p>
+</li>
+<li><p><strong>action.execOnlyEveryNthTime</strong> integer</p>
+<p>If configured, the next action will only be executed every n-th time.
+For example, if configured to 3, the first two messages that go into
+the action will be dropped, the 3rd will actually cause the action to
+execute, the 4th and 5th will be dropped, the 6th executed under the
+action, … and so on.</p>
+</li>
+<li><p><strong>action.execOnlyEveryNthTimeout</strong> integer</p>
+<p>Has a meaning only if Action.ExecOnlyEveryNthTime is also configured
+for the same action. If so, the timeout setting specifies after which
+period the counting of “previous actions” expires and a new action
+count is begun. Specify 0 (the default) to disable timeouts. Why is
+this option needed? Consider this case: a message comes in at, eg.,
+10am. That’s count 1. Then, nothing happens for the next 10 hours. At
+8pm, the next one occurs. That’s count 2. Another 5 hours later, the
+next message occurs, bringing the total count to 3. Thus, this
+message now triggers the rule. The question is if this is desired
+behavior? Or should the rule only be triggered if the messages occur
+within an e.g. 20 minute window? If the later is the case, you need a
+Action.ExecOnlyEveryNthTimeTimeout=”1200”
+This directive will timeout previous messages seen if they are older
+than 20 minutes. In the example above, the count would now be always
+1 and consequently no rule would ever be triggered.</p>
+</li>
+<li><p><strong>action.errorfile</strong> string</p>
+<div class="versionadded">
+<p><span class="versionmodified added">Added in version 8.32.0.</span></p>
+</div>
+<p>When an action is executed, some messages may permanently fail.
+Depending on configuration, this could for example be caused by an
+offline target or exceptionally non-numerical data inside a
+numerical database field. If action.errorfile is specified, those
+messages are written to the specified file. If it is not specified
+(the default), messages are silently discarded.</p>
+<p>The error file format is JSON. It contains the failed messages as
+provided to the action in question, the action name as well as
+the rsyslog status code roughly explaining why it failed.</p>
+</li>
+<li><p><strong>action.errorfile.maxsize</strong> integer</p>
+<p>In some cases, error file needs to be limited in size.
+This option allows specifying a maximum size, in bytes, for the error file.
+When error file reaches that size, no more errors are written to it.</p>
+</li>
+<li><p><strong>action.execOnlyOnceEveryInterval</strong> integer</p>
+<p>Execute action only if the last execute is at last seconds in the
+past (more info in ommail, but may be used with any action)</p>
+</li>
+<li><p><strong>action.execOnlyWhenPreviousIsSuspended</strong> on/off</p>
+<p>This directive allows to specify if actions should always be executed
+(“off,” the default) or only if the previous action is suspended
+(“on”). This directive works hand-in-hand with the multiple actions
+per selector feature. It can be used, for example, to create rules
+that automatically switch destination servers or databases to a (set
+of) backup(s), if the primary server fails. Note that this feature
+depends on proper implementation of the suspend feature in the output
+module. All built-in output modules properly support it (most
+importantly the database write and the syslog message forwarder).
+Note, however, that a failed action may not immediately be detected.
+For more information, see the <a class="reference external" href="https://www.rsyslog.com/action-execonlywhenpreviousissuspended-preciseness/">rsyslog
+execOnlyWhenPreviousIsSuspended
+preciseness</a>
+FAQ article.</p>
+</li>
+<li><p><strong>action.repeatedmsgcontainsoriginalmsg</strong> on/off</p>
+<p>“last message repeated n times” messages, if generated, have a
+different format that contains the message that is being repeated.
+Note that only the first “n” characters are included, with n to be at
+least 80 characters, most probably more (this may change from version
+to version, thus no specific limit is given). The bottom line is that
+n is large enough to get a good idea which message was repeated but
+it is not necessarily large enough for the whole message. (Introduced
+with 4.1.5).</p>
+</li>
+<li><p><strong>action.resumeRetryCount</strong> integer</p>
+<p>[default 0, -1 means eternal]</p>
+<p>Sets how often an action is retried before it is considered to have
+failed. Failed actions discard messages.</p>
+</li>
+<li><p><strong>action.resumeInterval</strong> integer</p>
+<p>Sets the action’s resume interval. The interval provided
+is always in seconds. Thus, multiply by 60 if you need minutes and
+3,600 if you need hours (not recommended). When an action is
+suspended (e.g. destination can not be connected), the action is
+resumed for the configured interval. Thereafter, it is retried. If
+multiple retries fail, the interval is automatically extended. This
+is to prevent excessive resource use for retries. After each 10
+retries, the interval is extended by itself. To be precise, the
+actual interval is <cite>(numRetries / 10 + 1) * action.resumeInterval</cite>.
+Using the default value of 30, this means that on the 10th try the
+suspension interval will be 60 (seconds) and after the 100th try
+it will be 330 (seconds).</p>
+</li>
+<li><p><strong>action.resumeIntervalMax</strong> integer</p>
+<p>Default: 1800 (30 minutes)</p>
+<p>This sets an upper limit on the growth of action.resumeInterval.
+No wait will be larger than the value configured here. Going higher
+than the default is only recommended if you know that a system may
+be offline for an extended period of time <strong>and</strong> if it is acceptable
+that it may take quite long to detect it came online again.</p>
+</li>
+<li><p><strong>action.reportSuspension</strong> on/off</p>
+<p>Configures rsyslog to report suspension and reactivation
+of the action. This is useful to note which actions have
+problems (e.g. connecting to a remote system) and when.
+The default for this setting is the equally-named global
+parameter.</p>
+</li>
+<li><p><strong>action.reportSuspensionContinuation</strong> on/off</p>
+<p>Configures rsyslog to report continuation of action suspension.
+This emits new messages whenever an action is to be retried, but
+continues to fail. If set to “on”, <em>action.reportSuspension</em> is
+also automatically set to “on”.
+The default for this setting is the equally-named global
+parameter.</p>
+</li>
+<li><p><strong>action.copyMsg</strong> on/<em>off</em></p>
+<p>Configures action to <em>copy</em> the message if <em>on</em>. Defaults to
+<em>off</em> (which is how actions have worked traditionally), which
+causes queue to refer to the original message object, with
+reference-counting. (Introduced with 8.10.0).</p>
+</li>
+</ul>
+</section>
+<section id="useful-links">
+<h2>Useful Links<a class="headerlink" href="#useful-links" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Rainer’s blog posting on the performance of <a class="reference external" href="https://rainer.gerhards.net/2013/06/rsyslog-performance-main-and-action.html">main and action queue
+worker
+threads</a></p></li>
+</ul>
+</section>
+<section id="legacy-format">
+<h2>Legacy Format<a class="headerlink" href="#legacy-format" title="Link to this heading">¶</a></h2>
+<p id="legacy-action-order"><strong>Be warned that legacy action format is hard to get right. It is
+recommended to use RainerScript-Style action format whenever possible!</strong>
+A key problem with legacy format is that a single action is defined via
+multiple configurations lines, which may be spread all across
+rsyslog.conf. Even the definition of multiple actions may be intermixed
+(often not intentional!). If legacy actions format needs to be used
+(e.g. some modules may not yet implement the RainerScript format), it is
+strongly recommended to place all configuration statements pertaining to
+a single action closely together.</p>
+<p>Please also note that legacy action parameters <strong>do not</strong> affect
+RainerScript action objects. So if you define for example:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$actionResumeRetryCount 10
+action(type=&quot;omfwd&quot; target=&quot;server1.example.net&quot;)
+@@server2.example.net
+</pre></div>
+</div>
+<p>server1’s “action.resumeRetryCount” parameter is <strong>not</strong> set, instead
+server2’s is!</p>
+<p>A goal of the new RainerScript action format was to avoid confusion
+which parameters are actually used. As such, it would be
+counter-productive to honor legacy action parameters inside a
+RainerScript definition. As result, both types of action definitions are
+strictly (and nicely) separated from each other. The bottom line is that
+if RainerScript actions are used, one does not need to care about which
+legacy action parameters may (still…) be in effect.</p>
+<p>Note that not all modules necessarily support legacy action format.
+Especially newer modules are recommended to NOT support it.</p>
+<section id="legacy-description">
+<h3>Legacy Description<a class="headerlink" href="#legacy-description" title="Link to this heading">¶</a></h3>
+<p>Templates can be used with many actions. If used, the specified template
+is used to generate the message content (instead of the default
+template). To specify a template, write a semicolon after the action
+value immediately followed by the template name.
+Beware: templates MUST be defined BEFORE they are used. It is OK to
+define some templates, then use them in selector lines, define more
+templates and use them in the following selector lines. But it is
+NOT permitted to use a template in a selector line that is above its
+definition. If you do this, the action will be ignored.</p>
+<p><strong>You can have multiple actions for a single selector</strong> (or more
+precisely a single filter of such a selector line). Each action must be
+on its own line and the line must start with an ampersand (’&amp;’)
+character and have no filters. An example would be</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">*.=</span><span class="n">crit</span> <span class="p">:</span><span class="n">omusrmsg</span><span class="p">:</span><span class="n">rger</span>
+<span class="o">&amp;</span> <span class="n">root</span>
+<span class="o">&amp;</span> <span class="o">/</span><span class="n">var</span><span class="o">/</span><span class="n">log</span><span class="o">/</span><span class="n">critmsgs</span>
+</pre></div>
+</div>
+<p>These three lines send critical messages to the user rger and root and
+also store them in /var/log/critmsgs. <strong>Using multiple actions per
+selector is</strong> convenient and also <strong>offers a performance benefit</strong>. As
+the filter needs to be evaluated only once, there is less computation
+required to process the directive compared to the otherwise-equal config
+directives below:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">*.=</span><span class="n">crit</span> <span class="p">:</span><span class="n">omusrmsg</span><span class="p">:</span><span class="n">rger</span>
+<span class="o">*.=</span><span class="n">crit</span> <span class="n">root</span>
+<span class="o">*.=</span><span class="n">crit</span> <span class="o">/</span><span class="n">var</span><span class="o">/</span><span class="n">log</span><span class="o">/</span><span class="n">critmsgs</span>
+</pre></div>
+</div>
+</section>
+<section id="regular-file">
+<h3>Regular File<a class="headerlink" href="#regular-file" title="Link to this heading">¶</a></h3>
+<p>Typically messages are logged to real files. The file usually is
+specified by full pathname, beginning with a slash “/”. Starting with
+version 4.6.2 and 5.4.1 (previous v5 version do NOT support this)
+relative file names can also be specified. To do so, these must begin
+with a dot. For example, use “./file-in-current-dir.log” to specify a
+file in the current directory. Please note that rsyslogd usually changes
+its working directory to the root, so relative file names must be tested
+with care (they were introduced primarily as a debugging vehicle, but
+may have useful other applications as well).
+You may prefix each entry with the minus “-’’ sign to omit syncing the
+file after every logging. Note that you might lose information if the
+system crashes right behind a write attempt. Nevertheless this might
+give you back some performance, especially if you run programs that use
+logging in a very verbose manner.</p>
+<p>If your system is connected to a reliable UPS and you receive lots of
+log data (e.g. firewall logs), it might be a very good idea to turn of
+syncing by specifying the “-” in front of the file name.</p>
+<p><strong>The filename can be either static</strong>(always the same) or <strong>dynamic</strong>
+(different based on message received). The later is useful if you would
+automatically split messages into different files based on some message
+criteria. For example, dynamic file name selectors allow you to split
+messages into different files based on the host that sent them. With
+dynamic file names, everything is automatic and you do not need any
+filters.</p>
+<p>It works via the template system. First, you define a template for the
+file name. An example can be seen above in the description of template.
+We will use the “DynFile” template defined there. Dynamic filenames are
+indicated by specifying a questions mark “?” instead of a slash,
+followed by the template name. Thus, the selector line for our dynamic
+file name would look as follows:</p>
+<blockquote>
+<div><p><code class="docutils literal notranslate"><span class="pre">*.*</span> <span class="pre">?DynFile</span></code></p>
+</div></blockquote>
+<p>That’s all you need to do. Rsyslog will now automatically generate file
+names for you and store the right messages into the right files. Please
+note that the minus sign also works with dynamic file name selectors.
+Thus, to avoid syncing, you may use</p>
+<blockquote>
+<div><p><code class="docutils literal notranslate"><span class="pre">*.*</span> <span class="pre">-?DynFile</span></code></p>
+</div></blockquote>
+<p>And of course you can use templates to specify the output format:</p>
+<blockquote>
+<div><p><code class="docutils literal notranslate"><span class="pre">*.*</span> <span class="pre">?DynFile;MyTemplate</span></code></p>
+</div></blockquote>
+<p><strong>A word of caution:</strong> rsyslog creates files as needed. So if a new host
+is using your syslog server, rsyslog will automatically create a new
+file for it.</p>
+<p><strong>Creating directories is also supported</strong>. For example you can use the
+hostname as directory and the program name as file name:</p>
+<blockquote>
+<div><p><code class="docutils literal notranslate"><span class="pre">$template</span> <span class="pre">DynFile,&quot;/var/log/%HOSTNAME%/%programname%.log&quot;</span></code></p>
+</div></blockquote>
+</section>
+<section id="named-pipes">
+<h3>Named Pipes<a class="headerlink" href="#named-pipes" title="Link to this heading">¶</a></h3>
+<p>This version of rsyslogd(8) has support for logging output to named
+pipes (fifos). A fifo or named pipe can be used as a destination for log
+messages by prepending a pipe symbol (”|’’) to the name of the file.
+This is handy for debugging. Note that the fifo must be created with the
+mkfifo(1) command before rsyslogd(8) is started.</p>
+</section>
+<section id="terminal-and-console">
+<h3>Terminal and Console<a class="headerlink" href="#terminal-and-console" title="Link to this heading">¶</a></h3>
+<p>If the file you specified is a tty, special tty-handling is done, same
+with /dev/console.</p>
+</section>
+<section id="remote-machine">
+<h3>Remote Machine<a class="headerlink" href="#remote-machine" title="Link to this heading">¶</a></h3>
+<p>Rsyslogd provides full remote logging, i.e. is able to send messages to
+a remote host running rsyslogd(8) and to receive messages from remote
+hosts. Using this feature you’re able to control all syslog messages on
+one host, if all other machines will log remotely to that. This tears
+down administration needs.</p>
+<p>To forward messages to another host, prepend the hostname with the at
+sign (“&#64;”). A single at sign means that messages will be forwarded via
+UDP protocol (the standard for syslog). If you prepend two at signs
+(“&#64;&#64;”), the messages will be transmitted via TCP. Please note that plain
+TCP based syslog is not officially standardized, but most major syslogds
+support it (e.g. syslog-ng or <a class="reference external" href="https://www.winsyslog.com/">WinSyslog</a>).
+The forwarding action indicator (at-sign) can be followed by one or more
+options. If they are given, they must be immediately (without a space)
+following the final at sign and be enclosed in parenthesis. The
+individual options must be separated by commas. The following options
+are right now defined:</p>
+<p><strong>z&lt;number&gt;</strong></p>
+<p>Enable zlib-compression for the message. The &lt;number&gt; is the compression
+level. It can be 1 (lowest gain, lowest CPU overhead) to 9 (maximum
+compression, highest CPU overhead). The level can also be 0, which means
+“no compression”. If given, the “z” option is ignored. So this does not
+make an awful lot of sense. There is hardly a difference between level 1
+and 9 for typical syslog messages. You can expect a compression gain
+between 0% and 30% for typical messages. Very chatty messages may
+compress up to 50%, but this is seldom seen with typically traffic.
+Please note that rsyslogd checks the compression gain. Messages with 60
+bytes or less will never be compressed. This is because compression gain
+is pretty unlikely and we prefer to save CPU cycles. Messages over that
+size are always compressed. However, it is checked if there is a gain in
+compression and only if there is, the compressed message is transmitted.
+Otherwise, the uncompressed messages is transmitted. This saves the
+receiver CPU cycles for decompression. It also prevents small message to
+actually become larger in compressed form.</p>
+<p><strong>Please note that when a TCP transport is used, compression will also
+turn on syslog-transport-tls framing. See the “o” option for important
+information on the implications.</strong></p>
+<p>Compressed messages are automatically detected and decompressed by the
+receiver. There is nothing that needs to be configured on the receiver
+side.</p>
+<p><strong>o</strong></p>
+<p><strong>This option is experimental. Use at your own risk and only if you know
+why you need it! If in doubt, do NOT turn it on.</strong></p>
+<p>This option is only valid for plain TCP based transports. It selects a
+different framing based on IETF internet draft syslog-transport-tls-06.
+This framing offers some benefits over traditional LF-based framing.
+However, the standardization effort is not yet complete. There may be
+changes in upcoming versions of this standard. Rsyslog will be kept in
+line with the standard. There is some chance that upcoming changes will
+be incompatible to the current specification. In this case, all systems
+using -transport-tls framing must be upgraded. There will be no effort
+made to retain compatibility between different versions of rsyslog. The
+primary reason for that is that it seems technically impossible to
+provide compatibility between some of those changes. So you should take
+this note very serious. It is not something we do not *like* to do
+(and may change our mind if enough people beg…), it is something we
+most probably *can not* do for technical reasons (aka: you can beg as
+much as you like, it won’t change anything…).</p>
+<p>The most important implication is that compressed syslog messages via
+TCP must be considered with care. Unfortunately, it is technically
+impossible to transfer compressed records over traditional syslog plain
+tcp transports, so you are left with two evil choices…</p>
+<blockquote>
+<div><p>The hostname may be followed by a colon and the destination port.</p>
+</div></blockquote>
+<p>The following is an example selector line with forwarding:</p>
+<p>*.*    &#64;&#64;(o,z9)192.168.0.1:1470</p>
+<p>In this example, messages are forwarded via plain TCP with experimental
+framing and maximum compression to the host 192.168.0.1 at port 1470.</p>
+<p>*.* &#64;192.168.0.1</p>
+<p>In the example above, messages are forwarded via UDP to the machine
+192.168.0.1, the destination port defaults to 514. Messages will not be
+compressed.</p>
+<p>Note that IPv6 addresses contain colons. So if an IPv6 address is
+specified in the hostname part, rsyslogd could not detect where the IP
+address ends and where the port starts. There is a syntax extension to
+support this: put square brackets around the address (e.g. “[2001::1]”).
+Square brackets also work with real host names and IPv4 addresses, too.</p>
+<p>A valid sample to send messages to the IPv6 host 2001::1 at port 515 is
+as follows:</p>
+<p>*.* &#64;[2001::1]:515</p>
+<p>This works with TCP, too.</p>
+<p><strong>Note to sysklogd users:</strong> sysklogd does <strong>not</strong> support RFC 3164
+format, which is the default forwarding template in rsyslog. As such,
+you will experience duplicate hostnames if rsyslog is the sender and
+sysklogd is the receiver. The fix is simple: you need to use a different
+template. Use that one:</p>
+<dl class="simple">
+<dt>$template sysklogd,”&lt;%PRI%&gt;%TIMESTAMP% %syslogtag%%msg%\””</dt><dd><p>*.* &#64;192.168.0.1;sysklogd</p>
+</dd>
+</dl>
+</section>
+<section id="list-of-users">
+<h3>List of Users<a class="headerlink" href="#list-of-users" title="Link to this heading">¶</a></h3>
+<p>Usually critical messages are also directed to “root’’ on that machine.
+You can specify a list of users that shall get the message by simply
+writing “:omusrmsg: followed by the login name. For example, the send
+messages to root, use “:omusrmsg:root”. You may specify more than one
+user by separating them with commas (“,’’). Do not repeat the
+“:omusrmsg:” prefix in this case. For example, to send data to users
+root and rger, use “:omusrmsg:root,rger” (do not use
+“:omusrmsg:root,:omusrmsg:rger”, this is invalid). If they’re logged in
+they get the message.</p>
+</section>
+<section id="everyone-logged-on">
+<h3>Everyone logged on<a class="headerlink" href="#everyone-logged-on" title="Link to this heading">¶</a></h3>
+<p>Emergency messages often go to all users currently online to notify them
+that something strange is happening with the system. To specify this
+wall(1)-feature use an asterisk as the user message
+destination(“:omusrmsg:*’’).</p>
+</section>
+<section id="call-plugin">
+<h3>Call Plugin<a class="headerlink" href="#call-plugin" title="Link to this heading">¶</a></h3>
+<p>This is a generic way to call an output plugin. The plugin must support
+this functionality. Actual parameters depend on the module, so see the
+module’s doc on what to supply. The general syntax is as follows:</p>
+<p>:modname:params;template</p>
+<p>Currently, the ommysql database output module supports this syntax (in
+addition to the “&gt;” syntax it traditionally supported). For ommysql, the
+module name is “ommysql” and the params are the traditional ones. The
+;template part is not module specific, it is generic rsyslog
+functionality available to all modules.</p>
+<p>As an example, the ommysql module may be called as follows:</p>
+<p>:ommysql:dbhost,dbname,dbuser,dbpassword;dbtemplate</p>
+<p>For details, please see the “Database Table” section of this
+documentation.</p>
+<p>Note: as of this writing, the “:modname:” part is hardcoded into the
+module. So the name to use is not necessarily the name the module’s
+plugin file is called.</p>
+</section>
+<section id="database-table">
+<h3>Database Table<a class="headerlink" href="#database-table" title="Link to this heading">¶</a></h3>
+<p>This allows logging of the message to a database table. Currently, only
+MariaDB/MySQL databases are supported. However, other database drivers
+will most probably be developed as plugins. By default, a
+<a class="reference external" href="https://www.mwagent.com/">MonitorWare</a>-compatible schema is
+required for this to work. You can create that schema with the
+createDB.SQL file that came with the rsyslog package. You can also
+use any other schema of your liking - you just need to define a proper
+template and assign this template to the action.
+The database writer is called by specifying a greater-then sign (“&gt;”)
+in front of the database connect information. Immediately after that
+sign the database host name must be given, a comma, the database name,
+another comma, the database user, a comma and then the user’s password.
+If a specific template is to be used, a semicolon followed by the
+template name can follow the connect information. This is as follows:
+&gt;dbhost,dbname,dbuser,dbpassword;dbtemplate</p>
+<p><strong>Important: to use the database functionality, the MariaDB/MySQL output
+module must be loaded in the config file</strong> BEFORE the first database table
+action is used. This is done by placing the</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>$ModLoad ommysql
+</pre></div>
+</div>
+<p>directive some place above the first use of the database write (we
+recommend doing at the beginning of the config file).</p>
+</section>
+<section id="discard-stop">
+<h3>Discard / Stop<a class="headerlink" href="#discard-stop" title="Link to this heading">¶</a></h3>
+<p>If the discard action is carried out, the received message is
+immediately discarded. No further processing of it occurs. Discard has
+primarily been added to filter out messages before carrying on any
+further processing. For obvious reasons, the results of “discard” are
+depending on where in the configuration file it is being used. Please
+note that once a message has been discarded there is no way to retrieve
+it in later configuration file lines.</p>
+<p>Discard can be highly effective if you want to filter out some annoying
+messages that otherwise would fill your log files. To do that, place the
+discard actions early in your log files. This often plays well with
+property-based filters, giving you great freedom in specifying what you
+do not want.</p>
+<p>Discard is just the word “stop” with no further parameters:</p>
+<p>stop</p>
+<p>For example,</p>
+<p>*.*   stop</p>
+<p>discards everything (ok, you can achieve the same by not running rsyslogd
+at all…).</p>
+<p>Note that in legacy configuration the tilde character “~” can also be
+used instead of the word “stop”. This is nowadays a very bad practice and
+should be avoided.</p>
+</section>
+<section id="output-channel">
+<h3>Output Channel<a class="headerlink" href="#output-channel" title="Link to this heading">¶</a></h3>
+<p>Binds an output channel definition (see there for details) to this
+action. Output channel actions must start with a $-sign, e.g. if you
+would like to bind your output channel definition “mychannel” to the
+action, use “$mychannel”. Output channels support template definitions
+like all other actions.</p>
+</section>
+<section id="shell-execute">
+<h3>Shell Execute<a class="headerlink" href="#shell-execute" title="Link to this heading">¶</a></h3>
+<p><strong>NOTE: This action is only supported for backwards compatibility.
+For new configs, use</strong> <a class="reference internal" href="modules/omprog.html"><span class="doc">omprog</span></a> <strong>instead.
+It provides a more solid
+and secure solution with higher performance.</strong></p>
+<p>This executes a program in a subshell. The program is passed the
+template-generated message as the only command line parameter. Rsyslog
+waits until the program terminates and only then continues to run.</p>
+<p>^program-to-execute;template</p>
+<p>The program-to-execute can be any valid executable. It receives the
+template string as a single parameter (argv[1]).</p>
+<p><strong>WARNING:</strong> The Shell Execute action was added to serve an urgent need.
+While it is considered reasonable save when used with some thinking, its
+implications must be considered. The current implementation uses a
+system() call to execute the command. This is not the best way to do it
+(and will hopefully changed in further releases). Also, proper escaping
+of special characters is done to prevent command injection. However,
+attackers always find smart ways to circumvent escaping, so we can not
+say if the escaping applied will really safe you from all hassles.
+Lastly, rsyslog will wait until the shell command terminates. Thus, a
+program error in it (e.g. an infinite loop) can actually disable
+rsyslog. Even without that, during the programs run-time no messages are
+processed by rsyslog. As the IP stacks buffers are quickly overflowed,
+this bears an increased risk of message loss. You must be aware of these
+implications. Even though they are severe, there are several cases where
+the “shell execute” action is very useful. This is the reason why we
+have included it in its current form. To mitigate its risks, always a)
+test your program thoroughly, b) make sure its runtime is as short as
+possible (if it requires a longer run-time, you might want to spawn your
+own sub-shell asynchronously), c) apply proper firewalling so that only
+known senders can send syslog messages to rsyslog. Point c) is
+especially important: if rsyslog is accepting message from any hosts,
+chances are much higher that an attacker might try to exploit the “shell
+execute” action.</p>
+</section>
+<section id="template-name">
+<h3>Template Name<a class="headerlink" href="#template-name" title="Link to this heading">¶</a></h3>
+<p>Every ACTION can be followed by a template name. If so, that template is
+used for message formatting. If no name is given, a hard-coded default
+template is used for the action. There can only be one template name for
+each given action. The default template is specific to each action. For
+a description of what a template is and what you can do with it, see the
+<a class="reference internal" href="templates.html"><span class="doc">template</span></a> documentation.</p>
+<hr class="docutils" />
+<p><strong>Support:</strong> <a class="reference external" href="https://rsyslog.ai">rsyslog Assistant</a> |
+<a class="reference external" href="https://github.com/rsyslog/rsyslog/discussions">GitHub Discussions</a> |
+GitHub Issues: <a class="reference external" href="https://github.com/rsyslog/rsyslog/">rsyslog source project</a></p>
+<p><strong>Contributing:</strong> Source &amp; docs: <a class="reference external" href="https://github.com/rsyslog/rsyslog/">rsyslog source project</a></p>
+<p>© 2008–2025 <a class="reference external" href="https://rainer.gerhards.net/">Rainer Gerhards</a>
+and others. Licensed under the <a class="reference external" href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a>.</p>
+</section>
+</section>
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="input.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">Input</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="../rainerscript/include.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">The rsyslog include() object</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            Made with 
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">Actions</a><ul>
+<li><a class="reference internal" href="#general-action-parameters">General Action Parameters</a></li>
+<li><a class="reference internal" href="#useful-links">Useful Links</a></li>
+<li><a class="reference internal" href="#legacy-format">Legacy Format</a><ul>
+<li><a class="reference internal" href="#legacy-description">Legacy Description</a></li>
+<li><a class="reference internal" href="#regular-file">Regular File</a></li>
+<li><a class="reference internal" href="#named-pipes">Named Pipes</a></li>
+<li><a class="reference internal" href="#terminal-and-console">Terminal and Console</a></li>
+<li><a class="reference internal" href="#remote-machine">Remote Machine</a></li>
+<li><a class="reference internal" href="#list-of-users">List of Users</a></li>
+<li><a class="reference internal" href="#everyone-logged-on">Everyone logged on</a></li>
+<li><a class="reference internal" href="#call-plugin">Call Plugin</a></li>
+<li><a class="reference internal" href="#database-table">Database Table</a></li>
+<li><a class="reference internal" href="#discard-stop">Discard / Stop</a></li>
+<li><a class="reference internal" href="#output-channel">Output Channel</a></li>
+<li><a class="reference internal" href="#shell-execute">Shell Execute</a></li>
+<li><a class="reference internal" href="#template-name">Template Name</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="../_static/documentation_options.js?v=9cd8dd7b"></script>
+    <script src="../_static/doctools.js?v=9bcbadda"></script>
+    <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/scripts/furo.js?v=46bd48cc"></script>
+    </body>
+</html>
