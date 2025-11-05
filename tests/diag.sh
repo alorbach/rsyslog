@@ -1813,9 +1813,23 @@ df -hP . | tail -1 | awk '{
 		# Dump Kafka log
 		dump_kafka_serverlog
 	fi
+	if [ "$EXTRA_EXITCHECK" == 'dumpotellogs' ] && [ "$TEST_OUTPUT" == "VERBOSE" ]; then
+		# Dump OpenTelemetry Collector log
+		dep_work_dir=$(readlink -f .dep_wrk)
+		if [ -f "$dep_work_dir/otel/collector.log" ]; then
+			printf 'OpenTelemetry Collector log:\n'
+			cat "$dep_work_dir/otel/collector.log"
+		fi
+		if [ -n "${OTEL_OUTPUT_FILE:-}" ] && [ -f "$OTEL_OUTPUT_FILE" ]; then
+			printf 'OpenTelemetry Collector output file:\n'
+			head -100 "$OTEL_OUTPUT_FILE"
+		fi
+	fi
 
 	# Extended Exit handling for kafka / zookeeper instances
 	kafka_exit_handling "false"
+	# Extended Exit handling for OpenTelemetry Collector instances
+	otel_exit_handling "false"
 
 	# Ensure redis instance is stopped
 	if [ -n "$REDIS_DYN_DIR" ]; then
@@ -2040,6 +2054,8 @@ exit_test() {
 
 	# Extended Exit handling for kafka / zookeeper instances
 	kafka_exit_handling "true"
+	# Extended Exit handling for OpenTelemetry Collector instances
+	otel_exit_handling "true"
 
 	# Ensure redis is stopped
 	stop_redis
@@ -2318,6 +2334,14 @@ kafka_exit_handling() {
 		stop_zookeeper '.dep_wrk1' $1
 		stop_zookeeper '.dep_wrk2' $1
 		stop_zookeeper '.dep_wrk3' $1
+	fi
+}
+
+otel_exit_handling() {
+	# Extended Exit handling for OpenTelemetry Collector instances
+	if [[ "$EXTRA_EXIT" == 'otel' ]]; then
+		echo "stop OpenTelemetry Collector instance"
+		stop_otel_collector
 	fi
 }
 
@@ -3004,6 +3028,258 @@ init_elasticsearch() {
 	local base
 	base=$(es_base_url)
 	curl --silent -XDELETE "${base}/rsyslog_testbench"
+}
+
+# OpenTelemetry Collector support functions
+# These functions manage a local OpenTelemetry Collector instance for testing omotlp
+
+# Download OpenTelemetry Collector binary if necessary
+download_otel_collector() {
+	if [ "$RSYSLOG_TESTBENCH_USE_EXTERNAL_OTEL" = "yes" ]; then
+		return 0
+	fi
+	if [ -z "$OTEL_COLLECTOR_VERSION" ]; then
+		OTEL_COLLECTOR_VERSION="0.100.0"
+	fi
+	if [ -z "$OTEL_COLLECTOR_DOWNLOAD" ]; then
+		# Detect architecture
+		arch=$(uname -m)
+		case "$arch" in
+			x86_64) otel_arch="amd64" ;;
+			aarch64|arm64) otel_arch="arm64" ;;
+			*) printf 'unsupported architecture for otel collector: %s\n' "$arch"
+			   error_exit 77 ;;
+		esac
+		OTEL_COLLECTOR_DOWNLOAD="otelcol-contrib_${OTEL_COLLECTOR_VERSION}_linux_${otel_arch}.tar.gz"
+	fi
+	if [ ! -d $dep_cache_dir ]; then
+		echo "Creating dependency cache dir $dep_cache_dir"
+		mkdir -p $dep_cache_dir
+	fi
+	dep_otel_cached_file="$dep_cache_dir/$OTEL_COLLECTOR_DOWNLOAD"
+	if [ ! -f "$dep_otel_cached_file" ]; then
+		if [ -f "/local_dep_cache/$OTEL_COLLECTOR_DOWNLOAD" ]; then
+			printf 'OpenTelemetry Collector: satisfying dependency %s from system cache.\n' "$OTEL_COLLECTOR_DOWNLOAD"
+			cp "/local_dep_cache/$OTEL_COLLECTOR_DOWNLOAD" "$dep_otel_cached_file"
+		else
+			dep_otel_url="https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v${OTEL_COLLECTOR_VERSION}/${OTEL_COLLECTOR_DOWNLOAD}"
+			printf 'OpenTelemetry Collector: downloading %s from %s\n' "$OTEL_COLLECTOR_DOWNLOAD" "$dep_otel_url"
+			if ! wget -q "$dep_otel_url" -O "$dep_otel_cached_file" 2>&1; then
+				if ! wget "$dep_otel_url" -O "$dep_otel_cached_file" 2>&1; then
+					rm -f "$dep_otel_cached_file"
+					printf 'skipping test - unable to download OpenTelemetry Collector\n'
+					error_exit 77
+				fi
+			fi
+		fi
+	fi
+}
+
+# Prepare OpenTelemetry Collector execution environment
+# This also stops any previous collector instance, if found
+prepare_otel_collector() {
+	if [ "$RSYSLOG_TESTBENCH_USE_EXTERNAL_OTEL" = "yes" ]; then
+		return 0
+	fi
+	download_otel_collector
+	stop_otel_collector # stop if it is still running
+	dep_work_dir=$(readlink -f .dep_wrk)
+	dep_work_otel_config="otel-collector-config.yaml"
+	dep_work_otel_pidfile="otel.pid"
+	if [ ! -f "$dep_otel_cached_file" ]; then
+		echo "Dependency-cache does not have OpenTelemetry Collector package, did "
+		echo "you download dependencies?"
+		error_exit 100
+	fi
+	if [ ! -d "$dep_work_dir" ]; then
+		echo "Creating dependency working directory"
+		mkdir -p "$dep_work_dir"
+	fi
+	if [ -d "$dep_work_dir/otel" ]; then
+		if [ -e "$dep_work_otel_pidfile" ]; then
+			otel_pid=$(cat "$dep_work_otel_pidfile")
+			kill -SIGTERM "$otel_pid" 2>/dev/null
+			wait_pid_termination "$otel_pid" 2>/dev/null || true
+		fi
+	fi
+	rm -rf "$dep_work_dir/otel"
+	mkdir -p "$dep_work_dir/otel"
+	printf 'TEST USES OPENTELEMETRY COLLECTOR BINARY %s\n' "$dep_otel_cached_file"
+	# Extract the binary from the tarball
+	(cd "$dep_work_dir/otel" && tar -zxf "$dep_otel_cached_file" --strip-components=1 2>/dev/null) || \
+	(cd "$dep_work_dir/otel" && tar -zxf "$dep_otel_cached_file" 2>/dev/null)
+	# Ensure the binary is executable
+	if [ -f "$dep_work_dir/otel/otelcol-contrib" ]; then
+		chmod +x "$dep_work_dir/otel/otelcol-contrib"
+	elif [ -f "$dep_work_dir/otel/otelcol" ]; then
+		chmod +x "$dep_work_dir/otel/otelcol"
+	else
+		printf 'ERROR: otelcol-contrib or otelcol binary not found in %s\n' "$dep_otel_cached_file"
+		error_exit 100
+	fi
+	# Assign dynamic ports if not set
+	if [ -z "${OTEL_HTTP_PORT:-}" ]; then
+		export OTEL_HTTP_PORT=$(get_free_port)
+	fi
+	if [ -z "${OTEL_GRPC_PORT:-}" ]; then
+		export OTEL_GRPC_PORT=$(get_free_port)
+	fi
+	# Create output file path
+	export OTEL_OUTPUT_FILE=$(readlink -f "$RSYSLOG_DYNNAME.otel_output.jsonl")
+	# Copy config template and substitute variables
+	if [ -f "$srcdir/testsuites/$dep_work_otel_config" ]; then
+		# Use envsubst if available, otherwise use sed
+		if command -v envsubst >/dev/null 2>&1; then
+			envsubst < "$srcdir/testsuites/$dep_work_otel_config" > "$dep_work_dir/otel/config.yaml"
+		else
+			# Fallback to sed for variable substitution
+			sed "s|\${OTEL_HTTP_PORT}|${OTEL_HTTP_PORT}|g; s|\${OTEL_GRPC_PORT}|${OTEL_GRPC_PORT}|g; s|\${OTEL_OUTPUT_FILE}|${OTEL_OUTPUT_FILE}|g" \
+				"$srcdir/testsuites/$dep_work_otel_config" > "$dep_work_dir/otel/config.yaml"
+		fi
+	else
+		# Create minimal config if template doesn't exist
+		cat > "$dep_work_dir/otel/config.yaml" <<EOF
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:${OTEL_HTTP_PORT}
+      grpc:
+        endpoint: 0.0.0.0:${OTEL_GRPC_PORT}
+
+processors:
+  batch:
+
+exporters:
+  file:
+    path: ${OTEL_OUTPUT_FILE}
+
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [file]
+EOF
+	fi
+	printf 'OpenTelemetry Collector prepared for use in test (HTTP: %s, gRPC: %s)\n' "$OTEL_HTTP_PORT" "$OTEL_GRPC_PORT"
+}
+
+# Start OpenTelemetry Collector
+start_otel_collector() {
+	if [ "$RSYSLOG_TESTBENCH_USE_EXTERNAL_OTEL" = "yes" ]; then
+		printf 'info: skipping local OpenTelemetry Collector startup (external instance in use)\n'
+		return 0
+	fi
+	dep_work_dir=$(readlink -f .dep_wrk)
+	dep_work_otel_pidfile="$(pwd)/otel.pid"
+	otel_collector_bin=""
+	if [ -f "$dep_work_dir/otel/otelcol-contrib" ]; then
+		otel_collector_bin="$dep_work_dir/otel/otelcol-contrib"
+	elif [ -f "$dep_work_dir/otel/otelcol" ]; then
+		otel_collector_bin="$dep_work_dir/otel/otelcol"
+	else
+		printf 'ERROR: OpenTelemetry Collector binary not found\n'
+		error_exit 100
+	fi
+	printf '%s starting OpenTelemetry Collector\n' "$(tb_timestamp)"
+	# Start collector in background
+	"$otel_collector_bin" --config="$dep_work_dir/otel/config.yaml" > "$dep_work_dir/otel/collector.log" 2>&1 &
+	otel_collector_pid=$!
+	echo "$otel_collector_pid" > "$dep_work_otel_pidfile"
+	printf 'OpenTelemetry Collector pid is %s\n' "$otel_collector_pid"
+	# Wait for collector to be ready (check HTTP endpoint)
+	timeoutend=30
+	timeseconds=0
+	while [ $timeseconds -lt $timeoutend ]; do
+		if curl --silent --show-error --connect-timeout 1 "http://127.0.0.1:${OTEL_HTTP_PORT}/v1/logs" >/dev/null 2>&1 || \
+		   curl --silent --show-error --connect-timeout 1 "http://127.0.0.1:${OTEL_HTTP_PORT}" >/dev/null 2>&1; then
+			printf '%s OpenTelemetry Collector is ready (HTTP port %s)\n' "$(tb_timestamp)" "$OTEL_HTTP_PORT"
+			return 0
+		fi
+		# Check if process is still running
+		if ! kill -0 "$otel_collector_pid" 2>/dev/null; then
+			printf 'ERROR: OpenTelemetry Collector process died\n'
+			printf 'Collector log:\n'
+			cat "$dep_work_dir/otel/collector.log" 2>/dev/null || true
+			error_exit 1
+		fi
+		$TESTTOOL_DIR/msleep 200
+		timeseconds=$((timeseconds + 1))
+	done
+	printf 'WARNING: OpenTelemetry Collector may not be fully ready (timeout after %ss)\n' "$timeoutend"
+	printf 'Collector log (last 50 lines):\n'
+	tail -50 "$dep_work_dir/otel/collector.log" 2>/dev/null || true
+}
+
+# Stop OpenTelemetry Collector
+stop_otel_collector() {
+	if [ "$RSYSLOG_TESTBENCH_USE_EXTERNAL_OTEL" = "yes" ]; then
+		printf 'info: skipping local OpenTelemetry Collector stop (external instance in use)\n'
+		return 0
+	fi
+	if [ "$KEEP_OTEL_RUNNING" == "YES" ]; then
+		printf 'info: keeping OpenTelemetry Collector running (KEEP_OTEL_RUNNING=YES)\n'
+		return 0
+	fi
+	dep_work_otel_pidfile="otel.pid"
+	if [ ! -e "$dep_work_otel_pidfile" ]; then
+		printf 'OpenTelemetry Collector pid file not found, collector may not be running\n'
+		return 0
+	fi
+	otel_pid=$(cat "$dep_work_otel_pidfile")
+	if [ -z "$otel_pid" ]; then
+		printf 'OpenTelemetry Collector pid file is empty\n'
+		return 0
+	fi
+	printf 'stopping OpenTelemetry Collector with pid %s\n' "$otel_pid"
+	kill -SIGTERM "$otel_pid" 2>/dev/null
+	wait_pid_termination "$otel_pid" 2>/dev/null || true
+	# Check if still running
+	if kill -0 "$otel_pid" 2>/dev/null; then
+		printf 'OpenTelemetry Collector still running, performing hard shutdown\n'
+		kill -9 "$otel_pid" 2>/dev/null
+		wait_pid_termination "$otel_pid" 2>/dev/null || true
+	fi
+	rm -f "$dep_work_otel_pidfile"
+}
+
+# Cleanup OpenTelemetry Collector leftovers
+cleanup_otel_collector() {
+	if [ "$RSYSLOG_TESTBENCH_USE_EXTERNAL_OTEL" = "yes" ]; then
+		return 0
+	fi
+	dep_work_dir=$(readlink -f .dep_wrk)
+	dep_work_otel_pidfile="otel.pid"
+	stop_otel_collector
+	rm -f "$dep_work_otel_pidfile"
+	rm -rf "$dep_work_dir/otel"
+	unset OTEL_HTTP_PORT OTEL_GRPC_PORT OTEL_OUTPUT_FILE
+}
+
+# Get OpenTelemetry Collector output file path
+otel_collector_output_file() {
+	if [ -n "${OTEL_OUTPUT_FILE:-}" ]; then
+		echo "$OTEL_OUTPUT_FILE"
+	else
+		echo "$(readlink -f "$RSYSLOG_DYNNAME.otel_output.jsonl")"
+	fi
+}
+
+# Wait for OpenTelemetry Collector to be ready
+wait_for_otel_collector_ready() {
+	local timeout="${1:-30}"
+	timeoutend=$timeout
+	timeseconds=0
+	while [ $timeseconds -lt $timeoutend ]; do
+		if curl --silent --show-error --connect-timeout 1 "http://127.0.0.1:${OTEL_HTTP_PORT}/v1/logs" >/dev/null 2>&1 || \
+		   curl --silent --show-error --connect-timeout 1 "http://127.0.0.1:${OTEL_HTTP_PORT}" >/dev/null 2>&1; then
+			return 0
+		fi
+		$TESTTOOL_DIR/msleep 200
+		timeseconds=$((timeseconds + 1))
+	done
+	return 1
 }
 
 omhttp_start_server() {

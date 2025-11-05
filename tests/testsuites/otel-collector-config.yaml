@@ -1,0 +1,26 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:${OTEL_HTTP_PORT}
+      grpc:
+        endpoint: 0.0.0.0:${OTEL_GRPC_PORT}
+
+processors:
+  batch:
+
+exporters:
+  # Use file exporter to write OTLP protobuf format
+  # Note: For JSON output, we can use logging exporter redirected to file
+  file:
+    path: ${OTEL_OUTPUT_FILE}
+  # Also include logging exporter for human-readable debug output
+  logging:
+    loglevel: info
+
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [file]
