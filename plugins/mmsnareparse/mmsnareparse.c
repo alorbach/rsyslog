@@ -4045,27 +4045,38 @@ static void parse_key_value_sequence(parse_context_t *ctx,
         while (p < end && isspace((unsigned char)*p)) p++;
         
         // Find the value end (next key-value pair pattern: space + uppercase + alphanumeric + colon)
+        // Values can contain: letters, numbers, spaces, backslashes, hyphens, and other characters
+        // Only stop when we find a complete key pattern: whitespace + uppercase + alphanumeric_word + colon
         const char *valueStart = p;
         const char *valueEnd = valueStart;
         while (valueEnd < end) {
-            // Check if we've reached the next key-value pair
-            // Pattern: whitespace + uppercase letter + alphanumeric (single word) + colon
+            // Look for potential start of next key: whitespace + uppercase letter
+            // We need to check this carefully to avoid false positives when values contain
+            // uppercase letters, spaces, or backslashes (e.g., "CORP\NETWORK SERVICE")
             if (valueEnd > valueStart && isspace((unsigned char)*(valueEnd - 1)) && 
                 isupper((unsigned char)*valueEnd)) {
-                // Look ahead to see if this is followed by a colon (new key-value pair)
-                // Keys are single words (alphanumeric only), so check for that pattern
-                const char *check = valueEnd;
-                int alnumCount = 0;
-                // Count alphanumeric characters (the key)
-                while (check < end && isalnum((unsigned char)*check)) {
-                    alnumCount++;
-                    check++;
+                // Potential key start found. Verify it's a complete key pattern:
+                // 1. Must be a single alphanumeric word (no spaces, backslashes, etc.)
+                // 2. Must be followed immediately by a colon
+                const char *keyCandidate = valueEnd;
+                const char *keyEnd = keyCandidate;
+                
+                // Scan for alphanumeric characters only (keys are single words)
+                while (keyEnd < end && isalnum((unsigned char)*keyEnd)) {
+                    keyEnd++;
                 }
-                // If we found alphanumeric characters followed by a colon, this is a new key
-                if (alnumCount > 0 && check < end && *check == ':') {
-                    // This is the start of the next key-value pair
+                
+                // Check if we have a valid key pattern:
+                // - Must have at least one alphanumeric character
+                // - Must be followed immediately by a colon (no spaces or other chars)
+                // - The character before keyCandidate must be whitespace (already checked above)
+                if ((keyEnd - keyCandidate) > 0 && keyEnd < end && *keyEnd == ':') {
+                    // Found a complete key pattern - this is the start of the next key-value pair
+                    // Back up to the whitespace before the key (start of next pair)
+                    valueEnd = keyCandidate - 1; // Point to the space before the key
                     break;
                 }
+                // Not a valid key pattern - continue scanning (this might be part of the value)
             }
             valueEnd++;
         }
