@@ -4059,18 +4059,18 @@ static void parse_key_value_sequence(parse_context_t *ctx,
                 // 1. Must be a single alphanumeric word (no spaces, backslashes, etc.)
                 // 2. Must be followed immediately by a colon
                 const char *keyCandidate = valueEnd;
-                const char *keyEnd = keyCandidate;
+                const char *candidateKeyEnd = keyCandidate;
                 
                 // Scan for alphanumeric characters only (keys are single words)
-                while (keyEnd < end && isalnum((unsigned char)*keyEnd)) {
-                    keyEnd++;
+                while (candidateKeyEnd < end && isalnum((unsigned char)*candidateKeyEnd)) {
+                    candidateKeyEnd++;
                 }
                 
                 // Check if we have a valid key pattern:
                 // - Must have at least one alphanumeric character
                 // - Must be followed immediately by a colon (no spaces or other chars)
                 // - The character before keyCandidate must be whitespace (already checked above)
-                if ((keyEnd - keyCandidate) > 0 && keyEnd < end && *keyEnd == ':') {
+                if ((candidateKeyEnd - keyCandidate) > 0 && candidateKeyEnd < end && *candidateKeyEnd == ':') {
                     // Found a complete key pattern - this is the start of the next key-value pair
                     // Back up to the whitespace before the key (start of next pair)
                     valueEnd = keyCandidate - 1; // Point to the space before the key
