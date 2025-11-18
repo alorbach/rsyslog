@@ -3189,65 +3189,6 @@ static const char *locate_snare_payload(const char *msg, smsg_t *pMsg) {
                 return msWinEventLogPos;
             }
         }
-        // If MSWinEventLog not found, look for generic Snare payload patterns
-        // Pattern: year (4 digits) + tab/escaped-tab + EventID (1-4 digits) + tab/escaped-tab + Provider
-        // This works for any Windows event log format, not just specific channels
-        const char *yearSearchStart = cursor;
-        const char *end = msg + strlen(msg);
-        while (yearSearchStart < end - 10) { // Need at least 10 chars for year#011EventID#011
-            // Look for 4-digit year pattern (e.g., "2025")
-            if (yearSearchStart[0] >= '0' && yearSearchStart[0] <= '9' &&
-                yearSearchStart[1] >= '0' && yearSearchStart[1] <= '9' &&
-                yearSearchStart[2] >= '0' && yearSearchStart[2] <= '9' &&
-                yearSearchStart[3] >= '0' && yearSearchStart[3] <= '9') {
-                // Found 4-digit year, check if followed by tab/escaped-tab
-                const char *afterYear = yearSearchStart + 4;
-                if (*afterYear == '\t' || *afterYear == ' ' ||
-                    (afterYear[0] == '#' && afterYear[1] == '0' && 
-                     afterYear[2] == '1' && afterYear[3] == '1')) {
-                    // Skip tab/escaped-tab
-                    if (*afterYear == '#') {
-                        afterYear += 4; // Skip #011
-                    } else {
-                        afterYear++; // Skip tab/space
-                    }
-                    afterYear = skip_lws_const(afterYear);
-                    // Check if followed by EventID (1-4 digits)
-                    if (afterYear < end && *afterYear >= '0' && *afterYear <= '9') {
-                        const char *eventIdEnd = afterYear;
-                        while (eventIdEnd < end && *eventIdEnd >= '0' && *eventIdEnd <= '9') {
-                            eventIdEnd++;
-                        }
-                        // EventIDs can be 1-4 digits (standard Windows events are 4, some custom are 1-2)
-                        if (eventIdEnd - afterYear >= 1 && eventIdEnd - afterYear <= 4) {
-                            // Check if followed by tab/escaped-tab, then a provider name
-                            const char *afterEventId = eventIdEnd;
-                            if (*afterEventId == '\t' || *afterEventId == ' ' ||
-                                (afterEventId[0] == '#' && afterEventId[1] == '0' && 
-                                 afterEventId[2] == '1' && afterEventId[3] == '1')) {
-                                // Skip the tab/escaped-tab and whitespace
-                                if (*afterEventId == '#') {
-                                    afterEventId += 4; // Skip #011
-                                } else {
-                                    afterEventId++; // Skip tab/space
-                                }
-                                afterEventId = skip_lws_const(afterEventId);
-                                // Check if followed by a provider name (starts with letter, common: "Windows", "Microsoft-Windows-...")
-                                if (afterEventId != NULL && afterEventId < end && 
-                                    (isalpha((unsigned char)*afterEventId) || *afterEventId == 'M')) {
-                                    // Return pointer to year so tokenization matches RFC3164 format:
-                                    // tokens[0] = year, tokens[1] = EventID, tokens[2] = provider, etc.
-                                    dbgprintf("[mmsnareparse DEBUG] locate_snare_payload: found generic EventID pattern, returning year at '%s'\n",
-                                              yearSearchStart);
-                                    return yearSearchStart;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            yearSearchStart++;
-        }
         // If we didn't find EventID pattern, try looking for Microsoft-Windows-Security-Auditing
         // but we need to go back to find the EventID that comes before it
         const char *msWinSec = strstr(cursor, "Microsoft-Windows-Security-Auditing");
