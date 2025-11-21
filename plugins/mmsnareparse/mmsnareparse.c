@@ -5005,6 +5005,9 @@ static rsRetVal parse_snare_json(instanceData *pData, smsg_t *pMsg, const char *
     }
 
     if (pData->emitRawPayload) json_object_object_add(ctx.root, "RawJSON", json_object_get(payload));
+    if (enrichmentContent != NULL && enrichmentContent[0] != '\0') {
+        json_add_string(ctx.root, "Enrichment", enrichmentContent);
+    }
     if (json_object_object_get_ex(payload, "EventID", &value)) {
         long long eid = json_object_get_int64(value);
         json_add_int64(ctx.event, "EventID", eid);
@@ -5095,11 +5098,13 @@ static char *truncate_trailing_enrichment(instanceData *pData, char *msg, char *
     /* Find the last tab character to identify the last token */
     char *lastTab = strrchr(msg, '\t');
     char *searchStart;
+    char *searchEnd;
     
     /* If there's a last tab, search only in the last token (after the tab) */
     /* Otherwise, search in the entire message but only consider matches near the end */
     if (lastTab != NULL) {
         searchStart = lastTab + 1;
+        searchEnd = msg + strlen(msg);
     } else {
         /* No tabs found - check if pattern appears in the last 20% of message */
         size_t msgLen = strlen(msg);
@@ -5112,10 +5117,21 @@ static char *truncate_trailing_enrichment(instanceData *pData, char *msg, char *
             searchStartOffset = 0;
         }
         searchStart = msg + searchStartOffset;
+        searchEnd = msg + msgLen;
     }
 
-    /* Search for the pattern */
-    char *patternPos = strstr(searchStart, pattern);
+    /* Search for the pattern - find the last occurrence in the search area */
+    char *patternPos = NULL;
+    char *currentPos = searchStart;
+    while (currentPos != NULL && currentPos < searchEnd) {
+        char *found = strstr(currentPos, pattern);
+        if (found == NULL || found + patternLen > searchEnd) {
+            break;
+        }
+        patternPos = found;
+        currentPos = found + 1;  /* Continue searching after this match */
+    }
+    
     if (patternPos == NULL) {
         if (enrichmentOut != NULL) *enrichmentOut = NULL;
         return msg;
@@ -5225,7 +5241,7 @@ static rsRetVal process_message(instanceData *pData, smsg_t *pMsg, uchar *msgTex
     }
 
     if (tokenCount >= 3 && !strcmp(tokens[1], "0") && tokens[2][0] == '{') {
-        iRet = parse_snare_json(pData, pMsg, tokens[2]);
+        iRet = parse_snare_json(pData, pMsg, tokens[2], enrichmentContent);
     } else if (tokenCount >= 2) {
         // Pass rawMsg as originalMsg so populate_event_metadata can extract channel from it
         iRet = parse_snare_text(pData, pMsg, rawMsg, rawMsg, tokens, tokenCount, enrichmentContent);
