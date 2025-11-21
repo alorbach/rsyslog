@@ -451,6 +451,7 @@ typedef struct _instanceData {
     event_mapping_t *eventMappings;
     size_t eventMappingCount;
     runtime_config_t runtimeConfig;
+    char *ignoreTrailingPattern;
 } instanceData;
 
 static void free_runtime_tables(instanceData *pData);
@@ -493,6 +494,7 @@ struct modConfData_s {
     char *definitionJson;
     char *runtimeConfigFile;
     validation_context_t validationTemplate;
+    char *ignoreTrailingPattern;
 };
 static modConfData_t *loadModConf = NULL;
 static modConfData_t *runModConf = NULL;
@@ -4755,7 +4757,7 @@ static void populate_event_metadata(
  * @return ::RS_RET_OK on success or an error code on allocation failures.
  */
 static rsRetVal parse_snare_text(
-    instanceData *pData, smsg_t *pMsg, const char *rawMsg, const char *originalMsg, char **tokens, size_t tokenCount) {
+    instanceData *pData, smsg_t *pMsg, const char *rawMsg, const char *originalMsg, char **tokens, size_t tokenCount, const char *enrichmentContent) {
     parse_context_t ctx;
     memset(&ctx, 0, sizeof(ctx));
     ctx.inst = pData;
@@ -4787,6 +4789,9 @@ static rsRetVal parse_snare_text(
     }
 
     if (pData->emitRawPayload && rawMsg != NULL) json_add_string(ctx.root, "Raw", rawMsg);
+    if (enrichmentContent != NULL && enrichmentContent[0] != '\0') {
+        json_add_string(ctx.root, "Enrichment", enrichmentContent);
+    }
     populate_event_metadata(&ctx, tokens, tokenCount, originalMsg, pMsg);
 
     // Determine the correct description index based on message format
@@ -4948,7 +4953,7 @@ static void parse_json_event_data(parse_context_t *ctx, struct json_object *even
  * @param jsonPayload JSON string to parse.
  * @return ::RS_RET_OK on success or a negative error value.
  */
-static rsRetVal parse_snare_json(instanceData *pData, smsg_t *pMsg, const char *jsonPayload) {
+static rsRetVal parse_snare_json(instanceData *pData, smsg_t *pMsg, const char *jsonPayload, const char *enrichmentContent) {
     parse_context_t ctx;
     struct json_tokener *tokener;
     struct json_object *payload;
@@ -5062,6 +5067,82 @@ static rsRetVal parse_snare_json(instanceData *pData, smsg_t *pMsg, const char *
 }
 
 /**
+ * @brief Truncate message at trailing enrichment pattern if present.
+ *
+ * Detects if the configured ignoreTrailingPattern appears in a trailing position
+ * (specifically in the last token after the final tab character). If found, truncates
+ * the message at that point and optionally returns the truncated enrichment content.
+ *
+ * @param pData          Module instance configuration.
+ * @param msg            Message buffer to process (will be modified in-place).
+ * @param enrichmentOut  Optional output parameter for truncated enrichment content.
+ *                        Set to NULL if not needed. Caller must free if non-NULL.
+ * @return Pointer to truncated message (may be same as input) or NULL on error.
+ */
+static char *truncate_trailing_enrichment(instanceData *pData, char *msg, char **enrichmentOut) {
+    if (pData->ignoreTrailingPattern == NULL || msg == NULL) {
+        if (enrichmentOut != NULL) *enrichmentOut = NULL;
+        return msg;
+    }
+
+    const char *pattern = pData->ignoreTrailingPattern;
+    size_t patternLen = strlen(pattern);
+    if (patternLen == 0) {
+        if (enrichmentOut != NULL) *enrichmentOut = NULL;
+        return msg;
+    }
+
+    /* Find the last tab character to identify the last token */
+    char *lastTab = strrchr(msg, '\t');
+    char *searchStart;
+    
+    /* If there's a last tab, search only in the last token (after the tab) */
+    /* Otherwise, search in the entire message but only consider matches near the end */
+    if (lastTab != NULL) {
+        searchStart = lastTab + 1;
+    } else {
+        /* No tabs found - check if pattern appears in the last 20% of message */
+        size_t msgLen = strlen(msg);
+        if (msgLen < patternLen) {
+            if (enrichmentOut != NULL) *enrichmentOut = NULL;
+            return msg;
+        }
+        size_t searchStartOffset = msgLen - (msgLen / 5);
+        if (searchStartOffset > msgLen - patternLen) {
+            searchStartOffset = 0;
+        }
+        searchStart = msg + searchStartOffset;
+    }
+
+    /* Search for the pattern */
+    char *patternPos = strstr(searchStart, pattern);
+    if (patternPos == NULL) {
+        if (enrichmentOut != NULL) *enrichmentOut = NULL;
+        return msg;
+    }
+
+    /* Pattern found in trailing position - truncate at this point */
+    size_t truncatePos = patternPos - msg;
+    
+    /* Extract enrichment content if requested */
+    if (enrichmentOut != NULL) {
+        *enrichmentOut = strdup(patternPos);
+        if (*enrichmentOut == NULL) {
+            /* On allocation failure, don't truncate to avoid data loss */
+            return msg;
+        }
+    }
+
+    /* Truncate the message */
+    msg[truncatePos] = '\0';
+    
+    dbgprintf("[mmsnareparse DEBUG] Truncated message at trailing pattern '%s' (position %zu)\n",
+              pattern, truncatePos);
+    
+    return msg;
+}
+
+/**
  * @brief Detect the payload type, parse it, and attach JSON metadata.
  *
  * This is the main entry point for each message processed by the action. It
@@ -5120,6 +5201,11 @@ static rsRetVal process_message(instanceData *pData, smsg_t *pMsg, uchar *msgTex
     unescape_hash_sequences(mutableMsg);
     normalize_literal_tabs(mutableMsg);
     dbgprintf("[mmsnareparse DEBUG] After unescaping: '%s'\n", mutableMsg);
+    
+    /* Truncate trailing enrichment section if configured */
+    char *enrichmentContent = NULL;
+    truncate_trailing_enrichment(pData, mutableMsg, &enrichmentContent);
+    
     cursor = mutableMsg;
     while (cursor != NULL && tokenCount < ARRAY_SIZE(tokens)) {
         tokens[tokenCount++] = cursor;
@@ -5142,9 +5228,10 @@ static rsRetVal process_message(instanceData *pData, smsg_t *pMsg, uchar *msgTex
         iRet = parse_snare_json(pData, pMsg, tokens[2]);
     } else if (tokenCount >= 2) {
         // Pass rawMsg as originalMsg so populate_event_metadata can extract channel from it
-        iRet = parse_snare_text(pData, pMsg, rawMsg, rawMsg, tokens, tokenCount);
+        iRet = parse_snare_text(pData, pMsg, rawMsg, rawMsg, tokens, tokenCount, enrichmentContent);
     }
     free(mutableMsg);
+    free(enrichmentContent);
     return iRet;
 }
 
@@ -5153,7 +5240,8 @@ DEF_OMOD_STATIC_DATA;
 static struct cnfparamdescr modpdescr[] = {{"definition.file", eCmdHdlrString, 0},
                                            {"definition.json", eCmdHdlrString, 0},
                                            {"runtime.config", eCmdHdlrString, 0},
-                                           {"validation.mode", eCmdHdlrString, 0}};
+                                           {"validation.mode", eCmdHdlrString, 0},
+                                           {"ignoreTrailingPattern", eCmdHdlrString, 0}};
 static struct cnfparamblk modpblk = {CNFPARAMBLK_VERSION, ARRAY_SIZE(modpdescr), modpdescr};
 
 static struct cnfparamdescr actpdescr[] = {
@@ -5164,7 +5252,7 @@ static struct cnfparamdescr actpdescr[] = {
     {"emit.debugjson", eCmdHdlrBinary, 0},  {"debugjson", eCmdHdlrBinary, 0},
     {"definition.file", eCmdHdlrString, 0}, {"definition.json", eCmdHdlrString, 0},
     {"runtime.config", eCmdHdlrString, 0},  {"validation.mode", eCmdHdlrString, 0},
-    {"validation_mode", eCmdHdlrString, 0}};
+    {"validation_mode", eCmdHdlrString, 0}, {"ignoreTrailingPattern", eCmdHdlrString, 0}};
 static struct cnfparamblk actpblk = {CNFPARAMBLK_VERSION, ARRAY_SIZE(actpdescr), actpdescr};
 
 BEGINbeginCnfLoad
@@ -5177,6 +5265,8 @@ BEGINbeginCnfLoad
     pModConf->definitionJson = NULL;
     free(pModConf->runtimeConfigFile);
     pModConf->runtimeConfigFile = NULL;
+    free(pModConf->ignoreTrailingPattern);
+    pModConf->ignoreTrailingPattern = NULL;
     init_validation_context(&pModConf->validationTemplate);
 ENDbeginCnfLoad
 
@@ -5229,6 +5319,13 @@ BEGINsetModCnf
                 ABORT_FINALIZE(r);
             }
             loadModConf->validationTemplate.mode = parsedMode;
+        } else if (!strcmp(modpblk.descr[i].name, "ignoreTrailingPattern")) {
+            char *value = es_str2cstr(pvals[i].val.d.estr, NULL);
+            if (value == NULL) {
+                ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+            }
+            free(loadModConf->ignoreTrailingPattern);
+            loadModConf->ignoreTrailingPattern = value;
         } else {
             dbgprintf("mmsnareparse: unhandled module parameter '%s'\n", modpblk.descr[i].name);
         }
@@ -5259,6 +5356,8 @@ BEGINfreeCnf
         pModConf->definitionJson = NULL;
         free(pModConf->runtimeConfigFile);
         pModConf->runtimeConfigFile = NULL;
+        free(pModConf->ignoreTrailingPattern);
+        pModConf->ignoreTrailingPattern = NULL;
     }
 ENDfreeCnf
 
@@ -5277,6 +5376,7 @@ ENDisCompatibleWithFeature
 BEGINfreeInstance
     CODESTARTfreeInstance;
     free(pData->container);
+    free(pData->ignoreTrailingPattern);
     free_runtime_tables(pData);
     free_runtime_config(&pData->runtimeConfig);
 ENDfreeInstance
@@ -5296,6 +5396,7 @@ static inline void setInstParamDefaults(instanceData *pData) {
     pData->enableWdac = 1;
     pData->emitRawPayload = 1;
     pData->emitDebugJson = 0;
+    pData->ignoreTrailingPattern = NULL;
     init_validation_context(&pData->validationTemplate);
     init_runtime_config(&pData->runtimeConfig);
     pData->sectionDescriptors = NULL;
@@ -5326,6 +5427,12 @@ BEGINnewActInst
         pData->validationTemplate = loadModConf->validationTemplate;
         if (loadModConf->runtimeConfigFile != NULL) {
             CHKiRet(load_configuration(&pData->runtimeConfig, loadModConf->runtimeConfigFile));
+        }
+        if (loadModConf->ignoreTrailingPattern != NULL) {
+            pData->ignoreTrailingPattern = strdup(loadModConf->ignoreTrailingPattern);
+            if (pData->ignoreTrailingPattern == NULL) {
+                ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+            }
         }
     }
     for (i = 0; i < (int)actpblk.nParams; ++i) {
@@ -5367,6 +5474,13 @@ BEGINnewActInst
             }
             CHKiRet(set_validation_mode(pData, mode));
             free(mode);
+        } else if (!strcmp(actpblk.descr[i].name, "ignoreTrailingPattern")) {
+            char *value = es_str2cstr(pvals[i].val.d.estr, NULL);
+            if (value == NULL) {
+                ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+            }
+            free(pData->ignoreTrailingPattern);
+            pData->ignoreTrailingPattern = value;
         }
     }
     CODE_STD_STRING_REQUESTnewActInst(1);
