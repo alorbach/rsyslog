@@ -11,6 +11,9 @@ exporters:
     flush_interval: 1s
 
 service:
+  telemetry:
+    metrics:
+      address: 0.0.0.0:${OTEL_METRICS_PORT}
   pipelines:
     logs:
       receivers: [otlp]

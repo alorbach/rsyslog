@@ -3162,59 +3162,68 @@ download_otel_collector() {
 
 # prepare OTEL Collector instance for test
 prepare_otel_collector() {
-	dep_work_dir=$(readlink -f .dep_wrk)
+	# Ensure RSYSLOG_DYNNAME is set for per-test directory isolation
+	if [ -z "$RSYSLOG_DYNNAME" ]; then
+		echo "ERROR: RSYSLOG_DYNNAME is not set when preparing OTEL Collector"
+		error_exit 1
+	fi
+	
 	dep_work_otel_collector_config="otel-collector-config.yaml"
 	dep_work_otel_collector_pidfile="otelcol.pid"
+	
+	# Create .dep_wrk directory first if it doesn't exist, then resolve path
+	if [ ! -d .dep_wrk ]; then
+		mkdir -p .dep_wrk
+	fi
+	dep_work_dir=$(readlink -f .dep_wrk 2>/dev/null || echo "$(pwd)/.dep_wrk")
+	
+	# Use per-test directory to allow parallel execution
+	otelcol_work_dir="$dep_work_dir/otelcol-${RSYSLOG_DYNNAME}"
 	
 	if [ ! -f $dep_otel_collector_cached_file ]; then
 		echo "Dependency-cache does not have OTEL Collector package, did you download dependencies?"
 		error_exit 77
 	fi
-	if [ ! -d $dep_work_dir ]; then
-		echo "Creating dependency working directory"
-		mkdir -p $dep_work_dir
-	fi
-	if [ -d $dep_work_dir/otelcol ]; then
-		if [ -e $dep_work_dir/otelcol/$dep_work_otel_collector_pidfile ]; then
-			otelcol_pid=$(cat $dep_work_dir/otelcol/$dep_work_otel_collector_pidfile)
+	# Clean up any existing instance for this test (not other tests)
+	if [ -d "$otelcol_work_dir" ]; then
+		if [ -e "$otelcol_work_dir/$dep_work_otel_collector_pidfile" ]; then
+			otelcol_pid=$(cat "$otelcol_work_dir/$dep_work_otel_collector_pidfile")
 			if kill -0 $otelcol_pid 2>/dev/null; then
 				kill -SIGTERM $otelcol_pid 2>/dev/null
 				wait_pid_termination $otelcol_pid
 			fi
 		fi
 	fi
-	# Also kill any existing otelcol-contrib processes that might be using port 8888
-	pkill -f "otelcol-contrib.*config.yaml" 2>/dev/null || true
 	if [ -n "$TESTTOOL_DIR" ] && [ -f "$TESTTOOL_DIR/msleep" ]; then
 		$TESTTOOL_DIR/msleep 500
 	else
 		sleep 0.5
 	fi
-	rm -rf $dep_work_dir/otelcol
+	rm -rf "$otelcol_work_dir"
 	echo "TEST USES OTEL COLLECTOR BINARY $dep_otel_collector_cached_file"
-	mkdir -p $dep_work_dir/otelcol
-	(cd $dep_work_dir/otelcol && tar -zxf $dep_otel_collector_cached_file) > /dev/null
+	mkdir -p "$otelcol_work_dir"
+	(cd "$otelcol_work_dir" && tar -zxf $dep_otel_collector_cached_file) > /dev/null
 	
 	# Find the actual binary location (tarball may extract to subdirectory or root)
 	otelcol_binary=""
-	if [ -f $dep_work_dir/otelcol/otelcol-contrib ]; then
-		otelcol_binary="$dep_work_dir/otelcol/otelcol-contrib"
-	elif [ -f $dep_work_dir/otelcol/otelcol-contrib/otelcol-contrib ]; then
-		otelcol_binary="$dep_work_dir/otelcol/otelcol-contrib/otelcol-contrib"
-		mv $dep_work_dir/otelcol/otelcol-contrib/* $dep_work_dir/otelcol/ 2>/dev/null
-		otelcol_binary="$dep_work_dir/otelcol/otelcol-contrib"
+	if [ -f "$otelcol_work_dir/otelcol-contrib" ]; then
+		otelcol_binary="$otelcol_work_dir/otelcol-contrib"
+	elif [ -f "$otelcol_work_dir/otelcol-contrib/otelcol-contrib" ]; then
+		otelcol_binary="$otelcol_work_dir/otelcol-contrib/otelcol-contrib"
+		mv "$otelcol_work_dir/otelcol-contrib"/* "$otelcol_work_dir/" 2>/dev/null
+		otelcol_binary="$otelcol_work_dir/otelcol-contrib"
 	else
 		# Try to find any otelcol-contrib binary
-		otelcol_binary=$(find $dep_work_dir/otelcol -name "otelcol-contrib" -type f | head -1)
+		otelcol_binary=$(find "$otelcol_work_dir" -name "otelcol-contrib" -type f | head -1)
 		if [ -z "$otelcol_binary" ]; then
 			echo "Could not find otelcol-contrib binary in extracted archive"
 			error_exit 1
 		fi
 		# Move to root of otelcol directory
 		otelcol_dir=$(dirname $otelcol_binary)
-		if [ "$otelcol_dir" != "$dep_work_dir/otelcol" ]; then
-			mv $otelcol_dir/* $dep_work_dir/otelcol/ 2>/dev/null
-			otelcol_binary="$dep_work_dir/otelcol/otelcol-contrib"
+		if [ "$otelcol_dir" != "$otelcol_work_dir" ]; then
+			mv $otelcol_dir/* "$otelcol_work_dir/" 2>/dev/null
+			otelcol_binary="$otelcol_work_dir/otelcol-contrib"
 		fi
 	fi
 	
@@ -3229,34 +3238,29 @@ prepare_otel_collector() {
 	if [[ "$test_dir" != /* ]]; then
 		test_dir="$(cd "$test_dir" && pwd)"
 	fi
-	# Ensure RSYSLOG_DYNNAME is set
-	if [ -z "$RSYSLOG_DYNNAME" ]; then
-		echo "ERROR: RSYSLOG_DYNNAME is not set when preparing OTEL Collector"
-		error_exit 1
-	fi
 	otel_output_file="$test_dir/${RSYSLOG_DYNNAME}.otel-output.json"
 	export OTEL_OUTPUT_FILE="$otel_output_file"
 	
 	# Ensure the output directory exists (OTEL Collector file exporter may not create it)
 	mkdir -p "$(dirname "$otel_output_file")"
 	
-	# Get a free port for the collector (use a random port in high range to avoid conflicts)
-	# Use a port between 43180-43199 for OTLP (similar to default 4318 but in high range)
+	# Get a free port for the collector (use existing get_free_port function for portability)
 	if [ -z "$OTEL_COLLECTOR_PORT" ]; then
-		# Generate a random port in range 43180-43199
-		OTEL_COLLECTOR_PORT=$((43180 + RANDOM % 20))
-		# Make sure it's not in use
-		while command -v ss >/dev/null 2>&1 && ss -tln | grep -q ":$OTEL_COLLECTOR_PORT "; do
-			OTEL_COLLECTOR_PORT=$((43180 + RANDOM % 20))
-		done
+		OTEL_COLLECTOR_PORT=$(get_free_port)
 	fi
 	export OTEL_COLLECTOR_PORT
+	
+	# Get a free port for metrics/telemetry
+	if [ -z "$OTEL_METRICS_PORT" ]; then
+		OTEL_METRICS_PORT=$(get_free_port)
+	fi
+	export OTEL_METRICS_PORT
 	
 	if [ ! -f $srcdir/testsuites/$dep_work_otel_collector_config ]; then
 		echo "OTEL Collector config template not found: $srcdir/testsuites/$dep_work_otel_collector_config"
 		error_exit 1
 	fi
-	cp -f $srcdir/testsuites/$dep_work_otel_collector_config $dep_work_dir/otelcol/config.yaml
+	cp -f $srcdir/testsuites/$dep_work_otel_collector_config "$otelcol_work_dir/config.yaml"
 	# Replace environment variable in config and set the port
 	# Use absolute path - convert to absolute if relative
 	if [[ "$otel_output_file" != /* ]]; then
@@ -3264,10 +3268,11 @@ prepare_otel_collector() {
 	fi
 	# Ensure it's properly escaped for YAML (escape special regex chars but not the path separators)
 	otel_output_file_escaped=$(echo "$otel_output_file" | sed 's/[[\.*^$()+?{|]/\\&/g')
-	sed -i "s|\${OTEL_OUTPUT_FILE}|$otel_output_file_escaped|g" $dep_work_dir/otelcol/config.yaml
-	sed -i "s|endpoint: 0.0.0.0:0|endpoint: 0.0.0.0:$OTEL_COLLECTOR_PORT|g" $dep_work_dir/otelcol/config.yaml
+	sed -i "s|\${OTEL_OUTPUT_FILE}|$otel_output_file_escaped|g" "$otelcol_work_dir/config.yaml"
+	sed -i "s|\${OTEL_METRICS_PORT}|$OTEL_METRICS_PORT|g" "$otelcol_work_dir/config.yaml"
+	sed -i "s|endpoint: 0.0.0.0:0|endpoint: 0.0.0.0:$OTEL_COLLECTOR_PORT|g" "$otelcol_work_dir/config.yaml"
 	
-	if [ ! -f $dep_work_dir/otelcol/config.yaml ]; then
+	if [ ! -f "$otelcol_work_dir/config.yaml" ]; then
 		echo "Failed to create OTEL Collector config file"
 		error_exit 1
 	fi
@@ -3275,58 +3280,52 @@ prepare_otel_collector() {
 	echo "OTEL Collector prepared for use in test."
 	echo "OTEL Collector output file path: $otel_output_file"
 	echo "OTEL Collector config:"
-	cat $dep_work_dir/otelcol/config.yaml
+	cat "$otelcol_work_dir/config.yaml"
 }
 
 # start OTEL Collector and capture dynamic port
 start_otel_collector() {
-	dep_work_dir=$(readlink -f .dep_wrk)
-	dep_work_otel_collector_pidfile="$dep_work_dir/otelcol/otelcol.pid"
-	dep_work_otel_collector_logfile="$dep_work_dir/otelcol/otelcol.log"
+	# Use per-test directory to allow parallel execution
+	if [ -z "$RSYSLOG_DYNNAME" ]; then
+		echo "ERROR: RSYSLOG_DYNNAME is not set when starting OTEL Collector"
+		error_exit 1
+	fi
+	dep_work_dir=$(readlink -f .dep_wrk 2>/dev/null || echo "$(pwd)/.dep_wrk")
+	otelcol_work_dir="$dep_work_dir/otelcol-${RSYSLOG_DYNNAME}"
+	dep_work_otel_collector_pidfile="$otelcol_work_dir/otelcol.pid"
+	dep_work_otel_collector_logfile="$otelcol_work_dir/otelcol.log"
 	otel_port_file="${RSYSLOG_DYNNAME}.otel_port.file"
 	
-	if [ ! -d $dep_work_dir/otelcol ]; then
-		echo "OTEL Collector work-dir $dep_work_dir/otelcol does not exist, did you prepare it?"
+	if [ ! -d "$otelcol_work_dir" ]; then
+		echo "OTEL Collector work-dir $otelcol_work_dir does not exist, did you prepare it?"
 		error_exit 1
 	fi
 	
 	echo "Starting OTEL Collector"
 	
 	# Verify config file exists
-	if [ ! -f $dep_work_dir/otelcol/config.yaml ]; then
-		echo "OTEL Collector config file not found: $dep_work_dir/otelcol/config.yaml"
+	if [ ! -f "$otelcol_work_dir/config.yaml" ]; then
+		echo "OTEL Collector config file not found: $otelcol_work_dir/config.yaml"
 		error_exit 1
 	fi
 	
-	# Find the binary
-	otelcol_binary=""
-	if [ -f $dep_work_dir/otelcol/otelcol-contrib ]; then
-		otelcol_binary="$dep_work_dir/otelcol/otelcol-contrib"
-	else
-		otelcol_binary=$(find $dep_work_dir/otelcol -name "otelcol-contrib" -type f | head -1)
-		if [ -z "$otelcol_binary" ]; then
-			echo "Could not find otelcol-contrib binary"
-			echo "Contents of $dep_work_dir/otelcol:"
-			ls -la $dep_work_dir/otelcol/ 2>&1 || true
-			error_exit 1
-		fi
+	# Binary should be at known location after prepare_otel_collector()
+	otelcol_binary="$otelcol_work_dir/otelcol-contrib"
+	if [ ! -f "$otelcol_binary" ]; then
+		echo "ERROR: otelcol-contrib binary not found at $otelcol_binary"
+		echo "Did you call prepare_otel_collector()?"
+		error_exit 1
 	fi
 	
 	# Verify binary is executable
 	if [ ! -x "$otelcol_binary" ]; then
-		echo "OTEL Collector binary is not executable: $otelcol_binary"
 		chmod +x "$otelcol_binary"
 	fi
 	
-	# Use relative path if binary is in the otelcol directory, otherwise absolute
-	if [[ "$otelcol_binary" == "$dep_work_dir/otelcol/"* ]]; then
-		otelcol_binary_rel="./$(basename $otelcol_binary)"
-	else
-		otelcol_binary_rel="$otelcol_binary"
-	fi
+	otelcol_binary_rel="./otelcol-contrib"
 	
 	# Start collector in background and capture output (both stdout and stderr)
-	(cd $dep_work_dir/otelcol && $otelcol_binary_rel --config=config.yaml > $dep_work_otel_collector_logfile 2>&1) &
+	(cd "$otelcol_work_dir" && $otelcol_binary_rel --config=config.yaml > $dep_work_otel_collector_logfile 2>&1) &
 	otelcol_pid=$!
 	echo $otelcol_pid > $dep_work_otel_collector_pidfile
 	
@@ -3337,202 +3336,14 @@ start_otel_collector() {
 		sleep 0.5
 	fi
 	
-	# Use the port we configured (no need to discover it)
+	# Use the port we configured (no discovery needed)
 	otel_port="$OTEL_COLLECTOR_PORT"
-	if [ -n "$otel_port" ]; then
-		echo $otel_port > $otel_port_file
-		echo "OTEL Collector configured to listen on port $otel_port"
-	else
-		# Fallback: try to discover port (for backward compatibility)
-		timeoutend=30
-		timeseconds=0
-		otel_port=""
-		
-		while [ -z "$otel_port" ]; do
-			if [ -n "$TESTTOOL_DIR" ] && [ -f "$TESTTOOL_DIR/msleep" ]; then
-				$TESTTOOL_DIR/msleep 500
-			else
-				sleep 0.5
-			fi
-			(( timeseconds=timeseconds + 1 ))
-		
-		# Check if process is still running
-		if ! kill -0 $otelcol_pid 2>/dev/null; then
-			echo "OTEL Collector process died unexpectedly"
-			if [ -f $dep_work_otel_collector_logfile ]; then
-				echo "Dumping OTEL Collector log:"
-				echo "========================================="
-				cat $dep_work_otel_collector_logfile
-				echo "========================================="
-			fi
-			error_exit 1
-		fi
-		
-		# Parse port from log file - collector logs various patterns
-		# We need to find the HTTP receiver port, not the metrics port (8888)
-		# The collector logs "Starting HTTP server" but doesn't log the actual bound port
-		# So we use lsof/netstat to find all listening ports and exclude metrics (8888)
-		
-		# Use lsof to find port (exclude metrics port 8888)
-		# Try earlier - collector should bind quickly
-		if [ $timeseconds -gt 2 ] && [ -z "$otel_port" ]; then
-			# lsof output format: COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME
-			# For TCP listening: NAME will be like "*:4318" or "127.0.0.1:4318" or "[::]:4318"
-			lsof_output=$(lsof -p $otelcol_pid -a -iTCP -sTCP:LISTEN 2>/dev/null)
-			if [ -n "$lsof_output" ]; then
-				# Extract port from lsof output (column 9, format *:PORT, IP:PORT, or [::]:PORT)
-				# Handle both IPv4 and IPv6 formats
-				otel_port=$(echo "$lsof_output" | awk '{print $9}' | \
-					grep -vE ":(8888|\[::\]:8888)" | \
-					sed -n -e 's/.*:\([0-9]*\)$/\1/p' -e 's/\[::\]:\([0-9]*\)/\1/p' | \
-					grep -v "^8888$" | head -1)
-				if [ -n "$otel_port" ] && [ "$otel_port" != "8888" ] && [ "$otel_port" -gt 1024 ] 2>/dev/null; then
-					echo $otel_port > $otel_port_file
-					echo "OTEL Collector listening on port $otel_port (discovered via lsof)"
-					break
-				fi
-			fi
-		fi
-		
-		# Alternative: use ss (socket statistics) - more reliable than netstat
-		if [ $timeseconds -gt 3 ] && [ -z "$otel_port" ]; then
-			if command -v ss >/dev/null 2>&1; then
-				# ss output: State Recv-Q Send-Q Local Address:Port Peer Address:Port Process
-				# Format can be: 0.0.0.0:4318 or [::]:4318
-				ss_output=$(ss -tlnp 2>/dev/null | grep "pid=$otelcol_pid")
-				if [ -n "$ss_output" ]; then
-					# Extract port from column 4 (Local Address:Port)
-					otel_port=$(echo "$ss_output" | awk '{print $4}' | \
-						grep -vE ":(8888|\[::\]:8888)" | \
-						sed -n -e 's/.*:\([0-9]*\)$/\1/p' -e 's/\[::\]:\([0-9]*\)/\1/p' | \
-						grep -v "^8888$" | head -1)
-					if [ -n "$otel_port" ] && [ "$otel_port" != "8888" ] && [ "$otel_port" -gt 1024 ] 2>/dev/null; then
-						echo $otel_port > $otel_port_file
-						echo "OTEL Collector listening on port $otel_port (discovered via ss)"
-						break
-					fi
-				fi
-			fi
-		fi
-		
-		# Alternative: use netstat if ss is not available
-		if [ $timeseconds -gt 4 ] && [ -z "$otel_port" ]; then
-			if command -v netstat >/dev/null 2>&1; then
-				netstat_output=$(netstat -tlnp 2>/dev/null | grep " $otelcol_pid/")
-				if [ -n "$netstat_output" ]; then
-					otel_port=$(echo "$netstat_output" | awk '{print $4}' | grep -v ":8888" | \
-						sed -n 's/.*:\([0-9]*\)$/\1/p' | head -1)
-					if [ -n "$otel_port" ] && [ "$otel_port" != "8888" ]; then
-						echo $otel_port > $otel_port_file
-						echo "OTEL Collector listening on port $otel_port (discovered via netstat)"
-						break
-					fi
-				fi
-			fi
-		fi
-		
-		# Last resort: use /proc/net/tcp to find listening ports
-		# This is more reliable as it doesn't depend on external tools
-		if [ $timeseconds -gt 4 ] && [ -z "$otel_port" ]; then
-			# /proc/net/tcp shows: sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode
-			# State 0A = LISTEN, local_address is in hex format IP:PORT
-			# We need to find ports owned by our process
-			# Get inode numbers from /proc/$PID/fd/ that are sockets
-			if [ -d /proc/$otelcol_pid/fd ]; then
-				socket_inodes=$(ls -l /proc/$otelcol_pid/fd 2>/dev/null | grep socket | awk '{print $11}' | sed 's/\[//;s/\]//' | sort -u)
-				if [ -n "$socket_inodes" ]; then
-					# Check /proc/net/tcp for listening sockets (state 0A) matching our inodes
-					for inode in $socket_inodes; do
-						# Find the line in /proc/net/tcp with this inode and state 0A (LISTEN)
-						tcp_line=$(grep " 0A " /proc/net/tcp 2>/dev/null | grep " $inode$" | head -1)
-						if [ -n "$tcp_line" ]; then
-							# Extract local address (second field) - format is IP:PORT in hex
-							local_addr=$(echo "$tcp_line" | awk '{print $2}')
-							# Extract port (last 4 hex digits after the colon)
-							port_hex=$(echo "$local_addr" | sed 's/.*://')
-							# Convert hex to decimal
-							port=$((0x$port_hex))
-							if [ -n "$port" ] && [ "$port" != "8888" ] && [ "$port" -gt 1024 ] 2>/dev/null; then
-								otel_port=$port
-								echo $otel_port > $otel_port_file
-								echo "OTEL Collector listening on port $otel_port (discovered via /proc/net/tcp)"
-								break
-							fi
-						fi
-					done
-					if [ -n "$otel_port" ]; then
-						break
-					fi
-				fi
-			fi
-		fi
-		
-		# Final fallback: try all methods and collect all ports
-		if [ $timeseconds -gt 6 ] && [ -z "$otel_port" ]; then
-			all_ports=""
-			# Try lsof first
-			if command -v lsof >/dev/null 2>&1; then
-				lsof_ports=$(lsof -p $otelcol_pid -a -iTCP -sTCP:LISTEN 2>/dev/null | \
-					awk '{print $9}' | sed -n -e 's/.*:\([0-9]*\)$/\1/p' -e 's/\[::\]:\([0-9]*\)/\1/p')
-				all_ports="$all_ports $lsof_ports"
-			fi
-			# Try ss
-			if command -v ss >/dev/null 2>&1; then
-				ss_ports=$(ss -tlnp 2>/dev/null | grep "pid=$otelcol_pid" | \
-					awk '{print $4}' | sed -n -e 's/.*:\([0-9]*\)$/\1/p' -e 's/\[::\]:\([0-9]*\)/\1/p')
-				all_ports="$all_ports $ss_ports"
-			fi
-			# Try netstat
-			if command -v netstat >/dev/null 2>&1; then
-				netstat_ports=$(netstat -tlnp 2>/dev/null | grep " $otelcol_pid/" | \
-					awk '{print $4}' | sed -n -e 's/.*:\([0-9]*\)$/\1/p' -e 's/\[::\]:\([0-9]*\)/\1/p')
-				all_ports="$all_ports $netstat_ports"
-			fi
-			# Find first port that's not 8888 and > 1024
-			for port in $all_ports; do
-				# Remove any non-numeric characters and check
-				port=$(echo "$port" | tr -d '[:alpha:][:space:]')
-				if [ -n "$port" ] && [ "$port" != "8888" ] && [ "$port" -gt 1024 ] 2>/dev/null; then
-					otel_port=$port
-					echo $otel_port > $otel_port_file
-					echo "OTEL Collector listening on port $otel_port (discovered via comprehensive port scan)"
-					break
-				fi
-			done
-			if [ -n "$otel_port" ]; then
-				break
-			fi
-		fi
-		
-		if [ $timeseconds -gt $timeoutend ]; then
-			echo "--- TIMEOUT ($timeseconds seconds) reached waiting for OTEL Collector port!"
-			if [ -f $dep_work_otel_collector_logfile ]; then
-				echo "Dumping OTEL Collector log:"
-				echo "========================================="
-				cat $dep_work_otel_collector_logfile
-				echo "========================================="
-			fi
-			echo "All listening ports for collector process:"
-			echo "lsof output:"
-			lsof -p $otelcol_pid -a -iTCP -sTCP:LISTEN 2>/dev/null || echo "lsof failed or no output"
-			echo "ss output:"
-			ss -tlnp 2>/dev/null | grep "pid=$otelcol_pid" || echo "ss failed or no output"
-			echo "netstat output:"
-			netstat -tlnp 2>/dev/null | grep " $otelcol_pid/" || echo "netstat failed or no output"
-			# Check if process is still running
-			if kill -0 $otelcol_pid 2>/dev/null; then
-				echo "Process is still running, attempting to stop..."
-				kill $otelcol_pid 2>/dev/null
-			fi
-			error_exit 1
-		fi
-		done
-		
-		if [ -z "$otel_port" ]; then
-			echo "Failed to discover OTEL Collector port"
-			error_exit 1
-		fi
+	if [ -z "$otel_port" ]; then
+		echo "ERROR: OTEL_COLLECTOR_PORT not set. Did you call prepare_otel_collector()?"
+		error_exit 1
 	fi
+	echo $otel_port > $otel_port_file
+	echo "OTEL Collector configured to listen on port $otel_port"
 	
 	# Wait a bit more for collector to be fully ready
 	if [ -n "$TESTTOOL_DIR" ] && [ -f "$TESTTOOL_DIR/msleep" ]; then
@@ -3541,28 +3352,15 @@ start_otel_collector() {
 		sleep 1
 	fi
 	
-	# Verify port is listening (use alternative to nc if not available)
-	if command -v nc >/dev/null 2>&1; then
-		if ! nc -w1 -z 127.0.0.1 $otel_port; then
-			echo "OTEL Collector port $otel_port is not listening (nc check failed)"
-			if [ -f $dep_work_otel_collector_logfile ]; then
-				echo "Dumping OTEL Collector log:"
-				cat $dep_work_otel_collector_logfile
-			fi
-			kill $otelcol_pid 2>/dev/null
-			error_exit 1
+	# Verify port is listening using existing helper function
+	if ! wait_for_tcp_service "127.0.0.1" "$otel_port" 10 "OTEL Collector"; then
+		echo "OTEL Collector port $otel_port is not listening"
+		if [ -f $dep_work_otel_collector_logfile ]; then
+			echo "Dumping OTEL Collector log:"
+			cat $dep_work_otel_collector_logfile
 		fi
-	else
-		# Use /dev/tcp for port check if nc is not available
-		if ! (echo > /dev/tcp/127.0.0.1/$otel_port) 2>/dev/null; then
-			# Try curl as alternative
-			if command -v curl >/dev/null 2>&1; then
-				if ! curl -s --connect-timeout 1 http://127.0.0.1:$otel_port >/dev/null 2>&1; then
-					echo "OTEL Collector port $otel_port may not be listening (curl check failed)"
-					# Don't fail here, as the collector might not respond to HTTP GET on /v1/logs
-				fi
-			fi
-		fi
+		kill $otelcol_pid 2>/dev/null
+		error_exit 1
 	fi
 	
 	printf 'OTEL Collector pid is %s, listening on port %s\n' "$otelcol_pid" "$otel_port"
@@ -3570,15 +3368,21 @@ start_otel_collector() {
 
 # stop OTEL Collector gracefully
 stop_otel_collector() {
-	dep_work_dir=$(readlink -f .dep_wrk)
-	dep_work_otel_collector_pidfile="$dep_work_dir/otelcol/otelcol.pid"
+	# Use per-test directory to allow parallel execution
+	if [ -z "$RSYSLOG_DYNNAME" ]; then
+		echo "ERROR: RSYSLOG_DYNNAME is not set when stopping OTEL Collector"
+		return
+	fi
+	dep_work_dir=$(readlink -f .dep_wrk 2>/dev/null || echo "$(pwd)/.dep_wrk")
+	otelcol_work_dir="$dep_work_dir/otelcol-${RSYSLOG_DYNNAME}"
+	dep_work_otel_collector_pidfile="$otelcol_work_dir/otelcol.pid"
 	
-	if [ ! -f $dep_work_otel_collector_pidfile ]; then
+	if [ ! -f "$dep_work_otel_collector_pidfile" ]; then
 		echo "OTEL Collector pidfile does not exist, no action needed"
 		return
 	fi
 	
-	otelcol_pid=$(cat $dep_work_otel_collector_pidfile 2>/dev/null)
+	otelcol_pid=$(cat "$dep_work_otel_collector_pidfile" 2>/dev/null)
 	if [ -z "$otelcol_pid" ]; then
 		echo "OTEL Collector pidfile is empty, no action needed"
 		return
@@ -3587,7 +3391,7 @@ stop_otel_collector() {
 	# Check if process is still running
 	if ! kill -0 $otelcol_pid 2>/dev/null; then
 		echo "OTEL Collector process $otelcol_pid is not running"
-		rm -f $dep_work_otel_collector_pidfile
+		rm -f "$dep_work_otel_collector_pidfile"
 		return
 	fi
 	
@@ -3606,78 +3410,40 @@ stop_otel_collector() {
 		fi
 	done
 	
-	rm -f $dep_work_otel_collector_pidfile
+	rm -f "$dep_work_otel_collector_pidfile"
 }
 
 # cleanup OTEL Collector files
 cleanup_otel_collector() {
 	stop_otel_collector
-	# Don't delete .dep_wrk/otelcol on failure to allow inspection of output files
+	# Don't delete .dep_wrk/otelcol-${RSYSLOG_DYNNAME} on failure to allow inspection of output files
 	# Only cleanup if test succeeded (check via RSYSLOG_TESTBENCH_TEST_STATUS if available)
 	if [ "${RSYSLOG_TESTBENCH_SKIP_CLEANUP:-}" != "1" ]; then
-		dep_work_dir=$(readlink -f .dep_wrk)
-		if [ -d $dep_work_dir/otelcol ]; then
-			echo "Cleanup OTEL Collector instance"
-			rm -rf $dep_work_dir/otelcol
+		# Use per-test directory to allow parallel execution
+		if [ -n "$RSYSLOG_DYNNAME" ]; then
+			dep_work_dir=$(readlink -f .dep_wrk 2>/dev/null || echo "$(pwd)/.dep_wrk")
+			otelcol_work_dir="$dep_work_dir/otelcol-${RSYSLOG_DYNNAME}"
+			if [ -d "$otelcol_work_dir" ]; then
+				echo "Cleanup OTEL Collector instance"
+				rm -rf "$otelcol_work_dir"
+			fi
 		fi
 	fi
 }
 
 # extract and format log records from OTEL Collector output file
 otel_collector_get_data() {
-	# Try multiple possible locations for the output file
-	otel_output_file=""
+	if [ -z "$OTEL_OUTPUT_FILE" ]; then
+		echo "ERROR: OTEL_OUTPUT_FILE not set. Did you call prepare_otel_collector()?"
+		error_exit 1
+	fi
 	
-	# Wait for the file to appear (OTEL Collector file exporter may buffer data)
-	# Check multiple possible locations
+	otel_output_file="$OTEL_OUTPUT_FILE"
+	
+	# Wait for file to appear (OTEL Collector file exporter may buffer data)
 	i=0
-	timeout=10  # Wait up to 10 seconds
-	while [ $i -lt $timeout ]; do
-		# First try current directory
-		if [ -f "${RSYSLOG_DYNNAME}.otel-output.json" ]; then
-			otel_output_file="${RSYSLOG_DYNNAME}.otel-output.json"
-			break
-		# Try in tests subdirectory (common case when test runs from root)
-		elif [ -f "tests/${RSYSLOG_DYNNAME}.otel-output.json" ]; then
-			otel_output_file="tests/${RSYSLOG_DYNNAME}.otel-output.json"
-			break
-		# Try with absolute path from current directory
-		elif [ -f "$(pwd)/${RSYSLOG_DYNNAME}.otel-output.json" ]; then
-			otel_output_file="$(pwd)/${RSYSLOG_DYNNAME}.otel-output.json"
-			break
-		# Try in tests directory with absolute path
-		elif [ -f "$(pwd)/tests/${RSYSLOG_DYNNAME}.otel-output.json" ]; then
-			otel_output_file="$(pwd)/tests/${RSYSLOG_DYNNAME}.otel-output.json"
-			break
-		# Try with srcdir if set and different
-		elif [ -n "$srcdir" ] && [ "$srcdir" != "." ] && [ -f "$srcdir/${RSYSLOG_DYNNAME}.otel-output.json" ]; then
-			otel_output_file="$srcdir/${RSYSLOG_DYNNAME}.otel-output.json"
-			break
-		# Try in .dep_wrk/otelcol (collector working directory - file exporter may write relative to it)
-		# Check both from current directory and tests directory
-		elif [ -f ".dep_wrk/otelcol/${RSYSLOG_DYNNAME}.otel-output.json" ]; then
-			otel_output_file=".dep_wrk/otelcol/${RSYSLOG_DYNNAME}.otel-output.json"
-			break
-		elif [ -f "tests/.dep_wrk/otelcol/${RSYSLOG_DYNNAME}.otel-output.json" ]; then
-			otel_output_file="tests/.dep_wrk/otelcol/${RSYSLOG_DYNNAME}.otel-output.json"
-			break
-		# Try with absolute path to .dep_wrk/otelcol
-		elif [ -f "$(pwd)/.dep_wrk/otelcol/${RSYSLOG_DYNNAME}.otel-output.json" ]; then
-			otel_output_file="$(pwd)/.dep_wrk/otelcol/${RSYSLOG_DYNNAME}.otel-output.json"
-			break
-		elif [ -f "$(pwd)/tests/.dep_wrk/otelcol/${RSYSLOG_DYNNAME}.otel-output.json" ]; then
-			otel_output_file="$(pwd)/tests/.dep_wrk/otelcol/${RSYSLOG_DYNNAME}.otel-output.json"
-			break
-		# Try .otel-output.json (file exporter may create file without dynamic name prefix)
-		elif [ -f ".dep_wrk/otelcol/.otel-output.json" ]; then
-			otel_output_file=".dep_wrk/otelcol/.otel-output.json"
-			break
-		elif [ -f "tests/.dep_wrk/otelcol/.otel-output.json" ]; then
-			otel_output_file="tests/.dep_wrk/otelcol/.otel-output.json"
-			break
-		fi
-		
-		# Wait a bit before checking again
+	timeout=10
+	while [ $i -lt $timeout ] && [ ! -f "$otel_output_file" ]; do
 		if [ -n "$TESTTOOL_DIR" ] && [ -f "$TESTTOOL_DIR/msleep" ]; then
 			$TESTTOOL_DIR/msleep 500
 		else
@@ -3686,36 +3452,9 @@ otel_collector_get_data() {
 		((i++))
 	done
 	
-	if [ -z "$otel_output_file" ] || [ ! -f "$otel_output_file" ]; then
-		echo "OTEL Collector output file ${RSYSLOG_DYNNAME}.otel-output.json does not exist"
-		echo "  Checked: $(pwd)/${RSYSLOG_DYNNAME}.otel-output.json"
-		echo "  Checked: $(pwd)/tests/${RSYSLOG_DYNNAME}.otel-output.json"
-		if [ -n "$srcdir" ] && [ "$srcdir" != "." ]; then
-			echo "  Checked: $srcdir/${RSYSLOG_DYNNAME}.otel-output.json"
-		fi
-		echo "  Checked: $(pwd)/.dep_wrk/otelcol/${RSYSLOG_DYNNAME}.otel-output.json"
-		echo "  Checked: $(pwd)/tests/.dep_wrk/otelcol/${RSYSLOG_DYNNAME}.otel-output.json"
-		# Also check if file exists anywhere with a wildcard search (file exporter may use different naming)
-		found_file=$(find . -name "*.otel-output.json" -type f 2>/dev/null | head -1)
-		if [ -n "$found_file" ]; then
-			echo "  Found .otel-output.json file at: $found_file"
-			# Use the found file if it matches our pattern (check if RSYSLOG_DYNNAME is in the filename)
-			# Also accept .otel-output.json (file exporter may create without dynamic name)
-			if echo "$found_file" | grep -q "${RSYSLOG_DYNNAME}"; then
-				echo "  Using found file: $found_file"
-				otel_output_file="$found_file"
-			elif echo "$found_file" | grep -q "\.otel-output\.json$"; then
-				echo "  Using found file (without dynamic name): $found_file"
-				otel_output_file="$found_file"
-			else
-				echo "  Warning: Found file doesn't match expected pattern ${RSYSLOG_DYNNAME}"
-				echo "  File name: $(basename "$found_file")"
-				echo "  Expected pattern: ${RSYSLOG_DYNNAME}.otel-output.json"
-			fi
-		fi
-		if [ -z "$otel_output_file" ] || [ ! -f "$otel_output_file" ]; then
-			error_exit 1
-		fi
+	if [ ! -f "$otel_output_file" ]; then
+		echo "OTEL Collector output file does not exist: $otel_output_file"
+		error_exit 1
 	fi
 	
 	# Parse OTLP JSON structure and extract log records
