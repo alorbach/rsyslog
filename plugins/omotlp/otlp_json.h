@@ -22,6 +22,14 @@ typedef struct omotlp_log_record_s {
     uint16_t facility;
 } omotlp_log_record_t;
 
-rsRetVal omotlp_json_build_export(const omotlp_log_record_t *records, size_t record_count, char **out_payload);
+typedef struct omotlp_resource_attrs_s {
+    const char *service_instance_id;
+    const char *deployment_environment;
+} omotlp_resource_attrs_t;
+
+rsRetVal omotlp_json_build_export(const omotlp_log_record_t *records,
+                                  size_t record_count,
+                                  const omotlp_resource_attrs_t *resource_attrs,
+                                  char **out_payload);
 
 #endif /* OMOTLP_OTLP_JSON_H */

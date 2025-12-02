@@ -78,6 +78,8 @@ typedef struct _instanceData {
     int bearerConfigured;
     int timeoutConfigured;
     header_list_t headers;
+    uchar *resourceServiceInstanceId;
+    uchar *resourceDeploymentEnvironment;
 } instanceData;
 
 typedef struct omotlp_batch_entry_s {
@@ -128,7 +130,9 @@ static struct cnfparamdescr actpdescr[] = {{"endpoint", eCmdHdlrString, 0},
                                            {"retry.max_retries", eCmdHdlrGetWord, 0},
                                            {"retry.jitter.percent", eCmdHdlrGetWord, 0},
                                            {"headers", eCmdHdlrString, 0},
-                                           {"bearer_token", eCmdHdlrString, 0}};
+                                           {"bearer_token", eCmdHdlrString, 0},
+                                           {"resource.service_instance_id", eCmdHdlrString, 0},
+                                           {"resource.deployment.environment", eCmdHdlrString, 0}};
 static struct cnfparamblk actpblk = {CNFPARAMBLK_VERSION, sizeof(actpdescr) / sizeof(struct cnfparamdescr), actpdescr};
 
 static rsRetVal parse_headers_env(instanceData *pData, const char *text);
@@ -1182,7 +1186,16 @@ static rsRetVal omotlp_flush_batch_locked(wrkrInstanceData_t *pWrkrData, omotlp_
     }
 
     DBGPRINTF("omotlp: omotlp_flush_batch: building JSON export for %zu records", batch->count);
-    CHKiRet(omotlp_json_build_export(records, batch->count, &payload));
+    omotlp_resource_attrs_t resource_attrs = {
+        .service_instance_id = pWrkrData->pData->resourceServiceInstanceId
+                                   ? (const char *)pWrkrData->pData->resourceServiceInstanceId
+                                   : NULL,
+        .deployment_environment = pWrkrData->pData->resourceDeploymentEnvironment
+                                      ? (const char *)pWrkrData->pData->resourceDeploymentEnvironment
+                                      : NULL,
+    };
+
+    CHKiRet(omotlp_json_build_export(records, batch->count, &resource_attrs, &payload));
 
     if (payload != NULL) {
         payload_len = strlen(payload);
@@ -1241,12 +1254,11 @@ static void *omotlp_batch_flush_thread(void *arg) {
         }
 
         if (pWrkrData->batch.count > 0u) {
-            long long timeout_ms = pWrkrData->pData->batchTimeoutMs > 0 ? pWrkrData->pData->batchTimeoutMs
-                                                                        : OMOTLP_IDLE_FLUSH_INTERVAL_MS;
+            long long timeout_ms =
+                pWrkrData->pData->batchTimeoutMs > 0 ? pWrkrData->pData->batchTimeoutMs : OMOTLP_IDLE_FLUSH_INTERVAL_MS;
             if (timeout_ms > 0) {
                 long long now = currentTimeMills();
-                if (pWrkrData->batch.first_enqueue_ms != 0 &&
-                    now - pWrkrData->batch.first_enqueue_ms >= timeout_ms) {
+                if (pWrkrData->batch.first_enqueue_ms != 0 && now - pWrkrData->batch.first_enqueue_ms >= timeout_ms) {
                     (void)omotlp_flush_batch_locked(pWrkrData, &pWrkrData->batch);
                 }
             }
@@ -1401,6 +1413,8 @@ static inline void setInstParamDefaults(instanceData *pData) {
     pData->bearerConfigured = 0;
     pData->timeoutConfigured = 0;
     header_list_init(&pData->headers);
+    pData->resourceServiceInstanceId = NULL;
+    pData->resourceDeploymentEnvironment = NULL;
 }
 
 BEGINbeginCnfLoad
@@ -1496,6 +1510,8 @@ BEGINfreeInstance
         free(pData->bodyTemplateName);
         free(pData->url);
         header_list_destroy(&pData->headers);
+        free(pData->resourceServiceInstanceId);
+        free(pData->resourceDeploymentEnvironment);
     }
 ENDfreeInstance
 
@@ -1647,6 +1663,10 @@ BEGINnewActInst
             pData->bearerConfigured = 1;
             free(bearer);
             free(token);
+        } else if (!strcmp(actpblk.descr[i].name, "resource.service_instance_id")) {
+            CHKiRet(assignParamFromEStr(&pData->resourceServiceInstanceId, pvals[i].val.d.estr));
+        } else if (!strcmp(actpblk.descr[i].name, "resource.deployment.environment")) {
+            CHKiRet(assignParamFromEStr(&pData->resourceDeploymentEnvironment, pvals[i].val.d.estr));
         } else {
             dbgprintf("omotlp: unhandled parameter '%s'\n", actpblk.descr[i].name);
         }

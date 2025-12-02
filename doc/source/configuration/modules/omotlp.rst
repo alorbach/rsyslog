@@ -67,6 +67,8 @@ parameters are optional and fall back to sensible defaults inspired by the
    "retry.jitter.percent", "integer", "20", "Jitter applied to retry delays (``0``–``100``)"
    "headers", "string (JSON object)", "—", "Additional HTTP headers expressed as a JSON object"
    "bearer_token", "string", "—", "Convenience token that expands to ``Authorization: Bearer <token>``"
+   "resource.service_instance_id", "string", "—", "Optional string reported as the OTLP ``service.instance.id`` resource attribute"
+   "resource.deployment.environment", "string", "—", "Optional string reported as the OTLP ``deployment.environment`` resource attribute"
 
 Batch sizes are estimated from the body length plus per-record overhead so the
 module can limit payloads without rendering JSON for each candidate message.

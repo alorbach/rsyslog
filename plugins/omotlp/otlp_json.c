@@ -135,7 +135,10 @@ finalize_it:
     RETiRet;
 }
 
-rsRetVal omotlp_json_build_export(const omotlp_log_record_t *records, size_t record_count, char **out_payload) {
+rsRetVal omotlp_json_build_export(const omotlp_log_record_t *records,
+                                  size_t record_count,
+                                  const omotlp_resource_attrs_t *resource_attrs,
+                                  char **out_payload) {
     struct json_object *root = NULL;
     struct json_object *resource_logs = NULL;
     struct json_object *resource_entry = NULL;
@@ -192,6 +195,17 @@ rsRetVal omotlp_json_build_export(const omotlp_log_record_t *records, size_t rec
     CHKiRet(add_string_attribute(resource_attributes, "telemetry.sdk.name", "rsyslog-omotlp"));
     CHKiRet(add_string_attribute(resource_attributes, "telemetry.sdk.language", "C"));
     CHKiRet(add_string_attribute(resource_attributes, "telemetry.sdk.version", VERSION));
+
+    if (resource_attrs != NULL) {
+        if (resource_attrs->service_instance_id != NULL && resource_attrs->service_instance_id[0] != '\0') {
+            CHKiRet(
+                add_string_attribute(resource_attributes, "service.instance.id", resource_attrs->service_instance_id));
+        }
+        if (resource_attrs->deployment_environment != NULL && resource_attrs->deployment_environment[0] != '\0') {
+            CHKiRet(add_string_attribute(resource_attributes, "deployment.environment",
+                                         resource_attrs->deployment_environment));
+        }
+    }
 
     /* Set host.name at resource level only if all records share the same hostname.
      * This ensures correct attribution when batching messages from a single source.

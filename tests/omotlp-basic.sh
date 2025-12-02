@@ -71,5 +71,39 @@ fi
 # Extract data from OTEL Collector output
 otel_collector_get_data
 
+python3 - "$RSYSLOG_DYNNAME.otel-output.json" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+try:
+    with open(path, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+    records = payload["resourceLogs"][0]["scopeLogs"][0]["logRecords"]
+except Exception as exc:
+    sys.stderr.write(f"omotlp-basic: failed to parse OTLP output: {exc}\n")
+    sys.exit(1)
+
+if not records:
+    sys.stderr.write("omotlp-basic: OTLP output did not contain any logRecords\n")
+    sys.exit(1)
+
+def has_hostname(attrs):
+    for entry in attrs:
+        if entry.get("key") == "log.syslog.hostname":
+            val = entry.get("value", {}).get("stringValue", "")
+            if val:
+                return True
+    return False
+
+for idx, record in enumerate(records):
+    if record.get("severityNumber", 0) == 0:
+        sys.stderr.write(f"omotlp-basic: record {idx} missing severityNumber\n")
+        sys.exit(1)
+    if not has_hostname(record.get("attributes", [])):
+        sys.stderr.write(f"omotlp-basic: record {idx} missing log.syslog.hostname attribute\n")
+        sys.exit(1)
+PY
+
 seq_check
 exit_test
