@@ -3,20 +3,22 @@
  * Concurrency & Locking:
  * - Shared configuration lives in the per-action instanceData structure and is
  *   read-only after instantiation.
- * - Each worker maintains its own HTTP client and batching buffer so no locks
- *   are required across workers.
- * - Flush operations operate solely on worker-local state and return control to
- *   the rsyslog action queue for retry/backoff decisions.
+ * - Each worker maintains its own HTTP client and batching buffer guarded by a
+ *   mutex so no cross-worker locks are required.
+ * - A per-worker flush thread wakes periodically to service batch timeouts and
+ *   returns control to the rsyslog action queue for retry/backoff decisions.
  */
 #include "config.h"
 #include "rsyslog.h"
 
 #include <ctype.h>
 #include <errno.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <zlib.h>
 
 #include "conf.h"
@@ -50,6 +52,11 @@ typedef struct header_list_s {
     size_t count;
     size_t capacity;
 } header_list_t;
+
+enum {
+    OMOTLP_OMSR_IDX_MESSAGE = 0,
+    OMOTLP_OMSR_IDX_BODY = 1,
+};
 
 typedef struct _instanceData {
     uchar *endpoint;
@@ -94,6 +101,10 @@ typedef struct wrkrInstanceData {
     instanceData *pData;
     omotlp_http_client_t *http_client;
     omotlp_batch_state_t batch;
+    pthread_t flush_thread;
+    pthread_mutex_t batch_mutex;
+    int flush_thread_running;
+    int flush_thread_stop;
 } wrkrInstanceData_t;
 
 struct modConfData_s {
@@ -368,6 +379,7 @@ static const severity_mapping_t severity_lookup[8] = {{24u, "EMERGENCY"}, {23u, 
 
 #define OMOTLP_BATCH_BASE_OVERHEAD 256u
 #define OMOTLP_BATCH_RECORD_OVERHEAD 256u
+#define OMOTLP_IDLE_FLUSH_INTERVAL_MS 1000L
 
 static void header_list_init(header_list_t *list) {
     if (list == NULL) {
@@ -1136,7 +1148,7 @@ finalize_it:
     RETiRet;
 }
 
-static rsRetVal omotlp_flush_batch(wrkrInstanceData_t *pWrkrData, omotlp_batch_state_t *batch) {
+static rsRetVal omotlp_flush_batch_locked(wrkrInstanceData_t *pWrkrData, omotlp_batch_state_t *batch) {
     omotlp_log_record_t *records = NULL;
     char *payload = NULL;
     uint8_t *compressed = NULL;
@@ -1199,6 +1211,59 @@ finalize_it:
     RETiRet;
 }
 
+static rsRetVal omotlp_flush_batch(wrkrInstanceData_t *pWrkrData) {
+    rsRetVal iRet;
+
+    if (pWrkrData == NULL) {
+        return RS_RET_PARAM_ERROR;
+    }
+
+    pthread_mutex_lock(&pWrkrData->batch_mutex);
+    iRet = omotlp_flush_batch_locked(pWrkrData, &pWrkrData->batch);
+    pthread_mutex_unlock(&pWrkrData->batch_mutex);
+
+    return iRet;
+}
+
+static void *omotlp_batch_flush_thread(void *arg) {
+    wrkrInstanceData_t *pWrkrData = (wrkrInstanceData_t *)arg;
+    struct timespec req;
+    req.tv_sec = 0;
+    req.tv_nsec = 100 * 1000 * 1000; /* 100 ms */
+
+    while (!pWrkrData->flush_thread_stop) {
+        nanosleep(&req, NULL);
+
+        pthread_mutex_lock(&pWrkrData->batch_mutex);
+        if (pWrkrData->flush_thread_stop) {
+            pthread_mutex_unlock(&pWrkrData->batch_mutex);
+            break;
+        }
+
+        if (pWrkrData->batch.count > 0u) {
+            long long timeout_ms = pWrkrData->pData->batchTimeoutMs > 0 ? pWrkrData->pData->batchTimeoutMs
+                                                                        : OMOTLP_IDLE_FLUSH_INTERVAL_MS;
+            if (timeout_ms > 0) {
+                long long now = currentTimeMills();
+                if (pWrkrData->batch.first_enqueue_ms != 0 &&
+                    now - pWrkrData->batch.first_enqueue_ms >= timeout_ms) {
+                    (void)omotlp_flush_batch_locked(pWrkrData, &pWrkrData->batch);
+                }
+            }
+        }
+
+        pthread_mutex_unlock(&pWrkrData->batch_mutex);
+    }
+
+    pthread_mutex_lock(&pWrkrData->batch_mutex);
+    if (pWrkrData->batch.count > 0u) {
+        (void)omotlp_flush_batch_locked(pWrkrData, &pWrkrData->batch);
+    }
+    pthread_mutex_unlock(&pWrkrData->batch_mutex);
+
+    return NULL;
+}
+
 static rsRetVal omotlp_batch_add_record(wrkrInstanceData_t *pWrkrData,
                                         const omotlp_log_record_t *record,
                                         const char *body) {
@@ -1218,8 +1283,10 @@ static rsRetVal omotlp_batch_add_record(wrkrInstanceData_t *pWrkrData,
     batch = &pWrkrData->batch;
     cfg = pWrkrData->pData;
 
+    pthread_mutex_lock(&pWrkrData->batch_mutex);
+
     if (cfg->batchMaxItems > 0u && batch->count >= cfg->batchMaxItems) {
-        CHKiRet(omotlp_flush_batch(pWrkrData, batch));
+        CHKiRet(omotlp_flush_batch_locked(pWrkrData, batch));
     }
 
     body_text = (body != NULL) ? body : "";
@@ -1227,7 +1294,7 @@ static rsRetVal omotlp_batch_add_record(wrkrInstanceData_t *pWrkrData,
     estimated_bytes = OMOTLP_BATCH_RECORD_OVERHEAD + body_len;
 
     if (cfg->batchMaxBytes > 0u && batch->count > 0u && batch->estimated_bytes + estimated_bytes > cfg->batchMaxBytes) {
-        CHKiRet(omotlp_flush_batch(pWrkrData, batch));
+        CHKiRet(omotlp_flush_batch_locked(pWrkrData, batch));
     }
 
     if (cfg->batchMaxBytes > 0u && estimated_bytes > cfg->batchMaxBytes) {
@@ -1266,12 +1333,13 @@ static rsRetVal omotlp_batch_add_record(wrkrInstanceData_t *pWrkrData,
     }
 
     if (cfg->batchMaxItems > 0u && batch->count >= cfg->batchMaxItems) {
-        CHKiRet(omotlp_flush_batch(pWrkrData, batch));
+        CHKiRet(omotlp_flush_batch_locked(pWrkrData, batch));
     } else if (cfg->batchMaxBytes > 0u && batch->estimated_bytes >= cfg->batchMaxBytes) {
-        CHKiRet(omotlp_flush_batch(pWrkrData, batch));
+        CHKiRet(omotlp_flush_batch_locked(pWrkrData, batch));
     }
 
 finalize_it:
+    pthread_mutex_unlock(&pWrkrData->batch_mutex);
     if (iRet != RS_RET_OK) {
         if (entry != NULL) {
             omotlp_batch_entry_clear(entry);
@@ -1293,6 +1361,7 @@ static rsRetVal omotlp_batch_flush_if_due(wrkrInstanceData_t *pWrkrData, long lo
         ABORT_FINALIZE(RS_RET_PARAM_ERROR);
     }
 
+    pthread_mutex_lock(&pWrkrData->batch_mutex);
     batch = &pWrkrData->batch;
     if (pWrkrData->pData->batchTimeoutMs <= 0 || batch->count == 0u) {
         goto finalize_it;
@@ -1304,10 +1373,11 @@ static rsRetVal omotlp_batch_flush_if_due(wrkrInstanceData_t *pWrkrData, long lo
 
     age = now_ms - batch->first_enqueue_ms;
     if (age >= pWrkrData->pData->batchTimeoutMs) {
-        CHKiRet(omotlp_flush_batch(pWrkrData, batch));
+        CHKiRet(omotlp_flush_batch_locked(pWrkrData, batch));
     }
 
 finalize_it:
+    pthread_mutex_unlock(&pWrkrData->batch_mutex);
     RETiRet;
 }
 
@@ -1371,6 +1441,9 @@ BEGINcreateWrkrInstance
     pWrkrData->batch.capacity = 0u;
     pWrkrData->batch.estimated_bytes = 0u;
     pWrkrData->batch.first_enqueue_ms = 0;
+    pWrkrData->flush_thread_running = 0;
+    pWrkrData->flush_thread_stop = 0;
+    pthread_mutex_init(&pWrkrData->batch_mutex, NULL);
 
     if (pData == NULL || pData->url == NULL) {
         iRet = RS_RET_INTERNAL_ERROR;
@@ -1391,8 +1464,23 @@ BEGINcreateWrkrInstance
         goto finalize_it;
     }
 
+    if (pthread_create(&pWrkrData->flush_thread, NULL, omotlp_batch_flush_thread, pWrkrData) != 0) {
+        LogError(errno, RS_RET_SYS_ERR, "omotlp: failed to create flush thread");
+        iRet = RS_RET_SYS_ERR;
+        goto finalize_it;
+    }
+    pWrkrData->flush_thread_running = 1;
+
 finalize_it:
     if (iRet != RS_RET_OK) {
+        if (pWrkrData != NULL) {
+            if (pWrkrData->flush_thread_running) {
+                pWrkrData->flush_thread_stop = 1;
+                pthread_join(pWrkrData->flush_thread, NULL);
+                pWrkrData->flush_thread_running = 0;
+            }
+            pthread_mutex_destroy(&pWrkrData->batch_mutex);
+        }
         omotlp_http_client_destroy(&pWrkrData->http_client);
         free(pWrkrData);
         pWrkrData = NULL;
@@ -1414,10 +1502,14 @@ ENDfreeInstance
 BEGINfreeWrkrInstance
     CODESTARTfreeWrkrInstance;
     if (pWrkrData != NULL) {
-        if (pWrkrData->batch.count > 0u) {
-            (void)omotlp_flush_batch(pWrkrData, &pWrkrData->batch);
+        if (pWrkrData->flush_thread_running) {
+            pWrkrData->flush_thread_stop = 1;
+            pthread_join(pWrkrData->flush_thread, NULL);
+            pWrkrData->flush_thread_running = 0;
         }
+        (void)omotlp_flush_batch(pWrkrData);
         omotlp_batch_destroy(&pWrkrData->batch);
+        pthread_mutex_destroy(&pWrkrData->batch_mutex);
         omotlp_http_client_destroy(&pWrkrData->http_client);
     }
 ENDfreeWrkrInstance
@@ -1444,18 +1536,6 @@ ENDdbgPrintInstInfo
 BEGINtryResume
     CODESTARTtryResume;
 ENDtryResume
-
-BEGINbeginTransaction
-    CODESTARTbeginTransaction;
-ENDbeginTransaction
-
-BEGINendTransaction
-    CODESTARTendTransaction;
-    DBGPRINTF("omotlp: endTransaction called, batch->count=%zu", pWrkrData ? pWrkrData->batch.count : 0u);
-    CHKiRet(omotlp_flush_batch(pWrkrData, &pWrkrData->batch));
-finalize_it:
-    DBGPRINTF("omotlp: endTransaction completed, iRet=%d", iRet);
-ENDendTransaction
 
 static rsRetVal assignParamFromEStr(uchar **target, es_str_t *value) {
     uchar *tmp;
@@ -1592,12 +1672,14 @@ BEGINnewActInst
     CHKiRet(validateProtocol(pData));
     CHKiRet(buildEffectiveUrl(pData));
 
-    CODE_STD_STRING_REQUESTnewActInst(1);
+    CODE_STD_STRING_REQUESTnewActInst(2);
+    CHKiRet(OMSRsetEntry(*ppOMSR, OMOTLP_OMSR_IDX_MESSAGE, NULL, OMSR_TPL_AS_MSG));
+
     tplToUse = (uchar *)strdup((char *)pData->bodyTemplateName);
     if (tplToUse == NULL) {
         ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
     }
-    CHKiRet(OMSRsetEntry(*ppOMSR, 0, tplToUse, OMSR_NO_RQD_TPL_OPTS));
+    CHKiRet(OMSRsetEntry(*ppOMSR, OMOTLP_OMSR_IDX_BODY, tplToUse, OMSR_NO_RQD_TPL_OPTS));
 
     CODE_STD_FINALIZERnewActInst;
     cnfparamvalsDestruct(pvals, &actpblk);
@@ -1605,9 +1687,10 @@ ENDnewActInst
 
 BEGINdoAction
     char *body = NULL;
-    char *body_allocated = NULL;
     omotlp_log_record_t record;
     long long now_ms;
+    smsg_t **ppMsgParam = (smsg_t **)pMsgData;
+    smsg_t *msg = (ppMsgParam != NULL) ? ppMsgParam[OMOTLP_OMSR_IDX_MESSAGE] : NULL;
     CODESTARTdoAction;
 
     if (pWrkrData->pData == NULL) {
@@ -1618,8 +1701,8 @@ BEGINdoAction
         ABORT_FINALIZE(RS_RET_INTERNAL_ERROR);
     }
 
-    if (ppString != NULL && ppString[0] != NULL) {
-        body = (char *)ppString[0];
+    if (ppString != NULL && ppString[OMOTLP_OMSR_IDX_BODY] != NULL) {
+        body = (char *)ppString[OMOTLP_OMSR_IDX_BODY];
     }
 
     if (body == NULL) {
@@ -1629,30 +1712,18 @@ BEGINdoAction
     now_ms = currentTimeMills();
     CHKiRet(omotlp_batch_flush_if_due(pWrkrData, now_ms));
 
-    /* Note: Message metadata (severity, hostname, timestamps, etc.) is not available
-     * in transactional output modules that use template string passing. The body
-     * contains the template-rendered message content only. Metadata fields in the
-     * OTLP record will be set to default/empty values.
-     * To include metadata, use a template that renders the desired fields into the body.
-     */
-    CHKiRet(populateLogRecord(NULL, body, &record));
+    CHKiRet(populateLogRecord(msg, body, &record));
     CHKiRet(omotlp_batch_add_record(pWrkrData, &record, body));
 
-    if (body_allocated != NULL) {
-        free(body_allocated);
-        body_allocated = NULL;
-    }
-
+    pthread_mutex_lock(&pWrkrData->batch_mutex);
     if (pWrkrData->batch.count == 0u) {
         iRet = RS_RET_OK;
     } else {
         iRet = RS_RET_DEFER_COMMIT;
     }
+    pthread_mutex_unlock(&pWrkrData->batch_mutex);
 
 finalize_it:
-    if (body_allocated != NULL) {
-        free(body_allocated);
-    }
 ENDdoAction
 
 NO_LEGACY_CONF_parseSelectorAct /* clang-format off */
@@ -1670,7 +1741,6 @@ BEGINqueryEtryPt
     CODESTARTqueryEtryPt;
     CODEqueryEtryPt_STD_OMOD_QUERIES;
     CODEqueryEtryPt_STD_OMOD8_QUERIES;
-    CODEqueryEtryPt_TXIF_OMOD_QUERIES;
     CODEqueryEtryPt_STD_CONF2_OMOD_QUERIES;
     CODEqueryEtryPt_STD_CONF2_QUERIES;
 ENDqueryEtryPt /* clang-format on */

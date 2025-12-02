@@ -251,8 +251,8 @@ rsRetVal omotlp_http_client_post(omotlp_http_client_t *client, const uint8_t *pa
     long delay_ms;
     DEFiRet;
 
-    DBGPRINTF("omotlp/http: omotlp_http_client_post called, payload_len=%zu, url=%s",
-              payload_len, client ? (client->url ? client->url : "(null)") : "(null client)");
+    DBGPRINTF("omotlp/http: omotlp_http_client_post called, payload_len=%zu, url=%s", payload_len,
+              client ? (client->url ? client->url : "(null)") : "(null client)");
 
     if (client == NULL) {
         ABORT_FINALIZE(RS_RET_PARAM_ERROR);

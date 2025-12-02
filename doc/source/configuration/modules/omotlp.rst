@@ -60,7 +60,7 @@ parameters are optional and fall back to sensible defaults inspired by the
    "compression", "word", "none", "Request payload compression (``none`` or ``gzip``)"
    "batch.max_items", "integer", "512", "Flush the batch after this many records (``0`` disables the limit)"
    "batch.max_bytes", "integer", "524288", "Approximate uncompressed payload threshold in bytes (``0`` disables the limit)"
-   "batch.timeout.ms", "integer", "5000", "Flush the oldest batch after this idle period in milliseconds (``0`` disables the timeout)"
+   "batch.timeout.ms", "integer", "5000", "Flush the oldest batch after this idle period in milliseconds (``0`` disables the user-configured timer, but a short safety flush still runs periodically to avoid indefinite buffering)"
    "retry.initial.ms", "integer", "1000", "Initial backoff before retrying retryable HTTP responses"
    "retry.max.ms", "integer", "30000", "Maximum backoff applied between retries"
    "retry.max_retries", "integer", "5", "Attempts made before returning the batch to the action queue"
@@ -118,6 +118,76 @@ other non-success responses discard the message and log an error.
      headers='{ "X-OTel-Tenant": "blue" }'
      bearer_token="${env:OTEL_TOKEN}"
    )
+
+OTLP Payload Structure
+----------------------
+
+The module generates OTLP/HTTP JSON payloads conforming to the OpenTelemetry
+log data model. Each batch wraps log records in the following hierarchy:
+
+**Resource attributes** (per-batch, automatically populated):
+
+.. csv-table::
+   :header: "Attribute", "Value"
+   :widths: auto
+
+   "``service.name``", "``rsyslog``"
+   "``telemetry.sdk.name``", "``rsyslog-omotlp``"
+   "``telemetry.sdk.language``", "``C``"
+   "``telemetry.sdk.version``", "rsyslog version string"
+   "``host.name``", "hostname (only if uniform across all records in batch)"
+
+**Scope metadata** (per-batch):
+
+.. csv-table::
+   :header: "Field", "Value"
+   :widths: auto
+
+   "``scope.name``", "``rsyslog.omotlp``"
+   "``scope.version``", "rsyslog version string"
+
+**Per-record attributes** (derived from syslog metadata):
+
+.. csv-table::
+   :header: "Attribute", "Source"
+   :widths: auto
+
+   "``log.syslog.appname``", "syslog APP-NAME field"
+   "``log.syslog.procid``", "syslog PROCID field"
+   "``log.syslog.msgid``", "syslog MSGID field"
+   "``log.syslog.facility``", "syslog facility code (integer)"
+   "``log.syslog.hostname``", "syslog HOSTNAME field"
+
+**Per-record fields**:
+
+- ``body.stringValue``: rendered template output
+- ``timeUnixNano``: message timestamp in nanoseconds
+- ``observedTimeUnixNano``: reception timestamp in nanoseconds
+- ``severityNumber``: mapped OTLP severity (see table below)
+- ``severityText``: severity name string
+
+All of the attributes and fields above are emitted for every record; values are
+only omitted when the originating syslog message does not carry the associated
+property (for example, when ``APP-NAME`` is empty).
+
+Severity Mapping
+^^^^^^^^^^^^^^^^
+
+Syslog priority values are mapped to OTLP severity numbers following the
+OpenTelemetry semantic conventions:
+
+.. csv-table::
+   :header: "Syslog Priority", "OTLP SeverityNumber", "OTLP SeverityText"
+   :widths: auto
+
+   "0 (Emergency)", "24", "EMERGENCY"
+   "1 (Alert)", "23", "ALERT"
+   "2 (Critical)", "22", "CRITICAL"
+   "3 (Error)", "17", "ERROR"
+   "4 (Warning)", "13", "WARNING"
+   "5 (Notice)", "11", "NOTICE"
+   "6 (Info)", "9", "INFO"
+   "7 (Debug)", "5", "DEBUG"
 
 Implementation status
 ---------------------
