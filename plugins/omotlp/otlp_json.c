@@ -8,31 +8,35 @@
 
 #include "errmsg.h"
 
+static rsRetVal add_attribute_entry(struct json_object *attributes,
+                                    const char *key,
+                                    struct json_object *value_json,
+                                    const char *value_type_key) ATTR_NONNULL(1, 2, 3, 4);
 static rsRetVal add_string_attribute(struct json_object *attributes, const char *key, const char *value)
     ATTR_NONNULL(1, 2);
 static rsRetVal add_int_attribute(struct json_object *attributes, const char *key, int64_t value) ATTR_NONNULL(1, 2);
 static rsRetVal add_body(struct json_object *log_record, const char *body) ATTR_NONNULL(1);
 
-static rsRetVal add_string_attribute(struct json_object *attributes, const char *key, const char *value) {
+static rsRetVal add_attribute_entry(struct json_object *attributes,
+                                    const char *key,
+                                    struct json_object *value_json,
+                                    const char *value_type_key) {
     struct json_object *entry = NULL;
     struct json_object *value_wrapper = NULL;
     struct json_object *key_json = NULL;
-    struct json_object *string_json = NULL;
 
     DEFiRet;
 
-    if (value == NULL || value[0] == '\0') {
-        goto finalize_it;
-    }
-
     entry = fjson_object_new_object();
     if (entry == NULL) {
+        fjson_object_put(value_json);
         ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
     }
 
     value_wrapper = fjson_object_new_object();
     if (value_wrapper == NULL) {
         fjson_object_put(entry);
+        fjson_object_put(value_json);
         ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
     }
 
@@ -40,18 +44,11 @@ static rsRetVal add_string_attribute(struct json_object *attributes, const char 
     if (key_json == NULL) {
         fjson_object_put(value_wrapper);
         fjson_object_put(entry);
+        fjson_object_put(value_json);
         ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
     }
 
-    string_json = fjson_object_new_string(value);
-    if (string_json == NULL) {
-        fjson_object_put(key_json);
-        fjson_object_put(value_wrapper);
-        fjson_object_put(entry);
-        ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
-    }
-
-    fjson_object_object_add(value_wrapper, "stringValue", string_json);
+    fjson_object_object_add(value_wrapper, value_type_key, value_json);
     fjson_object_object_add(entry, "key", key_json);
     fjson_object_object_add(entry, "value", value_wrapper);
 
@@ -64,48 +61,37 @@ finalize_it:
     RETiRet;
 }
 
+static rsRetVal add_string_attribute(struct json_object *attributes, const char *key, const char *value) {
+    struct json_object *string_json = NULL;
+
+    DEFiRet;
+
+    if (value == NULL || value[0] == '\0') {
+        goto finalize_it;
+    }
+
+    string_json = fjson_object_new_string(value);
+    if (string_json == NULL) {
+        ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+    }
+
+    CHKiRet(add_attribute_entry(attributes, key, string_json, "stringValue"));
+
+finalize_it:
+    RETiRet;
+}
+
 static rsRetVal add_int_attribute(struct json_object *attributes, const char *key, int64_t value) {
-    struct json_object *entry = NULL;
-    struct json_object *value_wrapper = NULL;
-    struct json_object *key_json = NULL;
     struct json_object *int_json = NULL;
 
     DEFiRet;
 
-    entry = fjson_object_new_object();
-    if (entry == NULL) {
-        ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
-    }
-
-    value_wrapper = fjson_object_new_object();
-    if (value_wrapper == NULL) {
-        fjson_object_put(entry);
-        ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
-    }
-
-    key_json = fjson_object_new_string(key);
-    if (key_json == NULL) {
-        fjson_object_put(value_wrapper);
-        fjson_object_put(entry);
-        ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
-    }
-
     int_json = json_object_new_int64(value);
     if (int_json == NULL) {
-        fjson_object_put(key_json);
-        fjson_object_put(value_wrapper);
-        fjson_object_put(entry);
         ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
     }
 
-    fjson_object_object_add(value_wrapper, "intValue", int_json);
-    fjson_object_object_add(entry, "key", key_json);
-    fjson_object_object_add(entry, "value", value_wrapper);
-
-    if (fjson_object_array_add(attributes, entry) != 0) {
-        fjson_object_put(entry);
-        ABORT_FINALIZE(RS_RET_INTERNAL_ERROR);
-    }
+    CHKiRet(add_attribute_entry(attributes, key, int_json, "intValue"));
 
 finalize_it:
     RETiRet;

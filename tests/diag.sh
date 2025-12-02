@@ -498,15 +498,65 @@ wait_for_tcp_service() {
         local start_ts
         local elapsed
         local iteration=0
+	local python_bin="${PYTHON:-}"
+	local have_nc=0
 
         if [ -z "$host" ] || [ -z "$port" ]; then
                 printf 'wait_for_tcp_service: host (%s) or port (%s) missing\n' "$host" "$port"
                 return 1
         fi
 
+	if [ -n "$python_bin" ] && ! command -v "$python_bin" >/dev/null 2>&1; then
+		python_bin=""
+	fi
+	if [ -z "$python_bin" ]; then
+		if command -v python3 >/dev/null 2>&1; then
+			python_bin=$(command -v python3)
+		elif command -v python >/dev/null 2>&1; then
+			python_bin=$(command -v python)
+		fi
+	fi
+
+	if command -v nc >/dev/null 2>&1; then
+		have_nc=1
+	fi
+
+	if [ $have_nc -eq 0 ] && [ -z "$python_bin" ]; then
+		printf 'wait_for_tcp_service: neither "nc" nor a Python interpreter is available for %s:%s\n' "$host" "$port"
+		return 1
+	fi
+
         start_ts=$(date +%s)
         while true; do
-                if nc -w1 -z "$host" "$port" >/dev/null 2>&1; then
+		local connected=1
+		if [ $have_nc -eq 1 ]; then
+			if nc -w1 -z "$host" "$port" >/dev/null 2>&1; then
+				connected=0
+			fi
+		fi
+
+		if [ $connected -ne 0 ] && [ -n "$python_bin" ]; then
+			if "$python_bin" - "$host" "$port" <<'PY' >/dev/null 2>&1
+import socket
+import sys
+
+host = sys.argv[1]
+port = int(sys.argv[2])
+
+try:
+	with socket.create_connection((host, port), timeout=1):
+		pass
+except OSError:
+	sys.exit(1)
+
+sys.exit(0)
+PY
+			then
+				connected=0
+			fi
+		fi
+
+		if [ $connected -eq 0 ]; then
                         printf '%s %s reachable on %s:%s\n' "$(tb_timestamp)" "$description" "$host" "$port"
                         return 0
                 fi
@@ -3558,38 +3608,9 @@ try:
             if num_str:
                 print(num_str)
 except Exception as e:
-    sys.stderr.write(f'Error parsing OTEL output: {e}\n')
+    sys.stderr.write('Error parsing OTEL output: {}\\n'.format(e))
     sys.exit(1)
 " > ${RSYSLOG_OUT_LOG} 2>/dev/null
-	
-	# If no records extracted, try fallback regex extraction
-	if [ ! -s ${RSYSLOG_OUT_LOG} ]; then
-		$PYTHON -c "
-import json
-import sys
-import re
-
-try:
-    with open('$otel_output_file', 'r') as f:
-        content = f.read()
-        # Try to find msgnum patterns in the JSON
-        records = []
-        for match in re.finditer(r'\"msgnum\"\s*:\s*\"([^\"]+)\"', content):
-            num_str = match.group(1)
-            # Extract just the numeric part for chkseq (it expects just numbers)
-            try:
-                num_value = int(num_str)
-                records.append((num_value, num_str))
-            except ValueError:
-                records.append((999999999, num_str))
-        # Output sorted by numeric value, just the number string
-        for num_value, num_str in sorted(records):
-            print(num_str)
-except Exception as e:
-    sys.stderr.write(f'Error parsing OTEL output (fallback): {e}\n')
-    sys.exit(1)
-" > ${RSYSLOG_OUT_LOG} 2>/dev/null
-	fi
 }
 
 # prepare MySQL for next test
