@@ -193,8 +193,31 @@ rsRetVal omotlp_json_build_export(const omotlp_log_record_t *records, size_t rec
     CHKiRet(add_string_attribute(resource_attributes, "telemetry.sdk.language", "C"));
     CHKiRet(add_string_attribute(resource_attributes, "telemetry.sdk.version", VERSION));
 
-    if (records[0].hostname != NULL && records[0].hostname[0] != '\0') {
-        CHKiRet(add_string_attribute(resource_attributes, "host.name", records[0].hostname));
+    /* Set host.name at resource level only if all records share the same hostname.
+     * This ensures correct attribution when batching messages from a single source.
+     * If hostnames differ, hostname is only set per-record in attributes.
+     */
+    if (record_count > 0 && records[0].hostname != NULL && records[0].hostname[0] != '\0') {
+        size_t j;
+        int all_same_hostname = 1;
+        const char *first_hostname = records[0].hostname;
+
+        /* Validate all records have the same hostname */
+        for (j = 1; j < record_count; ++j) {
+            if (records[j].hostname == NULL || records[j].hostname[0] == '\0') {
+                all_same_hostname = 0;
+                break;
+            }
+            if (strcmp(records[j].hostname, first_hostname) != 0) {
+                all_same_hostname = 0;
+                break;
+            }
+        }
+
+        /* Only set resource-level host.name if all records share the same hostname */
+        if (all_same_hostname) {
+            CHKiRet(add_string_attribute(resource_attributes, "host.name", first_hostname));
+        }
     }
 
     scope_logs = fjson_object_new_array();
