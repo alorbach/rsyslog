@@ -56,6 +56,28 @@ typedef struct header_list_s {
     size_t capacity;
 } header_list_t;
 
+typedef struct attribute_map_entry_s {
+    char *rsyslog_property;  /* Source property name */
+    char *otlp_attribute;    /* Target OTLP attribute name */
+} attribute_map_entry_t;
+
+typedef struct attribute_map_s {
+    attribute_map_entry_t *entries;
+    size_t count;
+    size_t capacity;
+} attribute_map_t;
+
+typedef struct severity_map_entry_s {
+    int syslog_priority;      /* 0-7 */
+    uint32_t severity_number; /* OTLP severity number */
+    char *severity_text;       /* OTLP severity text */
+} severity_map_entry_t;
+
+typedef struct severity_map_s {
+    severity_map_entry_t entries[8];  /* One per syslog priority */
+    int configured;                    /* 1 if custom mapping, 0 if default */
+} severity_map_t;
+
 enum {
     OMOTLP_OMSR_IDX_MESSAGE = 0,
     OMOTLP_OMSR_IDX_BODY = 1,
@@ -90,6 +112,10 @@ typedef struct _instanceData {
     uchar *traceIdPropertyName;
     uchar *spanIdPropertyName;
     uchar *traceFlagsPropertyName;
+    /* Custom attribute mapping */
+    attribute_map_t attributeMap;
+    /* Custom severity mapping */
+    severity_map_t severityMap;
 } instanceData;
 
 typedef struct omotlp_batch_entry_s {
@@ -159,7 +185,9 @@ static struct cnfparamdescr actpdescr[] = {{"endpoint", eCmdHdlrString, 0},
                                            {"resource", eCmdHdlrString, 0},  /* Full JSON resource configuration */
                                            {"trace_id.property", eCmdHdlrString, 0},
                                            {"span_id.property", eCmdHdlrString, 0},
-                                           {"trace_flags.property", eCmdHdlrString, 0}};
+                                           {"trace_flags.property", eCmdHdlrString, 0},
+                                           {"attributeMap", eCmdHdlrString, 0},
+                                           {"severity.map", eCmdHdlrString, 0}};
 static struct cnfparamblk actpblk = {CNFPARAMBLK_VERSION, sizeof(actpdescr) / sizeof(struct cnfparamdescr), actpdescr};
 
 static rsRetVal parse_headers_env(instanceData *pData, const char *text);
@@ -518,6 +546,84 @@ finalize_it:
     RETiRet;
 }
 
+static void attribute_map_init(attribute_map_t *map) {
+    if (map == NULL) {
+        return;
+    }
+    map->entries = NULL;
+    map->count = 0u;
+    map->capacity = 0u;
+}
+
+static void attribute_map_clear(attribute_map_t *map) {
+    size_t i;
+
+    if (map == NULL) {
+        return;
+    }
+
+    for (i = 0; i < map->count; ++i) {
+        free(map->entries[i].rsyslog_property);
+        free(map->entries[i].otlp_attribute);
+        map->entries[i].rsyslog_property = NULL;
+        map->entries[i].otlp_attribute = NULL;
+    }
+
+    map->count = 0u;
+}
+
+static void attribute_map_destroy(attribute_map_t *map) {
+    if (map == NULL) {
+        return;
+    }
+
+    attribute_map_clear(map);
+    free(map->entries);
+    map->entries = NULL;
+    map->capacity = 0u;
+}
+
+static rsRetVal attribute_map_add(attribute_map_t *map, const char *rsyslog_prop, const char *otlp_attr) {
+    attribute_map_entry_t *tmp;
+    size_t new_capacity;
+    char *prop_dup = NULL;
+    char *attr_dup = NULL;
+
+    DEFiRet;
+
+    if (map == NULL || rsyslog_prop == NULL || otlp_attr == NULL) {
+        ABORT_FINALIZE(RS_RET_PARAM_ERROR);
+    }
+
+    if (map->count == map->capacity) {
+        new_capacity = (map->capacity == 0u) ? 4u : map->capacity * 2u;
+        tmp = (attribute_map_entry_t *)realloc(map->entries, new_capacity * sizeof(attribute_map_entry_t));
+        if (tmp == NULL) {
+            ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+        }
+        memset(tmp + map->count, 0, (new_capacity - map->count) * sizeof(attribute_map_entry_t));
+        map->entries = tmp;
+        map->capacity = new_capacity;
+    }
+
+    prop_dup = strdup(rsyslog_prop);
+    attr_dup = strdup(otlp_attr);
+
+    if (prop_dup == NULL || attr_dup == NULL) {
+        free(prop_dup);
+        free(attr_dup);
+        ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+    }
+
+    map->entries[map->count].rsyslog_property = prop_dup;
+    map->entries[map->count].otlp_attribute = attr_dup;
+    ++map->count;
+
+finalize_it:
+    RETiRet;
+}
+
+
 static int hex_value(char c) {
     if (c >= '0' && c <= '9') {
         return c - '0';
@@ -739,6 +845,166 @@ finalize_it:
     RETiRet;
 }
 
+static rsRetVal parse_attribute_map(instanceData *pData, const char *json_text) {
+    struct json_object *root = NULL;
+    struct json_object_iterator iter;
+    struct json_object_iterator iter_end;
+
+    DEFiRet;
+
+    if (json_text == NULL || json_text[0] == '\0') {
+        goto finalize_it;
+    }
+
+    root = fjson_tokener_parse(json_text);
+    if (root == NULL) {
+        LogError(0, RS_RET_PARAM_ERROR, "omotlp: failed to parse attributeMap JSON: %s", json_text);
+        ABORT_FINALIZE(RS_RET_PARAM_ERROR);
+    }
+
+    if (!fjson_object_is_type(root, fjson_type_object)) {
+        LogError(0, RS_RET_PARAM_ERROR, "omotlp: attributeMap must be a JSON object");
+        ABORT_FINALIZE(RS_RET_PARAM_ERROR);
+    }
+
+    iter = json_object_iter_begin(root);
+    iter_end = json_object_iter_end(root);
+
+    while (!json_object_iter_equal(&iter, &iter_end)) {
+        const char *rsyslog_prop = json_object_iter_peek_name(&iter);
+        struct json_object *value_obj = json_object_iter_peek_value(&iter);
+        const char *otlp_attr = NULL;
+
+        if (value_obj == NULL || !fjson_object_is_type(value_obj, fjson_type_string)) {
+            LogError(0, RS_RET_PARAM_ERROR, "omotlp: attributeMap value for '%s' must be a string", rsyslog_prop);
+            ABORT_FINALIZE(RS_RET_PARAM_ERROR);
+        }
+
+        otlp_attr = fjson_object_get_string(value_obj);
+
+        /* Add to attribute map */
+        CHKiRet(attribute_map_add(&pData->attributeMap, rsyslog_prop, otlp_attr));
+
+        json_object_iter_next(&iter);
+    }
+
+finalize_it:
+    if (root != NULL) {
+        fjson_object_put(root);
+    }
+    RETiRet;
+}
+
+static rsRetVal parse_severity_map(instanceData *pData, const char *json_text) {
+    struct json_object *root = NULL;
+    struct json_object_iterator iter;
+    struct json_object_iterator iter_end;
+    int priority;
+    uint32_t severity_number;
+    const char *severity_text = NULL;
+    char *severity_text_dup = NULL;
+
+    DEFiRet;
+
+    if (json_text == NULL || json_text[0] == '\0') {
+        goto finalize_it;
+    }
+
+    root = fjson_tokener_parse(json_text);
+    if (root == NULL) {
+        LogError(0, RS_RET_PARAM_ERROR, "omotlp: failed to parse severity.map JSON: %s", json_text);
+        ABORT_FINALIZE(RS_RET_PARAM_ERROR);
+    }
+
+    if (!fjson_object_is_type(root, fjson_type_object)) {
+        LogError(0, RS_RET_PARAM_ERROR, "omotlp: severity.map must be a JSON object");
+        ABORT_FINALIZE(RS_RET_PARAM_ERROR);
+    }
+
+    /* Initialize all entries */
+    for (priority = 0; priority < 8; ++priority) {
+        pData->severityMap.entries[priority].syslog_priority = priority;
+        pData->severityMap.entries[priority].severity_number = 0u;
+        pData->severityMap.entries[priority].severity_text = NULL;
+    }
+
+    iter = json_object_iter_begin(root);
+    iter_end = json_object_iter_end(root);
+
+    while (!json_object_iter_equal(&iter, &iter_end)) {
+        const char *key = json_object_iter_peek_name(&iter);
+        struct json_object *value_obj = json_object_iter_peek_value(&iter);
+        struct json_object *number_obj = NULL;
+        struct json_object *text_obj = NULL;
+        struct json_object_iterator field_iter;
+        struct json_object_iterator field_iter_end;
+
+        errno = 0;
+        priority = (int)strtol(key, NULL, 10);
+        if (errno != 0 || priority < 0 || priority > 7) {
+            LogError(0, RS_RET_PARAM_ERROR, "omotlp: severity.map key '%s' must be a number 0-7", key);
+            ABORT_FINALIZE(RS_RET_PARAM_ERROR);
+        }
+
+        if (value_obj == NULL || !fjson_object_is_type(value_obj, fjson_type_object)) {
+            LogError(0, RS_RET_PARAM_ERROR, "omotlp: severity.map value for priority %d must be an object", priority);
+            ABORT_FINALIZE(RS_RET_PARAM_ERROR);
+        }
+
+        /* Use iterator to find "number" and "text" fields */
+        field_iter = json_object_iter_begin(value_obj);
+        field_iter_end = json_object_iter_end(value_obj);
+        while (!json_object_iter_equal(&field_iter, &field_iter_end)) {
+            const char *field_key = json_object_iter_peek_name(&field_iter);
+            struct json_object *field_value = json_object_iter_peek_value(&field_iter);
+
+            if (field_key != NULL && field_value != NULL) {
+                if (strcmp(field_key, "number") == 0) {
+                    number_obj = field_value;
+                } else if (strcmp(field_key, "text") == 0) {
+                    text_obj = field_value;
+                }
+            }
+            json_object_iter_next(&field_iter);
+        }
+
+        if (number_obj == NULL || !fjson_object_is_type(number_obj, fjson_type_int)) {
+            LogError(0, RS_RET_PARAM_ERROR, "omotlp: severity.map[%d] must have 'number' field (integer)", priority);
+            ABORT_FINALIZE(RS_RET_PARAM_ERROR);
+        }
+
+        if (text_obj == NULL || !fjson_object_is_type(text_obj, fjson_type_string)) {
+            LogError(0, RS_RET_PARAM_ERROR, "omotlp: severity.map[%d] must have 'text' field (string)", priority);
+            ABORT_FINALIZE(RS_RET_PARAM_ERROR);
+        }
+
+        severity_number = (uint32_t)fjson_object_get_int64(number_obj);
+        severity_text = fjson_object_get_string(text_obj);
+
+        severity_text_dup = strdup(severity_text);
+        if (severity_text_dup == NULL) {
+            ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+        }
+
+        pData->severityMap.entries[priority].severity_number = severity_number;
+        pData->severityMap.entries[priority].severity_text = severity_text_dup;
+        severity_text_dup = NULL; /* Ownership transferred */
+
+        json_object_iter_next(&iter);
+    }
+
+    pData->severityMap.configured = 1;
+
+finalize_it:
+    if (root != NULL) {
+        fjson_object_put(root);
+    }
+    if (severity_text_dup != NULL) {
+        free(severity_text_dup);
+    }
+    RETiRet;
+}
+
 static rsRetVal parse_headers_env(instanceData *pData, const char *text) {
     char *dup = NULL;
     char *cursor;
@@ -917,15 +1183,22 @@ finalize_it:
     RETiRet;
 }
 
-static void mapSeverity(int syslogSeverity, omotlp_log_record_t *record) {
+static void mapSeverity(int syslogSeverity, instanceData *pData, omotlp_log_record_t *record) {
     if (syslogSeverity < 0 || syslogSeverity > 7) {
         record->severity_number = 0u;
         record->severity_text = NULL;
         return;
     }
 
-    record->severity_number = severity_lookup[syslogSeverity].number;
-    record->severity_text = severity_lookup[syslogSeverity].text;
+    if (pData != NULL && pData->severityMap.configured) {
+        /* Use custom mapping */
+        record->severity_number = pData->severityMap.entries[syslogSeverity].severity_number;
+        record->severity_text = pData->severityMap.entries[syslogSeverity].severity_text;
+    } else {
+        /* Use default mapping */
+        record->severity_number = severity_lookup[syslogSeverity].number;
+        record->severity_text = severity_lookup[syslogSeverity].text;
+    }
 }
 
 static uint64_t scaleFractionToNanos(int fraction, int precision) {
@@ -1174,7 +1447,7 @@ static rsRetVal populateLogRecord(smsg_t *msg, const char *body, instanceData *p
 
     if (msg != NULL) {
         CHKiRet(MsgGetSeverity(msg, &severity));
-        mapSeverity(severity, record);
+        mapSeverity(severity, pData, record);
 
         record->hostname = (msg->pszHOSTNAME != NULL) ? (const char *)msg->pszHOSTNAME : NULL;
         record->app_name = extractAppName(msg);
@@ -1434,7 +1707,7 @@ static rsRetVal omotlp_flush_batch_locked(wrkrInstanceData_t *pWrkrData, omotlp_
         .custom_attributes = pWrkrData->pData->resourceJsonParsed,
     };
 
-    CHKiRet(omotlp_json_build_export(records, batch->count, &resource_attrs, &payload));
+    CHKiRet(omotlp_json_build_export(records, batch->count, &resource_attrs, &pWrkrData->pData->attributeMap, &payload));
 
     if (payload != NULL) {
         payload_len = strlen(payload);
@@ -1744,6 +2017,12 @@ static inline void setInstParamDefaults(instanceData *pData) {
     pData->traceIdPropertyName = NULL;      /* Will default to "trace_id" */
     pData->spanIdPropertyName = NULL;       /* Will default to "span_id" */
     pData->traceFlagsPropertyName = NULL;   /* Will default to "trace_flags" */
+    /* Custom mappings */
+    attribute_map_init(&pData->attributeMap);
+    pData->severityMap.configured = 0;
+    for (int i = 0; i < 8; ++i) {
+        pData->severityMap.entries[i].severity_text = NULL;
+    }
 }
 
 BEGINbeginCnfLoad
@@ -1899,6 +2178,10 @@ BEGINfreeInstance
         free(pData->traceIdPropertyName);
         free(pData->spanIdPropertyName);
         free(pData->traceFlagsPropertyName);
+        attribute_map_destroy(&pData->attributeMap);
+        for (int i = 0; i < 8; ++i) {
+            free(pData->severityMap.entries[i].severity_text);
+        }
     }
 ENDfreeInstance
 
@@ -2097,6 +2380,20 @@ BEGINnewActInst
             CHKiRet(assignParamFromEStr(&pData->spanIdPropertyName, pvals[i].val.d.estr));
         } else if (!strcmp(actpblk.descr[i].name, "trace_flags.property")) {
             CHKiRet(assignParamFromEStr(&pData->traceFlagsPropertyName, pvals[i].val.d.estr));
+        } else if (!strcmp(actpblk.descr[i].name, "attributeMap")) {
+            char *json_text = (char *)es_str2cstr(pvals[i].val.d.estr, NULL);
+            if (json_text == NULL) {
+                ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+            }
+            CHKiRet(parse_attribute_map(pData, json_text));
+            free(json_text);
+        } else if (!strcmp(actpblk.descr[i].name, "severity.map")) {
+            char *json_text = (char *)es_str2cstr(pvals[i].val.d.estr, NULL);
+            if (json_text == NULL) {
+                ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+            }
+            CHKiRet(parse_severity_map(pData, json_text));
+            free(json_text);
         } else {
             dbgprintf("omotlp: unhandled parameter '%s'\n", actpblk.descr[i].name);
         }

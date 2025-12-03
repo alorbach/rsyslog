@@ -29,9 +29,13 @@ typedef struct omotlp_resource_attrs_s {
     struct json_object *custom_attributes;  /* Parsed JSON object with custom attributes */
 } omotlp_resource_attrs_t;
 
+/* Forward declaration for attribute_map_t */
+typedef struct attribute_map_s attribute_map_t;
+
 rsRetVal omotlp_json_build_export(const omotlp_log_record_t *records,
                                   size_t record_count,
                                   const omotlp_resource_attrs_t *resource_attrs,
+                                  const attribute_map_t *attribute_map,
                                   char **out_payload);
 
 #endif /* OMOTLP_OTLP_JSON_H */

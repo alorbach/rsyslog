@@ -8,6 +8,34 @@
 
 #include "errmsg.h"
 
+/* Forward declaration of attribute_map_t structure */
+struct attribute_map_entry_s {
+    char *rsyslog_property;
+    char *otlp_attribute;
+};
+
+struct attribute_map_s {
+    struct attribute_map_entry_s *entries;
+    size_t count;
+    size_t capacity;
+};
+
+static const char *attribute_map_lookup(const attribute_map_t *map, const char *rsyslog_prop) {
+    size_t i;
+
+    if (map == NULL || rsyslog_prop == NULL) {
+        return NULL;
+    }
+
+    for (i = 0; i < map->count; ++i) {
+        if (strcmp(map->entries[i].rsyslog_property, rsyslog_prop) == 0) {
+            return map->entries[i].otlp_attribute;
+        }
+    }
+
+    return NULL;
+}
+
 static rsRetVal add_attribute_entry(struct json_object *attributes,
                                     const char *key,
                                     struct json_object *value_json,
@@ -124,6 +152,7 @@ finalize_it:
 rsRetVal omotlp_json_build_export(const omotlp_log_record_t *records,
                                   size_t record_count,
                                   const omotlp_resource_attrs_t *resource_attrs,
+                                  const attribute_map_t *attribute_map,
                                   char **out_payload) {
     struct json_object *root = NULL;
     struct json_object *resource_logs = NULL;
@@ -354,12 +383,49 @@ rsRetVal omotlp_json_build_export(const omotlp_log_record_t *records,
         }
         fjson_object_object_add(log_record, "attributes", attributes);
 
-        CHKiRet(add_string_attribute(attributes, "log.syslog.appname", record->app_name));
-        CHKiRet(add_string_attribute(attributes, "log.syslog.procid", record->proc_id));
-        CHKiRet(add_string_attribute(attributes, "log.syslog.msgid", record->msg_id));
-        CHKiRet(add_int_attribute(attributes, "log.syslog.facility", (int64_t)record->facility));
+        /* Default syslog attributes */
+        const char *hostname_attr = "log.syslog.hostname";
+        const char *appname_attr = "log.syslog.appname";
+        const char *procid_attr = "log.syslog.procid";
+        const char *msgid_attr = "log.syslog.msgid";
+        const char *facility_attr = "log.syslog.facility";
+
+        /* Apply custom attribute mapping if configured */
+        if (attribute_map != NULL) {
+            const char *mapped;
+
+            mapped = attribute_map_lookup(attribute_map, "hostname");
+            if (mapped != NULL) {
+                hostname_attr = mapped;
+            }
+
+            mapped = attribute_map_lookup(attribute_map, "appname");
+            if (mapped != NULL) {
+                appname_attr = mapped;
+            }
+
+            mapped = attribute_map_lookup(attribute_map, "procid");
+            if (mapped != NULL) {
+                procid_attr = mapped;
+            }
+
+            mapped = attribute_map_lookup(attribute_map, "msgid");
+            if (mapped != NULL) {
+                msgid_attr = mapped;
+            }
+
+            mapped = attribute_map_lookup(attribute_map, "facility");
+            if (mapped != NULL) {
+                facility_attr = mapped;
+            }
+        }
+
+        CHKiRet(add_string_attribute(attributes, appname_attr, record->app_name));
+        CHKiRet(add_string_attribute(attributes, procid_attr, record->proc_id));
+        CHKiRet(add_string_attribute(attributes, msgid_attr, record->msg_id));
+        CHKiRet(add_int_attribute(attributes, facility_attr, (int64_t)record->facility));
         if (record->hostname != NULL && record->hostname[0] != '\0') {
-            CHKiRet(add_string_attribute(attributes, "log.syslog.hostname", record->hostname));
+            CHKiRet(add_string_attribute(attributes, hostname_attr, record->hostname));
         }
     }
 

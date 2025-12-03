@@ -73,6 +73,8 @@ parameters are optional and fall back to sensible defaults inspired by the
    "trace_id.property", "string", "trace_id", "Property name containing trace ID (32 hex characters = 128 bits)"
    "span_id.property", "string", "span_id", "Property name containing span ID (16 hex characters = 64 bits)"
    "trace_flags.property", "string", "trace_flags", "Property name containing trace flags (hex string, 0-255)"
+   "attributeMap", "string (JSON object)", "—", "Custom mapping of rsyslog properties to OTLP attribute names. JSON object with rsyslog property names as keys and OTLP attribute names as values. Supported properties: ``hostname``, ``appname``, ``procid``, ``msgid``, ``facility``."
+   "severity.map", "string (JSON object)", "—", "Custom mapping of syslog priorities to OTLP severity. JSON object with priority numbers (0-7) as keys and objects with ``number`` (OTLP severity number) and ``text`` (OTLP severity text) as values."
 
 Batch sizes are estimated from the body length plus per-record overhead so the
 module can limit payloads without rendering JSON for each candidate message.
@@ -229,11 +231,11 @@ log data model. Each batch wraps log records in the following hierarchy:
    :header: "Attribute", "Source"
    :widths: auto
 
-   "``log.syslog.appname``", "syslog APP-NAME field"
-   "``log.syslog.procid``", "syslog PROCID field"
-   "``log.syslog.msgid``", "syslog MSGID field"
-   "``log.syslog.facility``", "syslog facility code (integer)"
-   "``log.syslog.hostname``", "syslog HOSTNAME field"
+   "``log.syslog.appname``", "syslog APP-NAME field (customizable via ``attributeMap``)"
+   "``log.syslog.procid``", "syslog PROCID field (customizable via ``attributeMap``)"
+   "``log.syslog.msgid``", "syslog MSGID field (customizable via ``attributeMap``)"
+   "``log.syslog.facility``", "syslog facility code (integer, customizable via ``attributeMap``)"
+   "``log.syslog.hostname``", "syslog HOSTNAME field (customizable via ``attributeMap``)"
 
 **Per-record fields**:
 
@@ -256,7 +258,10 @@ Severity Mapping
 ^^^^^^^^^^^^^^^^
 
 Syslog priority values are mapped to OTLP severity numbers following the
-OpenTelemetry semantic conventions:
+OpenTelemetry semantic conventions. The default mapping can be overridden using
+the ``severity.map`` parameter.
+
+Default severity mapping:
 
 .. csv-table::
    :header: "Syslog Priority", "OTLP SeverityNumber", "OTLP SeverityText"
@@ -270,6 +275,48 @@ OpenTelemetry semantic conventions:
    "5 (Notice)", "11", "NOTICE"
    "6 (Info)", "9", "INFO"
    "7 (Debug)", "5", "DEBUG"
+
+Custom Attribute and Severity Mapping Example
+----------------------------------------------
+
+The following example demonstrates how to customize attribute names and severity
+mapping to match collector expectations or custom severity schemes:
+
+.. code-block:: none
+
+   module(load="omotlp")
+   action(
+     type="omotlp"
+     endpoint="https://otel-collector:4318"
+     path="/v1/logs"
+     attributeMap='{
+       "hostname": "host.name",
+       "appname": "service.name",
+       "procid": "process.pid",
+       "msgid": "message.id",
+       "facility": "log.syslog.facility.code"
+     }'
+     severity.map='{
+       "0": { "number": 24, "text": "FATAL" },
+       "1": { "number": 23, "text": "ALERT" },
+       "2": { "number": 22, "text": "CRITICAL" },
+       "3": { "number": 17, "text": "ERROR" },
+       "4": { "number": 13, "text": "WARN" },
+       "5": { "number": 11, "text": "NOTICE" },
+       "6": { "number": 9, "text": "INFO" },
+       "7": { "number": 5, "text": "DEBUG" }
+     }'
+   )
+
+The ``attributeMap`` parameter allows you to remap standard syslog properties
+to different OTLP attribute names. This is useful when integrating with
+collectors that expect different attribute naming conventions.
+
+The ``severity.map`` parameter allows you to customize the mapping of syslog
+priorities (0-7) to OTLP severity numbers and text. All 8 priorities must be
+specified in the mapping, or defaults will be used for missing priorities.
+Custom severity numbers should follow OTLP severity conventions (0-24 range
+recommended).
 
 Statistic Counter
 =================
