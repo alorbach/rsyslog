@@ -12,6 +12,7 @@
 #include "rsyslog.h"
 
 #include <ctype.h>
+#include <dirent.h>
 #include <errno.h>
 #include <pthread.h>
 #include <stdint.h>
@@ -116,6 +117,13 @@ typedef struct _instanceData {
     attribute_map_t attributeMap;
     /* Custom severity mapping */
     severity_map_t severityMap;
+    /* TLS configuration */
+    uchar *tlsCaCertFile;
+    uchar *tlsCaCertDir;
+    uchar *tlsClientCertFile;
+    uchar *tlsClientKeyFile;
+    int tlsVerifyHostname;  /* 0 = disabled, 1 = enabled */
+    int tlsVerifyPeer;      /* 0 = disabled, 1 = enabled */
 } instanceData;
 
 typedef struct omotlp_batch_entry_s {
@@ -187,7 +195,13 @@ static struct cnfparamdescr actpdescr[] = {{"endpoint", eCmdHdlrString, 0},
                                            {"span_id.property", eCmdHdlrString, 0},
                                            {"trace_flags.property", eCmdHdlrString, 0},
                                            {"attributeMap", eCmdHdlrString, 0},
-                                           {"severity.map", eCmdHdlrString, 0}};
+                                           {"severity.map", eCmdHdlrString, 0},
+                                           {"tls.cacert", eCmdHdlrString, 0},
+                                           {"tls.cadir", eCmdHdlrString, 0},
+                                           {"tls.cert", eCmdHdlrString, 0},
+                                           {"tls.key", eCmdHdlrString, 0},
+                                           {"tls.verify_hostname", eCmdHdlrGetWord, 0},
+                                           {"tls.verify_peer", eCmdHdlrGetWord, 0}};
 static struct cnfparamblk actpblk = {CNFPARAMBLK_VERSION, sizeof(actpdescr) / sizeof(struct cnfparamdescr), actpdescr};
 
 static rsRetVal parse_headers_env(instanceData *pData, const char *text);
@@ -1668,6 +1682,7 @@ static rsRetVal omotlp_flush_batch_locked(wrkrInstanceData_t *pWrkrData, omotlp_
     long status_code = 0;
     long latency_ms = 0;
     size_t record_count = 0u;
+    omotlp_resource_attrs_t resource_attrs;
 
     DEFiRet;
 
@@ -1697,7 +1712,7 @@ static rsRetVal omotlp_flush_batch_locked(wrkrInstanceData_t *pWrkrData, omotlp_
     }
 
     DBGPRINTF("omotlp: omotlp_flush_batch: building JSON export for %zu records", batch->count);
-    omotlp_resource_attrs_t resource_attrs = {
+    resource_attrs = (omotlp_resource_attrs_t){
         .service_instance_id = pWrkrData->pData->resourceServiceInstanceId
                                    ? (const char *)pWrkrData->pData->resourceServiceInstanceId
                                    : NULL,
@@ -2013,6 +2028,13 @@ static inline void setInstParamDefaults(instanceData *pData) {
     pData->resourceDeploymentEnvironment = NULL;
     pData->resourceJson = NULL;
     pData->resourceJsonParsed = NULL;
+    /* TLS defaults */
+    pData->tlsCaCertFile = NULL;
+    pData->tlsCaCertDir = NULL;
+    pData->tlsClientCertFile = NULL;
+    pData->tlsClientKeyFile = NULL;
+    pData->tlsVerifyHostname = 1;  /* Default: verify hostname */
+    pData->tlsVerifyPeer = 1;      /* Default: verify peer certificate */
     /* Trace correlation defaults */
     pData->traceIdPropertyName = NULL;      /* Will default to "trace_id" */
     pData->spanIdPropertyName = NULL;       /* Will default to "span_id" */
@@ -2083,6 +2105,15 @@ BEGINcreateWrkrInstance
     http_cfg.retry_max_ms = pData->retryMaxMs;
     http_cfg.retry_max_retries = pData->retryMaxRetries;
     http_cfg.retry_jitter_percent = pData->retryJitterPercent;
+    
+    /* TLS configuration */
+    http_cfg.tls_ca_cert_file = (const char *)pData->tlsCaCertFile;
+    http_cfg.tls_ca_cert_dir = (const char *)pData->tlsCaCertDir;
+    http_cfg.tls_client_cert_file = (const char *)pData->tlsClientCertFile;
+    http_cfg.tls_client_key_file = (const char *)pData->tlsClientKeyFile;
+    http_cfg.tls_verify_hostname = pData->tlsVerifyHostname;
+    http_cfg.tls_verify_peer = pData->tlsVerifyPeer;
+    
     iRet = omotlp_http_client_create(&http_cfg, &pWrkrData->http_client);
     if (iRet != RS_RET_OK) {
         goto finalize_it;
@@ -2179,6 +2210,10 @@ BEGINfreeInstance
         free(pData->spanIdPropertyName);
         free(pData->traceFlagsPropertyName);
         attribute_map_destroy(&pData->attributeMap);
+        free(pData->tlsCaCertFile);
+        free(pData->tlsCaCertDir);
+        free(pData->tlsClientCertFile);
+        free(pData->tlsClientKeyFile);
         for (int i = 0; i < 8; ++i) {
             free(pData->severityMap.entries[i].severity_text);
         }
@@ -2394,6 +2429,90 @@ BEGINnewActInst
             }
             CHKiRet(parse_severity_map(pData, json_text));
             free(json_text);
+        } else if (!strcmp(actpblk.descr[i].name, "tls.cacert")) {
+            CHKiRet(assignParamFromEStr(&pData->tlsCaCertFile, pvals[i].val.d.estr));
+            /* Validate file exists and is readable */
+            FILE *fp = fopen((const char *)pData->tlsCaCertFile, "r");
+            if (fp == NULL) {
+                char errStr[1024];
+                rs_strerror_r(errno, errStr, sizeof(errStr));
+                LogError(0, RS_RET_NO_FILE_ACCESS, 
+                        "omotlp: tls.cacert file '%s' cannot be accessed: %s",
+                        pData->tlsCaCertFile, errStr);
+                ABORT_FINALIZE(RS_RET_NO_FILE_ACCESS);
+            }
+            fclose(fp);
+        } else if (!strcmp(actpblk.descr[i].name, "tls.cadir")) {
+            CHKiRet(assignParamFromEStr(&pData->tlsCaCertDir, pvals[i].val.d.estr));
+            /* Validate directory exists */
+            DIR *dir = opendir((const char *)pData->tlsCaCertDir);
+            if (dir == NULL) {
+                char errStr[1024];
+                rs_strerror_r(errno, errStr, sizeof(errStr));
+                LogError(0, RS_RET_NO_FILE_ACCESS,
+                        "omotlp: tls.cadir directory '%s' cannot be accessed: %s",
+                        pData->tlsCaCertDir, errStr);
+                ABORT_FINALIZE(RS_RET_NO_FILE_ACCESS);
+            }
+            closedir(dir);
+        } else if (!strcmp(actpblk.descr[i].name, "tls.cert")) {
+            CHKiRet(assignParamFromEStr(&pData->tlsClientCertFile, pvals[i].val.d.estr));
+            /* Validate file exists and is readable */
+            FILE *fp = fopen((const char *)pData->tlsClientCertFile, "r");
+            if (fp == NULL) {
+                char errStr[1024];
+                rs_strerror_r(errno, errStr, sizeof(errStr));
+                LogError(0, RS_RET_NO_FILE_ACCESS,
+                        "omotlp: tls.cert file '%s' cannot be accessed: %s",
+                        pData->tlsClientCertFile, errStr);
+                ABORT_FINALIZE(RS_RET_NO_FILE_ACCESS);
+            }
+            fclose(fp);
+        } else if (!strcmp(actpblk.descr[i].name, "tls.key")) {
+            CHKiRet(assignParamFromEStr(&pData->tlsClientKeyFile, pvals[i].val.d.estr));
+            /* Validate file exists and is readable */
+            FILE *fp = fopen((const char *)pData->tlsClientKeyFile, "r");
+            if (fp == NULL) {
+                char errStr[1024];
+                rs_strerror_r(errno, errStr, sizeof(errStr));
+                LogError(0, RS_RET_NO_FILE_ACCESS,
+                        "omotlp: tls.key file '%s' cannot be accessed: %s",
+                        pData->tlsClientKeyFile, errStr);
+                ABORT_FINALIZE(RS_RET_NO_FILE_ACCESS);
+            }
+            fclose(fp);
+        } else if (!strcmp(actpblk.descr[i].name, "tls.verify_hostname")) {
+            char *text = (char *)es_str2cstr(pvals[i].val.d.estr, NULL);
+            if (text == NULL) {
+                ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+            }
+            lowercaseInPlace((uchar *)text);
+            if (!strcmp(text, "on") || !strcmp(text, "yes") || !strcmp(text, "1")) {
+                pData->tlsVerifyHostname = 1;
+            } else if (!strcmp(text, "off") || !strcmp(text, "no") || !strcmp(text, "0")) {
+                pData->tlsVerifyHostname = 0;
+            } else {
+                LogError(0, RS_RET_PARAM_ERROR, "omotlp: tls.verify_hostname must be 'on' or 'off'");
+                free(text);
+                ABORT_FINALIZE(RS_RET_PARAM_ERROR);
+            }
+            free(text);
+        } else if (!strcmp(actpblk.descr[i].name, "tls.verify_peer")) {
+            char *text = (char *)es_str2cstr(pvals[i].val.d.estr, NULL);
+            if (text == NULL) {
+                ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+            }
+            lowercaseInPlace((uchar *)text);
+            if (!strcmp(text, "on") || !strcmp(text, "yes") || !strcmp(text, "1")) {
+                pData->tlsVerifyPeer = 1;
+            } else if (!strcmp(text, "off") || !strcmp(text, "no") || !strcmp(text, "0")) {
+                pData->tlsVerifyPeer = 0;
+            } else {
+                LogError(0, RS_RET_PARAM_ERROR, "omotlp: tls.verify_peer must be 'on' or 'off'");
+                free(text);
+                ABORT_FINALIZE(RS_RET_PARAM_ERROR);
+            }
+            free(text);
         } else {
             dbgprintf("omotlp: unhandled parameter '%s'\n", actpblk.descr[i].name);
         }

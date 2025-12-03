@@ -90,6 +90,67 @@ static rsRetVal set_common_options(omotlp_http_client_t *client, const omotlp_ht
         ABORT_FINALIZE(RS_RET_INTERNAL_ERROR);
     }
 
+    /* TLS/SSL configuration */
+    if (config->tls_ca_cert_file != NULL && config->tls_ca_cert_file[0] != '\0') {
+        rc = curl_easy_setopt(client->handle, CURLOPT_CAINFO, config->tls_ca_cert_file);
+        if (rc != CURLE_OK) {
+            LogError(0, RS_RET_INTERNAL_ERROR, 
+                    "omotlp/http: failed to set CA cert file: %s", 
+                    curl_easy_strerror(rc));
+            ABORT_FINALIZE(RS_RET_INTERNAL_ERROR);
+        }
+    }
+    
+    if (config->tls_ca_cert_dir != NULL && config->tls_ca_cert_dir[0] != '\0') {
+        rc = curl_easy_setopt(client->handle, CURLOPT_CAPATH, config->tls_ca_cert_dir);
+        if (rc != CURLE_OK) {
+            LogError(0, RS_RET_INTERNAL_ERROR,
+                    "omotlp/http: failed to set CA cert directory: %s",
+                    curl_easy_strerror(rc));
+            ABORT_FINALIZE(RS_RET_INTERNAL_ERROR);
+        }
+    }
+    
+    if (config->tls_client_cert_file != NULL && config->tls_client_cert_file[0] != '\0') {
+        rc = curl_easy_setopt(client->handle, CURLOPT_SSLCERT, config->tls_client_cert_file);
+        if (rc != CURLE_OK) {
+            LogError(0, RS_RET_INTERNAL_ERROR,
+                    "omotlp/http: failed to set client cert: %s",
+                    curl_easy_strerror(rc));
+            ABORT_FINALIZE(RS_RET_INTERNAL_ERROR);
+        }
+    }
+    
+    if (config->tls_client_key_file != NULL && config->tls_client_key_file[0] != '\0') {
+        rc = curl_easy_setopt(client->handle, CURLOPT_SSLKEY, config->tls_client_key_file);
+        if (rc != CURLE_OK) {
+            LogError(0, RS_RET_INTERNAL_ERROR,
+                    "omotlp/http: failed to set client key: %s",
+                    curl_easy_strerror(rc));
+            ABORT_FINALIZE(RS_RET_INTERNAL_ERROR);
+        }
+    }
+    
+    /* Hostname verification */
+    rc = curl_easy_setopt(client->handle, CURLOPT_SSL_VERIFYHOST, 
+                         config->tls_verify_hostname ? 2L : 0L);
+    if (rc != CURLE_OK) {
+        LogError(0, RS_RET_INTERNAL_ERROR,
+                "omotlp/http: failed to set hostname verification: %s",
+                curl_easy_strerror(rc));
+        ABORT_FINALIZE(RS_RET_INTERNAL_ERROR);
+    }
+    
+    /* Peer certificate verification */
+    rc = curl_easy_setopt(client->handle, CURLOPT_SSL_VERIFYPEER, 
+                         config->tls_verify_peer ? 1L : 0L);
+    if (rc != CURLE_OK) {
+        LogError(0, RS_RET_INTERNAL_ERROR,
+                "omotlp/http: failed to set peer verification: %s",
+                curl_easy_strerror(rc));
+        ABORT_FINALIZE(RS_RET_INTERNAL_ERROR);
+    }
+
 finalize_it:
     RETiRet;
 }

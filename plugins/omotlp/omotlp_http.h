@@ -16,6 +16,13 @@ typedef struct omotlp_http_client_config_s {
     long retry_max_ms;
     unsigned int retry_max_retries;
     unsigned int retry_jitter_percent;
+    /* TLS configuration */
+    const char *tls_ca_cert_file;
+    const char *tls_ca_cert_dir;
+    const char *tls_client_cert_file;
+    const char *tls_client_key_file;
+    int tls_verify_hostname;
+    int tls_verify_peer;
 } omotlp_http_client_config_t;
 
 typedef struct omotlp_http_client_s omotlp_http_client_t;

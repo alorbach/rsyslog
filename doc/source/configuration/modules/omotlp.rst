@@ -7,8 +7,8 @@
 .. summary-start
 
 Phase 1 of the omotlp output plugin streams OpenTelemetry logs over
-OTLP/HTTP JSON with configurable batching, gzip compression, and retry/backoff
-controls.
+OTLP/HTTP JSON with configurable batching, gzip compression, retry/backoff
+controls, and TLS/mTLS support for secure HTTPS connections.
 
 .. summary-end
 
@@ -29,9 +29,9 @@ exports. Phase 1 focuses on the OTLP/HTTP JSON transport path: the module maps
 rsyslog metadata into the canonical OTLP JSON structure, joins the configured
 endpoint and path, and posts batches of rendered payloads via ``libcurl`` using
 ``application/json`` semantics. Batching thresholds, gzip compression, retry and
-backoff policies, and custom headers are all configurable. Subsequent phases
-will extend the module with the gRPC façade and, optionally, HTTP/protobuf
-support.
+backoff policies, custom headers, and TLS/mTLS authentication are all
+configurable. Subsequent phases will extend the module with the gRPC façade and,
+optionally, HTTP/protobuf support.
 
 Availability
 ------------
@@ -75,6 +75,12 @@ parameters are optional and fall back to sensible defaults inspired by the
    "trace_flags.property", "string", "trace_flags", "Property name containing trace flags (hex string, 0-255)"
    "attributeMap", "string (JSON object)", "—", "Custom mapping of rsyslog properties to OTLP attribute names. JSON object with rsyslog property names as keys and OTLP attribute names as values. Supported properties: ``hostname``, ``appname``, ``procid``, ``msgid``, ``facility``."
    "severity.map", "string (JSON object)", "—", "Custom mapping of syslog priorities to OTLP severity. JSON object with priority numbers (0-7) as keys and objects with ``number`` (OTLP severity number) and ``text`` (OTLP severity text) as values."
+   "tls.cacert", "string", "—", "Path to CA certificate bundle file (PEM format)"
+   "tls.cadir", "string", "—", "Path to directory containing CA certificates"
+   "tls.cert", "string", "—", "Path to client certificate file (PEM format) for mTLS"
+   "tls.key", "string", "—", "Path to client private key file (PEM format) for mTLS"
+   "tls.verify_hostname", "boolean", "on", "Enable/disable hostname verification in certificate"
+   "tls.verify_peer", "boolean", "on", "Enable/disable peer certificate verification"
 
 Batch sizes are estimated from the body length plus per-record overhead so the
 module can limit payloads without rendering JSON for each candidate message.
@@ -126,6 +132,14 @@ other non-success responses discard the message and log an error.
      headers='{ "X-OTel-Tenant": "blue" }'
      bearer_token="${env:OTEL_TOKEN}"
    )
+
+.. note::
+
+   When using an ``https://`` endpoint, TLS configuration is recommended for
+   proper certificate verification. If the system's default CA certificates are
+   sufficient, TLS parameters may be omitted. For production deployments or when
+   using custom CA certificates or mTLS, configure the appropriate ``tls.*``
+   parameters as shown in the :ref:`TLS Configuration Example <tls-config-example>`.
 
 Trace Correlation Example
 -------------------------
@@ -188,6 +202,63 @@ The resource attributes are merged with automatic attributes (``service.name``,
 ``telemetry.sdk.*``) that are always added by the module. The resource JSON
 supports string, integer, and boolean values. Boolean values are converted to
 integers (0/1) as OTLP doesn't support boolean attributes.
+
+.. _tls-config-example:
+
+TLS Configuration Example
+---------------------------
+
+The following example demonstrates how to configure TLS/mTLS for secure HTTPS
+connections. This enables server certificate verification using a CA certificate
+bundle and optional mutual TLS authentication with client certificates.
+
+.. code-block:: none
+
+   module(load="omotlp")
+   action(
+     type="omotlp"
+     endpoint="https://otel-collector:4318"
+     path="/v1/logs"
+     tls.cacert="/etc/ssl/certs/ca-bundle.pem"
+     tls.cert="/etc/rsyslog/client.pem"
+     tls.key="/etc/rsyslog/client-key.pem"
+     tls.verify_hostname="on"
+     tls.verify_peer="on"
+   )
+
+The TLS parameters support:
+
+- **tls.cacert**: Path to a CA certificate bundle file (PEM format) for server
+  certificate verification
+- **tls.cadir**: Path to a directory containing CA certificates (alternative to
+  tls.cacert)
+- **tls.cert**: Path to a client certificate file (PEM format) for mutual TLS
+  authentication
+- **tls.key**: Path to a client private key file (PEM format) for mutual TLS
+  authentication
+- **tls.verify_hostname**: Enable/disable hostname verification in the server
+  certificate (default: ``on``)
+- **tls.verify_peer**: Enable/disable peer certificate verification (default: ``on``)
+
+File paths are validated at configuration time. Invalid or inaccessible
+certificate files will cause configuration to fail with an error message
+indicating the specific file and reason (e.g., "tls.cacert file '/path/to/ca.pem'
+cannot be accessed: No such file or directory"). If both ``tls.cacert`` and
+``tls.cadir`` are specified, both are used (libcurl behavior). Client certificate
+and key must be provided together for mTLS. The default behavior verifies both
+hostname and peer certificate for secure connections.
+
+When TLS verification fails at runtime (e.g., certificate mismatch, expired
+certificate, or hostname mismatch), the HTTP request fails and the batch is
+retried according to the configured retry policy. TLS verification errors are
+logged with details from libcurl (e.g., "SSL: certificate subject name does not
+match target host name"). For test environments or self-signed certificates,
+you may need to set ``tls.verify_hostname="off"`` if certificates don't have
+proper Subject Alternative Name (SAN) entries matching the endpoint hostname.
+
+Note that ``tls.verify_hostname`` requires ``tls.verify_peer`` to be enabled
+(``on``) for meaningful verification. If peer verification is disabled,
+hostname verification is effectively ignored.
 
 Legacy single-attribute parameters (``resource.service_instance_id`` and
 ``resource.deployment.environment``) are still supported for backward compatibility
@@ -367,7 +438,9 @@ original build plan and the current status of each item:
   assembly helpers are in place.
 * ✅ HTTP/JSON transport now batches records, applies optional gzip compression,
   and retries transient collector failures with jittered backoff.
-* ✅ Shell regression coverage validates batching, gzip, and retry behaviour.
+* ✅ TLS/mTLS support for secure HTTPS connections with configurable certificate
+  verification.
+* ✅ Shell regression coverage validates batching, gzip, retry, and TLS behaviour.
 * ⏳ Optional gRPC façade and HTTP/protobuf variants remain unimplemented.
 
 Roadmap
