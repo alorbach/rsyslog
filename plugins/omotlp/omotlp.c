@@ -40,6 +40,7 @@ MODULE_CNFNAME("omotlp")
 
 DEF_OMOD_STATIC_DATA;
 DEFobjCurrIf(datetime);
+DEFobjCurrIf(prop);
 
 typedef enum omotlp_compression_e {
     OMOTLP_COMPRESSION_UNSET = 0,
@@ -80,6 +81,10 @@ typedef struct _instanceData {
     header_list_t headers;
     uchar *resourceServiceInstanceId;
     uchar *resourceDeploymentEnvironment;
+    /* Trace correlation property names */
+    uchar *traceIdPropertyName;
+    uchar *spanIdPropertyName;
+    uchar *traceFlagsPropertyName;
 } instanceData;
 
 typedef struct omotlp_batch_entry_s {
@@ -89,6 +94,8 @@ typedef struct omotlp_batch_entry_s {
     char *app_name;
     char *proc_id;
     char *msg_id;
+    char *trace_id;      /* Allocated string for trace_id */
+    char *span_id;       /* Allocated string for span_id */
 } omotlp_batch_entry_t;
 
 typedef struct omotlp_batch_state_s {
@@ -132,7 +139,10 @@ static struct cnfparamdescr actpdescr[] = {{"endpoint", eCmdHdlrString, 0},
                                            {"headers", eCmdHdlrString, 0},
                                            {"bearer_token", eCmdHdlrString, 0},
                                            {"resource.service_instance_id", eCmdHdlrString, 0},
-                                           {"resource.deployment.environment", eCmdHdlrString, 0}};
+                                           {"resource.deployment.environment", eCmdHdlrString, 0},
+                                           {"trace_id.property", eCmdHdlrString, 0},
+                                           {"span_id.property", eCmdHdlrString, 0},
+                                           {"trace_flags.property", eCmdHdlrString, 0}};
 static struct cnfparamblk actpblk = {CNFPARAMBLK_VERSION, sizeof(actpdescr) / sizeof(struct cnfparamdescr), actpdescr};
 
 static rsRetVal parse_headers_env(instanceData *pData, const char *text);
@@ -986,8 +996,158 @@ static const char *extractMsgId(const smsg_t *msg) {
     return NULL;
 }
 
-static rsRetVal populateLogRecord(smsg_t *msg, const char *body, omotlp_log_record_t *record) {
+/**
+ * Validates a hex string for trace_id (32 hex characters = 128 bits)
+ * Returns 1 if valid, 0 otherwise
+ */
+static int is_valid_trace_id(const char *value) {
+    size_t len;
+    size_t i;
+
+    if (value == NULL) {
+        return 0;
+    }
+
+    len = strlen(value);
+    if (len != 32) {
+        return 0;
+    }
+
+    for (i = 0; i < len; ++i) {
+        if (!isxdigit((unsigned char)value[i])) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+/**
+ * Validates a hex string for span_id (16 hex characters = 64 bits)
+ * Returns 1 if valid, 0 otherwise
+ */
+static int is_valid_span_id(const char *value) {
+    size_t len;
+    size_t i;
+
+    if (value == NULL) {
+        return 0;
+    }
+
+    len = strlen(value);
+    if (len != 16) {
+        return 0;
+    }
+
+    for (i = 0; i < len; ++i) {
+        if (!isxdigit((unsigned char)value[i])) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+/**
+ * Parses trace_flags as hex string (1-2 hex characters, 0-255)
+ * Returns parsed value or 0 on error
+ */
+static uint8_t parse_trace_flags(const char *value) {
+    char *end = NULL;
+    unsigned long parsed;
+
+    if (value == NULL || value[0] == '\0') {
+        return 0;
+    }
+
+    errno = 0;
+    parsed = strtoul(value, &end, 16);
+    if (errno != 0 || end == value || *end != '\0') {
+        return 0;
+    }
+
+    if (parsed > 255) {
+        return 0;
+    }
+
+    return (uint8_t)parsed;
+}
+
+/**
+ * Extracts property value as string from message JSON variables
+ * Returns allocated string (caller must free) or NULL
+ */
+static char *extract_property_string(smsg_t *msg, const char *prop_name) {
+    struct json_object *json = NULL;
+    msgPropDescr_t prop_descr;
+    uchar *cstr = NULL;
+    char *value = NULL;
+    char *var_name = NULL;
+    size_t name_len;
+
+    if (msg == NULL || prop_name == NULL || prop_name[0] == '\0') {
+        return NULL;
+    }
+
+    /* Prepend $! if not already present for local variable access */
+    name_len = strlen(prop_name);
+    if (name_len >= 2 && prop_name[0] == '$' && prop_name[1] == '!') {
+        var_name = (char *)prop_name;
+    } else {
+        /* Allocate space for $! prefix + property name + null terminator */
+        var_name = (char *)malloc(name_len + 3);
+        if (var_name == NULL) {
+            return NULL;
+        }
+        strcpy(var_name, "$!");
+        strcat(var_name, prop_name);
+    }
+
+    /* Construct property descriptor for local variable access */
+    if (msgPropDescrFill(&prop_descr, (uchar *)var_name, (int)strlen(var_name)) != RS_RET_OK) {
+        if (var_name != prop_name) {
+            free(var_name);
+        }
+        return NULL;
+    }
+
+    /* Access the JSON variable from localvars */
+    if (msgGetJSONPropJSONorString(msg, &prop_descr, &json, &cstr) != RS_RET_OK) {
+        msgPropDescrDestruct(&prop_descr);
+        if (var_name != prop_name) {
+            free(var_name);
+        }
+        return NULL;
+    }
+
+    if (cstr != NULL && cstr[0] != '\0') {
+        /* String value extracted (most common case for trace properties) */
+        value = strdup((const char *)cstr);
+    } else if (json != NULL) {
+        /* Non-string JSON object - convert to string representation */
+        const char *json_str = fjson_object_to_json_string(json);
+        if (json_str != NULL && json_str[0] != '\0') {
+            value = strdup(json_str);
+        }
+        fjson_object_put(json); /* Free the deep copy */
+    }
+
+    msgPropDescrDestruct(&prop_descr);
+    if (cstr != NULL) {
+        free(cstr);
+    }
+    if (var_name != prop_name) {
+        free(var_name);
+    }
+
+    return value;
+}
+
+static rsRetVal populateLogRecord(smsg_t *msg, const char *body, instanceData *pData, omotlp_log_record_t *record) {
     int severity;
+    char *trace_id_str = NULL;
+    char *span_id_str = NULL;
+    char *trace_flags_str = NULL;
 
     DEFiRet;
 
@@ -1006,6 +1166,44 @@ static rsRetVal populateLogRecord(smsg_t *msg, const char *body, omotlp_log_reco
         record->facility = (uint16_t)msg->iFacility;
         record->time_unix_nano = syslogTimeToUnixNanos(&msg->tTIMESTAMP);
         record->observed_time_unix_nano = syslogTimeToUnixNanos(&msg->tRcvdAt);
+
+        /* Extract trace correlation data */
+        if (pData != NULL) {
+            trace_id_str = extract_property_string(msg, (const char *)pData->traceIdPropertyName);
+            if (trace_id_str != NULL) {
+                if (is_valid_trace_id(trace_id_str)) {
+                    record->trace_id = trace_id_str;
+                    trace_id_str = NULL; /* Ownership transferred */
+                } else {
+                    LogError(0, RS_RET_OK,
+                            "omotlp: invalid trace_id format (expected 32 hex chars): %s",
+                            trace_id_str);
+                    free(trace_id_str);
+                    trace_id_str = NULL;
+                }
+            }
+
+            span_id_str = extract_property_string(msg, (const char *)pData->spanIdPropertyName);
+            if (span_id_str != NULL) {
+                if (is_valid_span_id(span_id_str)) {
+                    record->span_id = span_id_str;
+                    span_id_str = NULL; /* Ownership transferred */
+                } else {
+                    LogError(0, RS_RET_OK,
+                            "omotlp: invalid span_id format (expected 16 hex chars): %s",
+                            span_id_str);
+                    free(span_id_str);
+                    span_id_str = NULL;
+                }
+            }
+
+            trace_flags_str = extract_property_string(msg, (const char *)pData->traceFlagsPropertyName);
+            if (trace_flags_str != NULL) {
+                record->trace_flags = parse_trace_flags(trace_flags_str);
+                free(trace_flags_str);
+                trace_flags_str = NULL;
+            }
+        }
     } else {
         record->severity_number = 0u;
         record->severity_text = NULL;
@@ -1018,11 +1216,26 @@ static rsRetVal populateLogRecord(smsg_t *msg, const char *body, omotlp_log_reco
         record->observed_time_unix_nano = 0u;
     }
 
-    record->trace_id = NULL;
-    record->span_id = NULL;
-    record->trace_flags = 0u;
+    if (record->trace_id == NULL) {
+        record->trace_id = NULL;
+    }
+    if (record->span_id == NULL) {
+        record->span_id = NULL;
+    }
+    if (record->trace_flags == 0u && trace_flags_str == NULL) {
+        record->trace_flags = 0u;
+    }
 
 finalize_it:
+    if (trace_id_str != NULL) {
+        free(trace_id_str);
+    }
+    if (span_id_str != NULL) {
+        free(span_id_str);
+    }
+    if (trace_flags_str != NULL) {
+        free(trace_flags_str);
+    }
     RETiRet;
 }
 
@@ -1036,6 +1249,8 @@ static void omotlp_batch_entry_clear(omotlp_batch_entry_t *entry) {
     free(entry->app_name);
     free(entry->proc_id);
     free(entry->msg_id);
+    free(entry->trace_id);
+    free(entry->span_id);
 
     memset(entry, 0, sizeof(*entry));
 }
@@ -1344,6 +1559,17 @@ static rsRetVal omotlp_batch_add_record(wrkrInstanceData_t *pWrkrData,
     entry->record.proc_id = entry->proc_id;
     entry->record.msg_id = entry->msg_id;
 
+    /* Store trace correlation strings */
+    if (record->trace_id != NULL) {
+        CHKiRet(duplicate_optional_string(record->trace_id, &entry->trace_id));
+        entry->record.trace_id = entry->trace_id;
+    }
+    if (record->span_id != NULL) {
+        CHKiRet(duplicate_optional_string(record->span_id, &entry->span_id));
+        entry->record.span_id = entry->span_id;
+    }
+    entry->record.trace_flags = record->trace_flags;
+
     ++batch->count;
     count_incremented = 1;
     if (batch->count == 1u) {
@@ -1451,6 +1677,10 @@ static inline void setInstParamDefaults(instanceData *pData) {
     header_list_init(&pData->headers);
     pData->resourceServiceInstanceId = NULL;
     pData->resourceDeploymentEnvironment = NULL;
+    /* Trace correlation defaults */
+    pData->traceIdPropertyName = NULL;      /* Will default to "trace_id" */
+    pData->spanIdPropertyName = NULL;       /* Will default to "span_id" */
+    pData->traceFlagsPropertyName = NULL;   /* Will default to "trace_flags" */
 }
 
 BEGINbeginCnfLoad
@@ -1551,6 +1781,9 @@ BEGINfreeInstance
         header_list_destroy(&pData->headers);
         free(pData->resourceServiceInstanceId);
         free(pData->resourceDeploymentEnvironment);
+        free(pData->traceIdPropertyName);
+        free(pData->spanIdPropertyName);
+        free(pData->traceFlagsPropertyName);
     }
 ENDfreeInstance
 
@@ -1709,6 +1942,12 @@ BEGINnewActInst
             CHKiRet(assignParamFromEStr(&pData->resourceServiceInstanceId, pvals[i].val.d.estr));
         } else if (!strcmp(actpblk.descr[i].name, "resource.deployment.environment")) {
             CHKiRet(assignParamFromEStr(&pData->resourceDeploymentEnvironment, pvals[i].val.d.estr));
+        } else if (!strcmp(actpblk.descr[i].name, "trace_id.property")) {
+            CHKiRet(assignParamFromEStr(&pData->traceIdPropertyName, pvals[i].val.d.estr));
+        } else if (!strcmp(actpblk.descr[i].name, "span_id.property")) {
+            CHKiRet(assignParamFromEStr(&pData->spanIdPropertyName, pvals[i].val.d.estr));
+        } else if (!strcmp(actpblk.descr[i].name, "trace_flags.property")) {
+            CHKiRet(assignParamFromEStr(&pData->traceFlagsPropertyName, pvals[i].val.d.estr));
         } else {
             dbgprintf("omotlp: unhandled parameter '%s'\n", actpblk.descr[i].name);
         }
@@ -1716,6 +1955,17 @@ BEGINnewActInst
 
     CHKiRet(applyEnvDefaults(pData));
     CHKiRet(ensureEndpointPathSplit(pData));
+
+    /* Set default trace property names if not configured */
+    if (pData->traceIdPropertyName == NULL) {
+        CHKmalloc(pData->traceIdPropertyName = (uchar *)strdup("trace_id"));
+    }
+    if (pData->spanIdPropertyName == NULL) {
+        CHKmalloc(pData->spanIdPropertyName = (uchar *)strdup("span_id"));
+    }
+    if (pData->traceFlagsPropertyName == NULL) {
+        CHKmalloc(pData->traceFlagsPropertyName = (uchar *)strdup("trace_flags"));
+    }
 
     if (pData->compression_mode == OMOTLP_COMPRESSION_UNSET) {
         pData->compression_mode = OMOTLP_COMPRESSION_NONE;
@@ -1774,7 +2024,7 @@ BEGINdoAction
     now_ms = currentTimeMills();
     CHKiRet(omotlp_batch_flush_if_due(pWrkrData, now_ms));
 
-    CHKiRet(populateLogRecord(msg, body, &record));
+    CHKiRet(populateLogRecord(msg, body, pWrkrData->pData, &record));
     CHKiRet(omotlp_batch_add_record(pWrkrData, &record, body));
 
     pthread_mutex_lock(&pWrkrData->batch_mutex);
@@ -1793,6 +2043,7 @@ BEGINmodExit
     CODESTARTmodExit;
     omotlp_http_global_cleanup();
     objRelease(datetime, CORE_COMPONENT);
+    objRelease(prop, CORE_COMPONENT);
 ENDmodExit
 
 BEGINisCompatibleWithFeature
@@ -1812,4 +2063,5 @@ BEGINmodInit()
     *ipIFVersProvided = CURR_MOD_IF_VERSION; /* we only support the current interface specification */
     CHKiRet(omotlp_http_global_init());
     CHKiRet(objUse(datetime, CORE_COMPONENT));
+    CHKiRet(objUse(prop, CORE_COMPONENT));
 ENDmodInit

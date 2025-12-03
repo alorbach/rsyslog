@@ -69,6 +69,9 @@ parameters are optional and fall back to sensible defaults inspired by the
    "bearer_token", "string", "—", "Convenience token that expands to ``Authorization: Bearer <token>``"
    "resource.service_instance_id", "string", "—", "Optional string reported as the OTLP ``service.instance.id`` resource attribute"
    "resource.deployment.environment", "string", "—", "Optional string reported as the OTLP ``deployment.environment`` resource attribute"
+   "trace_id.property", "string", "trace_id", "Property name containing trace ID (32 hex characters = 128 bits)"
+   "span_id.property", "string", "span_id", "Property name containing span ID (16 hex characters = 64 bits)"
+   "trace_flags.property", "string", "trace_flags", "Property name containing trace flags (hex string, 0-255)"
 
 Batch sizes are estimated from the body length plus per-record overhead so the
 module can limit payloads without rendering JSON for each candidate message.
@@ -121,6 +124,40 @@ other non-success responses discard the message and log an error.
      bearer_token="${env:OTEL_TOKEN}"
    )
 
+Trace Correlation Example
+-------------------------
+
+The following example demonstrates how to extract trace context from JSON messages
+and populate OTLP trace correlation fields. The trace context is extracted from
+the message using ``mmjsonparse`` and then exported via ``omotlp`` with trace
+correlation enabled.
+
+.. code-block:: none
+
+   module(load="mmjsonparse")
+   module(load="omotlp")
+
+   # Parse JSON messages to extract trace properties
+   action(type="mmjsonparse" mode="find-json")
+
+   # Export with trace correlation
+   action(
+     type="omotlp"
+     endpoint="https://otel-collector:4318"
+     path="/v1/logs"
+     trace_id.property="trace_id"
+     span_id.property="span_id"
+     trace_flags.property="trace_flags"
+   )
+
+In this example, if a JSON message contains fields like ``trace_id``, ``span_id``,
+or ``trace_flags``, they will be extracted and included in the OTLP export. The
+property names can be customized using the ``trace_id.property``, ``span_id.property``,
+and ``trace_flags.property`` parameters. Trace IDs must be exactly 32 hexadecimal
+characters (128 bits), span IDs must be exactly 16 hexadecimal characters (64 bits),
+and trace flags are parsed as hexadecimal values (0-255). Invalid values are logged
+but do not cause message processing to fail.
+
 OTLP Payload Structure
 ----------------------
 
@@ -167,10 +204,15 @@ log data model. Each batch wraps log records in the following hierarchy:
 - ``observedTimeUnixNano``: reception timestamp in nanoseconds
 - ``severityNumber``: mapped OTLP severity (see table below)
 - ``severityText``: severity name string
+- ``traceId``: trace ID string (32 hex characters, if present in message properties)
+- ``spanId``: span ID string (16 hex characters, if present in message properties)
+- ``flags``: trace flags integer (0-255, if present in message properties)
 
 All of the attributes and fields above are emitted for every record; values are
 only omitted when the originating syslog message does not carry the associated
-property (for example, when ``APP-NAME`` is empty).
+property (for example, when ``APP-NAME`` is empty). Trace correlation fields
+(traceId, spanId, flags) are populated from message JSON variables when present
+and valid.
 
 Severity Mapping
 ^^^^^^^^^^^^^^^^

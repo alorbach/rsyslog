@@ -1062,7 +1062,8 @@ TESTS += \
         omotlp-http-batch.sh \
         omotlp-basic.sh \
         omotlp-batch.sh \
-        omotlp-compression.sh
+        omotlp-compression.sh \
+        omotlp-trace-correlation.sh
 endif
 
 if ENABLE_OMKAFKA
