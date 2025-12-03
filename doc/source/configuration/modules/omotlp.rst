@@ -67,8 +67,9 @@ parameters are optional and fall back to sensible defaults inspired by the
    "retry.jitter.percent", "integer", "20", "Jitter applied to retry delays (``0``–``100``)"
    "headers", "string (JSON object)", "—", "Additional HTTP headers expressed as a JSON object"
    "bearer_token", "string", "—", "Convenience token that expands to ``Authorization: Bearer <token>``"
-   "resource.service_instance_id", "string", "—", "Optional string reported as the OTLP ``service.instance.id`` resource attribute"
-   "resource.deployment.environment", "string", "—", "Optional string reported as the OTLP ``deployment.environment`` resource attribute"
+   "resource", "string (JSON)", "—", "Full resource attributes as JSON object. Merged with automatic attributes (service.name, telemetry.sdk.*). Supports string, integer, and boolean values."
+   "resource.service_instance_id", "string", "—", "Legacy: service.instance.id attribute (deprecated, use resource JSON)"
+   "resource.deployment.environment", "string", "—", "Legacy: deployment.environment attribute (deprecated, use resource JSON)"
    "trace_id.property", "string", "trace_id", "Property name containing trace ID (32 hex characters = 128 bits)"
    "span_id.property", "string", "span_id", "Property name containing span ID (16 hex characters = 64 bits)"
    "trace_flags.property", "string", "trace_flags", "Property name containing trace flags (hex string, 0-255)"
@@ -153,7 +154,44 @@ correlation enabled.
 In this example, if a JSON message contains fields like ``trace_id``, ``span_id``,
 or ``trace_flags``, they will be extracted and included in the OTLP export. The
 property names can be customized using the ``trace_id.property``, ``span_id.property``,
-and ``trace_flags.property`` parameters. Trace IDs must be exactly 32 hexadecimal
+and ``trace_flags.property`` parameters.
+
+Resource Configuration Example
+-------------------------------
+
+The following example demonstrates how to configure full resource attributes using
+the ``resource`` parameter with a JSON object. This enables full OpenTelemetry
+resource semantic conventions compliance.
+
+.. code-block:: none
+
+   module(load="omotlp")
+   action(
+     type="omotlp"
+     endpoint="https://otel-collector:4318"
+     path="/v1/logs"
+     resource='{
+       "service.name": "my-application",
+       "service.instance.id": "${hostname}",
+       "service.version": "1.2.3",
+       "deployment.environment": "production",
+       "cloud.provider": "aws",
+       "cloud.region": "us-east-1",
+       "k8s.namespace.name": "default",
+       "k8s.pod.name": "${hostname}"
+     }'
+   )
+
+The resource attributes are merged with automatic attributes (``service.name``,
+``telemetry.sdk.*``) that are always added by the module. The resource JSON
+supports string, integer, and boolean values. Boolean values are converted to
+integers (0/1) as OTLP doesn't support boolean attributes.
+
+Legacy single-attribute parameters (``resource.service_instance_id`` and
+``resource.deployment.environment``) are still supported for backward compatibility
+but may be deprecated in future versions.
+
+Trace IDs must be exactly 32 hexadecimal
 characters (128 bits), span IDs must be exactly 16 hexadecimal characters (64 bits),
 and trace flags are parsed as hexadecimal values (0-255). Invalid values are logged
 but do not cause message processing to fail.

@@ -81,6 +81,9 @@ typedef struct _instanceData {
     header_list_t headers;
     uchar *resourceServiceInstanceId;
     uchar *resourceDeploymentEnvironment;
+    /* Full resource configuration */
+    uchar *resourceJson;  /* JSON string with resource attributes */
+    struct json_object *resourceJsonParsed;  /* Parsed JSON object (cached) */
     /* Trace correlation property names */
     uchar *traceIdPropertyName;
     uchar *spanIdPropertyName;
@@ -140,6 +143,7 @@ static struct cnfparamdescr actpdescr[] = {{"endpoint", eCmdHdlrString, 0},
                                            {"bearer_token", eCmdHdlrString, 0},
                                            {"resource.service_instance_id", eCmdHdlrString, 0},
                                            {"resource.deployment.environment", eCmdHdlrString, 0},
+                                           {"resource", eCmdHdlrString, 0},  /* Full JSON resource configuration */
                                            {"trace_id.property", eCmdHdlrString, 0},
                                            {"span_id.property", eCmdHdlrString, 0},
                                            {"trace_flags.property", eCmdHdlrString, 0}};
@@ -1408,6 +1412,7 @@ static rsRetVal omotlp_flush_batch_locked(wrkrInstanceData_t *pWrkrData, omotlp_
         .deployment_environment = pWrkrData->pData->resourceDeploymentEnvironment
                                       ? (const char *)pWrkrData->pData->resourceDeploymentEnvironment
                                       : NULL,
+        .custom_attributes = pWrkrData->pData->resourceJsonParsed,
     };
 
     CHKiRet(omotlp_json_build_export(records, batch->count, &resource_attrs, &payload));
@@ -1677,6 +1682,8 @@ static inline void setInstParamDefaults(instanceData *pData) {
     header_list_init(&pData->headers);
     pData->resourceServiceInstanceId = NULL;
     pData->resourceDeploymentEnvironment = NULL;
+    pData->resourceJson = NULL;
+    pData->resourceJsonParsed = NULL;
     /* Trace correlation defaults */
     pData->traceIdPropertyName = NULL;      /* Will default to "trace_id" */
     pData->spanIdPropertyName = NULL;       /* Will default to "span_id" */
@@ -1781,6 +1788,11 @@ BEGINfreeInstance
         header_list_destroy(&pData->headers);
         free(pData->resourceServiceInstanceId);
         free(pData->resourceDeploymentEnvironment);
+        free(pData->resourceJson);
+        if (pData->resourceJsonParsed != NULL) {
+            fjson_object_put(pData->resourceJsonParsed);
+            pData->resourceJsonParsed = NULL;
+        }
         free(pData->traceIdPropertyName);
         free(pData->spanIdPropertyName);
         free(pData->traceFlagsPropertyName);
@@ -1942,6 +1954,37 @@ BEGINnewActInst
             CHKiRet(assignParamFromEStr(&pData->resourceServiceInstanceId, pvals[i].val.d.estr));
         } else if (!strcmp(actpblk.descr[i].name, "resource.deployment.environment")) {
             CHKiRet(assignParamFromEStr(&pData->resourceDeploymentEnvironment, pvals[i].val.d.estr));
+        } else if (!strcmp(actpblk.descr[i].name, "resource")) {
+            char *json_text = (char *)es_str2cstr(pvals[i].val.d.estr, NULL);
+            struct json_object *parsed = NULL;
+
+            if (json_text == NULL) {
+                ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+            }
+
+            /* Parse and validate JSON */
+            parsed = fjson_tokener_parse(json_text);
+            if (parsed == NULL) {
+                LogError(0, RS_RET_PARAM_ERROR,
+                        "omotlp: resource parameter contains invalid JSON: %s",
+                        json_text);
+                free(json_text);
+                ABORT_FINALIZE(RS_RET_PARAM_ERROR);
+            }
+
+            if (!fjson_object_is_type(parsed, fjson_type_object)) {
+                LogError(0, RS_RET_PARAM_ERROR,
+                        "omotlp: resource parameter must be a JSON object");
+                fjson_object_put(parsed);
+                free(json_text);
+                ABORT_FINALIZE(RS_RET_PARAM_ERROR);
+            }
+
+            /* Store both string and parsed object */
+            CHKiRet(assignParamFromCStr(&pData->resourceJson, json_text));
+            pData->resourceJsonParsed = parsed;
+            parsed = NULL; /* Ownership transferred */
+            free(json_text);
         } else if (!strcmp(actpblk.descr[i].name, "trace_id.property")) {
             CHKiRet(assignParamFromEStr(&pData->traceIdPropertyName, pvals[i].val.d.estr));
         } else if (!strcmp(actpblk.descr[i].name, "span_id.property")) {

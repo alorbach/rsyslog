@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "rsyslog.h"
+#include <json.h>
 
 typedef struct omotlp_log_record_s {
     uint64_t time_unix_nano;
@@ -25,6 +26,7 @@ typedef struct omotlp_log_record_s {
 typedef struct omotlp_resource_attrs_s {
     const char *service_instance_id;
     const char *deployment_environment;
+    struct json_object *custom_attributes;  /* Parsed JSON object with custom attributes */
 } omotlp_resource_attrs_t;
 
 rsRetVal omotlp_json_build_export(const omotlp_log_record_t *records,

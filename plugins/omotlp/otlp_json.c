@@ -182,6 +182,69 @@ rsRetVal omotlp_json_build_export(const omotlp_log_record_t *records,
     CHKiRet(add_string_attribute(resource_attributes, "telemetry.sdk.language", "C"));
     CHKiRet(add_string_attribute(resource_attributes, "telemetry.sdk.version", VERSION));
 
+    /* Add custom resource attributes from JSON configuration */
+    if (resource_attrs != NULL && resource_attrs->custom_attributes != NULL) {
+        struct json_object_iterator iter;
+        struct json_object_iterator iter_end;
+
+        iter = json_object_iter_begin(resource_attrs->custom_attributes);
+        iter_end = json_object_iter_end(resource_attrs->custom_attributes);
+
+        while (!json_object_iter_equal(&iter, &iter_end)) {
+            const char *key = json_object_iter_peek_name(&iter);
+            struct json_object *value_obj = json_object_iter_peek_value(&iter);
+            const char *string_value = NULL;
+            int64_t int_value = 0;
+            double double_value = 0.0;
+            int bool_value = 0;
+
+            if (value_obj != NULL) {
+                enum fjson_type value_type = fjson_object_get_type(value_obj);
+
+                switch (value_type) {
+                case fjson_type_string:
+                    string_value = fjson_object_get_string(value_obj);
+                    CHKiRet(add_string_attribute(resource_attributes, key, string_value));
+                    break;
+
+                case fjson_type_int:
+                    int_value = fjson_object_get_int64(value_obj);
+                    CHKiRet(add_int_attribute(resource_attributes, key, int_value));
+                    break;
+
+                case fjson_type_double:
+                    double_value = fjson_object_get_double(value_obj);
+                    /* OTLP attributes support double, but we need to add helper */
+                    /* For now, convert to int if whole number, otherwise skip */
+                    if (double_value == (double)(int64_t)double_value) {
+                        CHKiRet(add_int_attribute(resource_attributes, key, (int64_t)double_value));
+                    }
+                    /* TODO: Add double attribute support if needed */
+                    break;
+
+                case fjson_type_boolean:
+                    bool_value = fjson_object_get_boolean(value_obj);
+                    /* OTLP doesn't have boolean, convert to int (0/1) */
+                    CHKiRet(add_int_attribute(resource_attributes, key, bool_value ? 1LL : 0LL));
+                    break;
+
+                case fjson_type_null:
+                case fjson_type_object:
+                case fjson_type_array:
+                    /* Skip arrays, objects, null - OTLP resource attributes are flat key-value pairs */
+                    break;
+
+                default:
+                    /* Skip any other types */
+                    break;
+                }
+            }
+
+            json_object_iter_next(&iter);
+        }
+    }
+
+    /* Legacy single-attribute support (backward compatibility) */
     if (resource_attrs != NULL) {
         if (resource_attrs->service_instance_id != NULL && resource_attrs->service_instance_id[0] != '\0') {
             CHKiRet(
