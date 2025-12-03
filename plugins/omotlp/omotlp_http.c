@@ -242,13 +242,16 @@ static int should_retry_status(long status) {
     return 0;
 }
 
-rsRetVal omotlp_http_client_post(omotlp_http_client_t *client, const uint8_t *payload, size_t payload_len) {
+rsRetVal omotlp_http_client_post(omotlp_http_client_t *client, const uint8_t *payload, size_t payload_len,
+                                long *out_status_code, long *out_latency_ms) {
     long status = 0;
     CURLcode rc;
     const uint8_t empty_payload[] = "";
     const uint8_t *payload_bytes;
     unsigned int retries = 0u;
     long delay_ms;
+    long long start_ms = 0;
+    long long end_ms = 0;
     DEFiRet;
 
     DBGPRINTF("omotlp/http: omotlp_http_client_post called, payload_len=%zu, url=%s", payload_len,
@@ -256,6 +259,13 @@ rsRetVal omotlp_http_client_post(omotlp_http_client_t *client, const uint8_t *pa
 
     if (client == NULL) {
         ABORT_FINALIZE(RS_RET_PARAM_ERROR);
+    }
+
+    if (out_status_code != NULL) {
+        *out_status_code = 0;
+    }
+    if (out_latency_ms != NULL) {
+        *out_latency_ms = 0;
     }
 
     payload_bytes = payload != NULL ? payload : empty_payload;
@@ -279,9 +289,11 @@ rsRetVal omotlp_http_client_post(omotlp_http_client_t *client, const uint8_t *pa
     for (;;) {
         client->error_buffer[0] = '\0';
         status = 0;
+        start_ms = currentTimeMills();
 
         DBGPRINTF("omotlp/http: calling curl_easy_perform, attempt %u", retries + 1);
         rc = curl_easy_perform(client->handle);
+        end_ms = currentTimeMills();
         DBGPRINTF("omotlp/http: curl_easy_perform returned: %d (%s)", rc, curl_easy_strerror(rc));
         if (rc != CURLE_OK) {
             const char *err = client->error_buffer[0] != '\0' ? client->error_buffer : curl_easy_strerror(rc);
@@ -336,6 +348,12 @@ rsRetVal omotlp_http_client_post(omotlp_http_client_t *client, const uint8_t *pa
     }
 
 finalize_it:
+    if (out_status_code != NULL) {
+        *out_status_code = status;
+    }
+    if (out_latency_ms != NULL && start_ms > 0 && end_ms >= start_ms) {
+        *out_latency_ms = (long)(end_ms - start_ms);
+    }
     DBGPRINTF("omotlp/http: omotlp_http_client_post completed, iRet=%d", iRet);
     RETiRet;
 }

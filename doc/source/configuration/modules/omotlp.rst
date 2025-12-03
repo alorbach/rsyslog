@@ -271,6 +271,45 @@ OpenTelemetry semantic conventions:
    "6 (Info)", "9", "INFO"
    "7 (Debug)", "5", "DEBUG"
 
+Statistic Counter
+=================
+
+This plugin maintains :doc:`statistics <../rsyslog_statistic_counter>` for each
+worker instance. The statistic origin is named "omotlp" with the instance URL
+appended (e.g., "omotlp-http://127.0.0.1:4318/v1/logs"). Statistics are visible
+via the :doc:`impstats <../modules/impstats>` module when enabled.
+
+The following counters are tracked per worker instance:
+
+- **batches.submitted** - Total number of batches submitted for transmission.
+  Each batch may contain multiple log records.
+
+- **batches.success** - Number of batches successfully sent (HTTP 2xx response).
+
+- **batches.retried** - Number of batches that triggered retry logic due to
+  retryable HTTP errors (5xx or 429 status codes).
+
+- **batches.dropped** - Number of batches dropped due to non-retryable errors
+  (HTTP 4xx status codes).
+
+- **http.status.4xx** - Total number of HTTP 4xx responses received from the
+  collector.
+
+- **http.status.5xx** - Total number of HTTP 5xx responses received from the
+  collector.
+
+- **records.sent** - Total number of log records successfully sent to the
+  collector (only incremented for successful batches).
+
+- **http.request.latency.ms** - Cumulative request latency in milliseconds
+  across all HTTP requests. This value represents the total time spent waiting
+  for HTTP responses and can be used to calculate average latency by dividing
+  by the number of requests.
+
+Counters are thread-safe and use atomic operations for updates. Each worker
+instance maintains its own statistics object, allowing operators to monitor
+performance per action instance when multiple omotlp actions are configured.
+
 Implementation status
 ---------------------
 

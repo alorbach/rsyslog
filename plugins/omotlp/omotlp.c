@@ -30,6 +30,7 @@
 #include "template.h"
 #include "module-template.h"
 #include "errmsg.h"
+#include "statsobj.h"
 
 #include "otlp_json.h"
 #include "omotlp_http.h"
@@ -41,6 +42,7 @@ MODULE_CNFNAME("omotlp")
 DEF_OMOD_STATIC_DATA;
 DEFobjCurrIf(datetime);
 DEFobjCurrIf(prop);
+DEFobjCurrIf(statsobj);
 
 typedef enum omotlp_compression_e {
     OMOTLP_COMPRESSION_UNSET = 0,
@@ -117,6 +119,17 @@ typedef struct wrkrInstanceData {
     pthread_mutex_t batch_mutex;
     int flush_thread_running;
     int flush_thread_stop;
+    
+    /* Statistics counters */
+    statsobj_t *stats;
+    STATSCOUNTER_DEF(ctrBatchesSubmitted, mutCtrBatchesSubmitted);
+    STATSCOUNTER_DEF(ctrBatchesSuccess, mutCtrBatchesSuccess);
+    STATSCOUNTER_DEF(ctrBatchesRetried, mutCtrBatchesRetried);
+    STATSCOUNTER_DEF(ctrBatchesDropped, mutCtrBatchesDropped);
+    STATSCOUNTER_DEF(ctrHttpStatus4xx, mutCtrHttpStatus4xx);
+    STATSCOUNTER_DEF(ctrHttpStatus5xx, mutCtrHttpStatus5xx);
+    STATSCOUNTER_DEF(ctrRecordsSent, mutCtrRecordsSent);
+    STATSCOUNTER_DEF(httpRequestLatencyMs, mutHttpRequestLatencyMs);
 } wrkrInstanceData_t;
 
 struct modConfData_s {
@@ -1379,6 +1392,9 @@ static rsRetVal omotlp_flush_batch_locked(wrkrInstanceData_t *pWrkrData, omotlp_
     size_t send_len = 0u;
     size_t payload_len = 0u;
     size_t i;
+    long status_code = 0;
+    long latency_ms = 0;
+    size_t record_count = 0u;
 
     DEFiRet;
 
@@ -1393,7 +1409,10 @@ static rsRetVal omotlp_flush_batch_locked(wrkrInstanceData_t *pWrkrData, omotlp_
         goto finalize_it;
     }
 
-    DBGPRINTF("omotlp: omotlp_flush_batch: flushing %zu records", batch->count);
+    record_count = batch->count;
+    DBGPRINTF("omotlp: omotlp_flush_batch: flushing %zu records", record_count);
+
+    STATSCOUNTER_INC(pWrkrData->ctrBatchesSubmitted, pWrkrData->mutCtrBatchesSubmitted);
 
     records = (omotlp_log_record_t *)malloc(batch->count * sizeof(*records));
     if (records == NULL) {
@@ -1433,9 +1452,46 @@ static rsRetVal omotlp_flush_batch_locked(wrkrInstanceData_t *pWrkrData, omotlp_
     }
 
     DBGPRINTF("omotlp: omotlp_flush_batch: calling omotlp_http_client_post, send_len=%zu", send_len);
-    CHKiRet(omotlp_http_client_post(pWrkrData->http_client, to_send, send_len));
-    DBGPRINTF("omotlp: omotlp_flush_batch: HTTP POST successful, clearing batch");
-    omotlp_batch_clear(batch);
+    iRet = omotlp_http_client_post(pWrkrData->http_client, to_send, send_len, &status_code, &latency_ms);
+
+    /* Update statistics based on HTTP response (status_code is set even on error) */
+    if (status_code > 0) {
+        if (status_code >= 200 && status_code < 300) {
+            STATSCOUNTER_INC(pWrkrData->ctrBatchesSuccess, pWrkrData->mutCtrBatchesSuccess);
+            STATSCOUNTER_ADD(pWrkrData->ctrRecordsSent, pWrkrData->mutCtrRecordsSent, record_count);
+            if (latency_ms > 0) {
+                STATSCOUNTER_ADD(pWrkrData->httpRequestLatencyMs, pWrkrData->mutHttpRequestLatencyMs, latency_ms);
+            }
+            DBGPRINTF("omotlp: omotlp_flush_batch: HTTP POST successful, clearing batch");
+            omotlp_batch_clear(batch);
+        } else if (status_code >= 400 && status_code < 500) {
+            STATSCOUNTER_INC(pWrkrData->ctrHttpStatus4xx, pWrkrData->mutCtrHttpStatus4xx);
+            STATSCOUNTER_INC(pWrkrData->ctrBatchesDropped, pWrkrData->mutCtrBatchesDropped);
+            if (latency_ms > 0) {
+                STATSCOUNTER_ADD(pWrkrData->httpRequestLatencyMs, pWrkrData->mutHttpRequestLatencyMs, latency_ms);
+            }
+            /* Don't clear batch on 4xx - it will be retried or dropped by the caller */
+        } else if (status_code >= 500) {
+            STATSCOUNTER_INC(pWrkrData->ctrHttpStatus5xx, pWrkrData->mutCtrHttpStatus5xx);
+            STATSCOUNTER_INC(pWrkrData->ctrBatchesRetried, pWrkrData->mutCtrBatchesRetried);
+            if (latency_ms > 0) {
+                STATSCOUNTER_ADD(pWrkrData->httpRequestLatencyMs, pWrkrData->mutHttpRequestLatencyMs, latency_ms);
+            }
+            /* Don't clear batch on 5xx - it will be retried */
+        } else {
+            /* Other status codes (1xx, 3xx) - track latency if available */
+            if (latency_ms > 0) {
+                STATSCOUNTER_ADD(pWrkrData->httpRequestLatencyMs, pWrkrData->mutHttpRequestLatencyMs, latency_ms);
+            }
+        }
+    } else if (latency_ms > 0) {
+        /* Network error or other failure - still track latency if available */
+        STATSCOUNTER_ADD(pWrkrData->httpRequestLatencyMs, pWrkrData->mutHttpRequestLatencyMs, latency_ms);
+    }
+
+    if (iRet != RS_RET_OK) {
+        CHKiRet(iRet);
+    }
 
 finalize_it:
     free(records);
@@ -1720,6 +1776,7 @@ ENDcreateInstance
 
 BEGINcreateWrkrInstance
     omotlp_http_client_config_t http_cfg;
+    char stats_name[256];
     CODESTARTcreateWrkrInstance;
     pWrkrData->pData = pData;
     pWrkrData->http_client = NULL;
@@ -1730,6 +1787,7 @@ BEGINcreateWrkrInstance
     pWrkrData->batch.first_enqueue_ms = 0;
     pWrkrData->flush_thread_running = 0;
     pWrkrData->flush_thread_stop = 0;
+    pWrkrData->stats = NULL;
     pthread_mutex_init(&pWrkrData->batch_mutex, NULL);
 
     if (pData == NULL || pData->url == NULL) {
@@ -1751,6 +1809,48 @@ BEGINcreateWrkrInstance
         goto finalize_it;
     }
 
+    /* Initialize statistics */
+    snprintf(stats_name, sizeof(stats_name), "omotlp-%s",
+             pData->url ? (char *)pData->url : "default");
+    stats_name[sizeof(stats_name) - 1] = '\0';
+    CHKiRet(statsobj.Construct(&pWrkrData->stats));
+    CHKiRet(statsobj.SetName(pWrkrData->stats, (uchar *)stats_name));
+    CHKiRet(statsobj.SetOrigin(pWrkrData->stats, (uchar *)"omotlp"));
+
+    STATSCOUNTER_INIT(pWrkrData->ctrBatchesSubmitted, pWrkrData->mutCtrBatchesSubmitted);
+    CHKiRet(statsobj.AddCounter(pWrkrData->stats, (uchar *)"batches.submitted", ctrType_IntCtr,
+                                CTR_FLAG_RESETTABLE, &(pWrkrData->ctrBatchesSubmitted)));
+
+    STATSCOUNTER_INIT(pWrkrData->ctrBatchesSuccess, pWrkrData->mutCtrBatchesSuccess);
+    CHKiRet(statsobj.AddCounter(pWrkrData->stats, (uchar *)"batches.success", ctrType_IntCtr,
+                                CTR_FLAG_RESETTABLE, &(pWrkrData->ctrBatchesSuccess)));
+
+    STATSCOUNTER_INIT(pWrkrData->ctrBatchesRetried, pWrkrData->mutCtrBatchesRetried);
+    CHKiRet(statsobj.AddCounter(pWrkrData->stats, (uchar *)"batches.retried", ctrType_IntCtr,
+                                CTR_FLAG_RESETTABLE, &(pWrkrData->ctrBatchesRetried)));
+
+    STATSCOUNTER_INIT(pWrkrData->ctrBatchesDropped, pWrkrData->mutCtrBatchesDropped);
+    CHKiRet(statsobj.AddCounter(pWrkrData->stats, (uchar *)"batches.dropped", ctrType_IntCtr,
+                                CTR_FLAG_RESETTABLE, &(pWrkrData->ctrBatchesDropped)));
+
+    STATSCOUNTER_INIT(pWrkrData->ctrHttpStatus4xx, pWrkrData->mutCtrHttpStatus4xx);
+    CHKiRet(statsobj.AddCounter(pWrkrData->stats, (uchar *)"http.status.4xx", ctrType_IntCtr,
+                                CTR_FLAG_RESETTABLE, &(pWrkrData->ctrHttpStatus4xx)));
+
+    STATSCOUNTER_INIT(pWrkrData->ctrHttpStatus5xx, pWrkrData->mutCtrHttpStatus5xx);
+    CHKiRet(statsobj.AddCounter(pWrkrData->stats, (uchar *)"http.status.5xx", ctrType_IntCtr,
+                                CTR_FLAG_RESETTABLE, &(pWrkrData->ctrHttpStatus5xx)));
+
+    STATSCOUNTER_INIT(pWrkrData->ctrRecordsSent, pWrkrData->mutCtrRecordsSent);
+    CHKiRet(statsobj.AddCounter(pWrkrData->stats, (uchar *)"records.sent", ctrType_IntCtr,
+                                CTR_FLAG_RESETTABLE, &(pWrkrData->ctrRecordsSent)));
+
+    STATSCOUNTER_INIT(pWrkrData->httpRequestLatencyMs, pWrkrData->mutHttpRequestLatencyMs);
+    CHKiRet(statsobj.AddCounter(pWrkrData->stats, (uchar *)"http.request.latency.ms", ctrType_IntCtr,
+                                CTR_FLAG_RESETTABLE, &(pWrkrData->httpRequestLatencyMs)));
+
+    CHKiRet(statsobj.ConstructFinalize(pWrkrData->stats));
+
     if (pthread_create(&pWrkrData->flush_thread, NULL, omotlp_batch_flush_thread, pWrkrData) != 0) {
         LogError(errno, RS_RET_SYS_ERR, "omotlp: failed to create flush thread");
         iRet = RS_RET_SYS_ERR;
@@ -1768,6 +1868,9 @@ finalize_it:
                 pthread_mutex_unlock(&pWrkrData->batch_mutex);
                 pthread_join(pWrkrData->flush_thread, NULL);
                 pWrkrData->flush_thread_running = 0;
+            }
+            if (pWrkrData->stats != NULL) {
+                statsobj.Destruct(&pWrkrData->stats);
             }
             pthread_mutex_destroy(&pWrkrData->batch_mutex);
         }
@@ -1814,6 +1917,9 @@ BEGINfreeWrkrInstance
         omotlp_batch_destroy(&pWrkrData->batch);
         pthread_mutex_destroy(&pWrkrData->batch_mutex);
         omotlp_http_client_destroy(&pWrkrData->http_client);
+        if (pWrkrData->stats != NULL) {
+            statsobj.Destruct(&pWrkrData->stats);
+        }
     }
 ENDfreeWrkrInstance
 
@@ -2087,6 +2193,7 @@ BEGINmodExit
     omotlp_http_global_cleanup();
     objRelease(datetime, CORE_COMPONENT);
     objRelease(prop, CORE_COMPONENT);
+    objRelease(statsobj, CORE_COMPONENT);
 ENDmodExit
 
 BEGINisCompatibleWithFeature
@@ -2107,4 +2214,5 @@ BEGINmodInit()
     CHKiRet(omotlp_http_global_init());
     CHKiRet(objUse(datetime, CORE_COMPONENT));
     CHKiRet(objUse(prop, CORE_COMPONENT));
+    CHKiRet(objUse(statsobj, CORE_COMPONENT));
 ENDmodInit

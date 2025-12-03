@@ -26,6 +26,7 @@ void omotlp_http_global_cleanup(void);
 rsRetVal omotlp_http_client_create(const omotlp_http_client_config_t *config, omotlp_http_client_t **out_client);
 void omotlp_http_client_destroy(omotlp_http_client_t **client);
 
-rsRetVal omotlp_http_client_post(omotlp_http_client_t *client, const uint8_t *payload, size_t payload_len);
+rsRetVal omotlp_http_client_post(omotlp_http_client_t *client, const uint8_t *payload, size_t payload_len,
+                                long *out_status_code, long *out_latency_ms);
 
 #endif /* OMOTLP_HTTP_H */
