@@ -1285,6 +1285,8 @@ static rsRetVal omotlp_batch_add_record(wrkrInstanceData_t *pWrkrData,
     const char *body_text;
     size_t body_len;
     size_t estimated_bytes;
+    int mutex_locked = 0;
+    int count_incremented = 0;
 
     DEFiRet;
 
@@ -1296,6 +1298,7 @@ static rsRetVal omotlp_batch_add_record(wrkrInstanceData_t *pWrkrData,
     cfg = pWrkrData->pData;
 
     pthread_mutex_lock(&pWrkrData->batch_mutex);
+    mutex_locked = 1;
 
     if (cfg->batchMaxItems > 0u && batch->count >= cfg->batchMaxItems) {
         CHKiRet(omotlp_flush_batch_locked(pWrkrData, batch));
@@ -1337,6 +1340,7 @@ static rsRetVal omotlp_batch_add_record(wrkrInstanceData_t *pWrkrData,
     entry->record.msg_id = entry->msg_id;
 
     ++batch->count;
+    count_incremented = 1;
     if (batch->count == 1u) {
         batch->estimated_bytes = OMOTLP_BATCH_BASE_OVERHEAD + estimated_bytes;
         batch->first_enqueue_ms = currentTimeMills();
@@ -1351,14 +1355,25 @@ static rsRetVal omotlp_batch_add_record(wrkrInstanceData_t *pWrkrData,
     }
 
 finalize_it:
-    pthread_mutex_unlock(&pWrkrData->batch_mutex);
     if (iRet != RS_RET_OK) {
-        if (entry != NULL) {
-            omotlp_batch_entry_clear(entry);
+        if (mutex_locked) {
+            /* Rollback batch count increment if we incremented it */
+            if (count_incremented && batch != NULL && batch->count > 0u) {
+                --batch->count;
+            }
+            /* Cleanup entry if it was allocated */
+            if (entry != NULL) {
+                omotlp_batch_entry_clear(entry);
+            }
+        } else {
+            /* Cleanup entry without mutex if mutex was never acquired */
+            if (entry != NULL) {
+                omotlp_batch_entry_clear(entry);
+            }
         }
-        if (batch != NULL && batch->count > 0u) {
-            --batch->count;
-        }
+    }
+    if (mutex_locked) {
+        pthread_mutex_unlock(&pWrkrData->batch_mutex);
     }
     RETiRet;
 }
@@ -1366,6 +1381,7 @@ finalize_it:
 static rsRetVal omotlp_batch_flush_if_due(wrkrInstanceData_t *pWrkrData, long long now_ms) {
     omotlp_batch_state_t *batch;
     long long age;
+    int mutex_locked = 0;
 
     DEFiRet;
 
@@ -1374,6 +1390,7 @@ static rsRetVal omotlp_batch_flush_if_due(wrkrInstanceData_t *pWrkrData, long lo
     }
 
     pthread_mutex_lock(&pWrkrData->batch_mutex);
+    mutex_locked = 1;
     batch = &pWrkrData->batch;
     if (pWrkrData->pData->batchTimeoutMs <= 0 || batch->count == 0u) {
         goto finalize_it;
@@ -1389,7 +1406,9 @@ static rsRetVal omotlp_batch_flush_if_due(wrkrInstanceData_t *pWrkrData, long lo
     }
 
 finalize_it:
-    pthread_mutex_unlock(&pWrkrData->batch_mutex);
+    if (mutex_locked) {
+        pthread_mutex_unlock(&pWrkrData->batch_mutex);
+    }
     RETiRet;
 }
 
@@ -1489,7 +1508,10 @@ finalize_it:
     if (iRet != RS_RET_OK) {
         if (pWrkrData != NULL) {
             if (pWrkrData->flush_thread_running) {
+                /* Acquire mutex before setting stop flag to synchronize with flush thread */
+                pthread_mutex_lock(&pWrkrData->batch_mutex);
                 pWrkrData->flush_thread_stop = 1;
+                pthread_mutex_unlock(&pWrkrData->batch_mutex);
                 pthread_join(pWrkrData->flush_thread, NULL);
                 pWrkrData->flush_thread_running = 0;
             }
@@ -1519,7 +1541,10 @@ BEGINfreeWrkrInstance
     CODESTARTfreeWrkrInstance;
     if (pWrkrData != NULL) {
         if (pWrkrData->flush_thread_running) {
+            /* Acquire mutex before setting stop flag to synchronize with flush thread */
+            pthread_mutex_lock(&pWrkrData->batch_mutex);
             pWrkrData->flush_thread_stop = 1;
+            pthread_mutex_unlock(&pWrkrData->batch_mutex);
             pthread_join(pWrkrData->flush_thread, NULL);
             pWrkrData->flush_thread_running = 0;
         }
