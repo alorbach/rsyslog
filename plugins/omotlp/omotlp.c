@@ -1244,7 +1244,7 @@ static void *omotlp_batch_flush_thread(void *arg) {
     req.tv_sec = 0;
     req.tv_nsec = 100 * 1000 * 1000; /* 100 ms */
 
-    while (!pWrkrData->flush_thread_stop) {
+    for (;;) {
         nanosleep(&req, NULL);
 
         pthread_mutex_lock(&pWrkrData->batch_mutex);
@@ -1259,7 +1259,10 @@ static void *omotlp_batch_flush_thread(void *arg) {
             if (timeout_ms > 0) {
                 long long now = currentTimeMills();
                 if (pWrkrData->batch.first_enqueue_ms != 0 && now - pWrkrData->batch.first_enqueue_ms >= timeout_ms) {
-                    (void)omotlp_flush_batch_locked(pWrkrData, &pWrkrData->batch);
+                    /* Check stop flag before starting potentially long-running flush operation */
+                    if (!pWrkrData->flush_thread_stop) {
+                        (void)omotlp_flush_batch_locked(pWrkrData, &pWrkrData->batch);
+                    }
                 }
             }
         }
@@ -1268,6 +1271,7 @@ static void *omotlp_batch_flush_thread(void *arg) {
     }
 
     pthread_mutex_lock(&pWrkrData->batch_mutex);
+    /* Final flush before thread exit - flush any remaining data */
     if (pWrkrData->batch.count > 0u) {
         (void)omotlp_flush_batch_locked(pWrkrData, &pWrkrData->batch);
     }
@@ -1287,6 +1291,7 @@ static rsRetVal omotlp_batch_add_record(wrkrInstanceData_t *pWrkrData,
     size_t estimated_bytes;
     int mutex_locked = 0;
     int count_incremented = 0;
+    int estimated_bytes_updated = 0;
 
     DEFiRet;
 
@@ -1344,8 +1349,10 @@ static rsRetVal omotlp_batch_add_record(wrkrInstanceData_t *pWrkrData,
     if (batch->count == 1u) {
         batch->estimated_bytes = OMOTLP_BATCH_BASE_OVERHEAD + estimated_bytes;
         batch->first_enqueue_ms = currentTimeMills();
+        estimated_bytes_updated = 1;
     } else {
         batch->estimated_bytes += estimated_bytes;
+        estimated_bytes_updated = 1;
     }
 
     if (cfg->batchMaxItems > 0u && batch->count >= cfg->batchMaxItems) {
@@ -1360,6 +1367,16 @@ finalize_it:
             /* Rollback batch count increment if we incremented it */
             if (count_incremented && batch != NULL && batch->count > 0u) {
                 --batch->count;
+                /* Rollback estimated_bytes increment if we updated it */
+                if (estimated_bytes_updated) {
+                    if (batch->count == 0u) {
+                        /* Rolling back the first record: reset estimated_bytes */
+                        batch->estimated_bytes = 0u;
+                    } else {
+                        /* Rolling back a subsequent record: subtract the added bytes */
+                        batch->estimated_bytes -= estimated_bytes;
+                    }
+                }
             }
             /* Cleanup entry if it was allocated */
             if (entry != NULL) {
