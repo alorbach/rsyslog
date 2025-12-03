@@ -8,7 +8,8 @@
 
 Phase 1 of the omotlp output plugin streams OpenTelemetry logs over
 OTLP/HTTP JSON with configurable batching, gzip compression, retry/backoff
-controls, and TLS/mTLS support for secure HTTPS connections.
+controls, TLS/mTLS support for secure HTTPS connections, and HTTP proxy
+support for corporate networks and firewalled environments.
 
 .. summary-end
 
@@ -29,9 +30,9 @@ exports. Phase 1 focuses on the OTLP/HTTP JSON transport path: the module maps
 rsyslog metadata into the canonical OTLP JSON structure, joins the configured
 endpoint and path, and posts batches of rendered payloads via ``libcurl`` using
 ``application/json`` semantics. Batching thresholds, gzip compression, retry and
-backoff policies, custom headers, and TLS/mTLS authentication are all
-configurable. Subsequent phases will extend the module with the gRPC façade and,
-optionally, HTTP/protobuf support.
+backoff policies, custom headers, TLS/mTLS authentication, and HTTP proxy support
+are all configurable. Subsequent phases will extend the module with the gRPC
+façade and, optionally, HTTP/protobuf support.
 
 Availability
 ------------
@@ -81,6 +82,9 @@ parameters are optional and fall back to sensible defaults inspired by the
    "tls.key", "string", "—", "Path to client private key file (PEM format) for mTLS"
    "tls.verify_hostname", "boolean", "on", "Enable/disable hostname verification in certificate"
    "tls.verify_peer", "boolean", "on", "Enable/disable peer certificate verification"
+   "proxy", "string", "—", "Proxy server URL. Must include scheme: ``http://``, ``https://``, ``socks4://``, or ``socks5://``. Example: ``http://proxy.example.com:8080``. The proxy type is automatically detected from the URL scheme. If omitted, direct connections are used."
+   "proxy.user", "string", "—", "Proxy username for authentication. Required when proxy requires authentication. Used with ``proxy.password`` to enable basic or digest authentication. If ``proxy.user`` is provided without ``proxy.password``, an empty password is used."
+   "proxy.password", "string", "—", "Proxy password for authentication. Required when proxy requires authentication. Used together with ``proxy.user``. The authentication method (basic or digest) is automatically negotiated with the proxy server."
 
 Batch sizes are estimated from the body length plus per-record overhead so the
 module can limit payloads without rendering JSON for each candidate message.
@@ -140,6 +144,8 @@ other non-success responses discard the message and log an error.
    sufficient, TLS parameters may be omitted. For production deployments or when
    using custom CA certificates or mTLS, configure the appropriate ``tls.*``
    parameters as shown in the :ref:`TLS Configuration Example <tls-config-example>`.
+   For environments requiring proxy support (corporate networks, firewalls), see
+   the :ref:`Proxy Configuration Example <proxy-config-example>`.
 
 Trace Correlation Example
 -------------------------
@@ -259,6 +265,93 @@ proper Subject Alternative Name (SAN) entries matching the endpoint hostname.
 Note that ``tls.verify_hostname`` requires ``tls.verify_peer`` to be enabled
 (``on``) for meaningful verification. If peer verification is disabled,
 hostname verification is effectively ignored.
+
+.. _proxy-config-example:
+
+Proxy Configuration Example
+---------------------------
+
+The following example demonstrates how to configure HTTP proxy support for
+corporate networks or environments that require traffic to pass through a proxy
+server. Proxy support enables omotlp to work through firewalls, network gateways,
+and corporate proxies.
+
+.. code-block:: none
+
+   module(load="omotlp")
+   action(
+     type="omotlp"
+     endpoint="https://otel-collector:4318"
+     path="/v1/logs"
+     proxy="http://proxy.example.com:8080"
+   )
+
+For proxies that require authentication, provide both username and password:
+
+.. code-block:: none
+
+   module(load="omotlp")
+   action(
+     type="omotlp"
+     endpoint="https://otel-collector:4318"
+     path="/v1/logs"
+     proxy="http://proxy.example.com:8080"
+     proxy.user="myuser"
+     proxy.password="mypassword"
+   )
+
+The proxy parameters support:
+
+- **proxy**: Full proxy server URL including scheme and port. Supported schemes:
+  
+  - ``http://`` - HTTP proxy (most common for corporate proxies)
+  - ``https://`` - HTTPS proxy (secure proxy connection)
+  - ``socks4://`` - SOCKS4 proxy
+  - ``socks5://`` - SOCKS5 proxy (supports authentication and UDP)
+
+  The proxy URL format is validated at configuration time. Invalid schemes or
+  malformed URLs will cause configuration to fail with an error message.
+
+- **proxy.user**: Username for proxy authentication. When provided, the module
+  automatically sends proxy authentication credentials with each request. The
+  authentication method (basic or digest) is automatically negotiated with the
+  proxy server based on the proxy's requirements.
+
+- **proxy.password**: Password for proxy authentication. Must be provided
+  together with ``proxy.user`` when the proxy requires authentication. If
+  ``proxy.user`` is specified without ``proxy.password``, an empty password is
+  used (which may work for some proxy configurations).
+
+Proxy authentication uses HTTP Basic authentication by default. If the proxy
+server requires Digest authentication, libcurl automatically upgrades to Digest
+when the proxy responds with a 407 (Proxy Authentication Required) status
+code. The authentication credentials are sent in the ``Proxy-Authorization``
+header for each HTTP request.
+
+When a proxy is configured, all HTTP requests to the OTLP collector endpoint
+are routed through the proxy server. The proxy acts as an intermediary,
+forwarding requests to the target collector and returning responses. This
+enables omotlp to work in environments where:
+
+- Direct connections to the collector are blocked by firewall rules
+- Network traffic must pass through a corporate proxy gateway
+- Network policies require all outbound HTTP/HTTPS traffic to use a proxy
+- The collector is only accessible through a proxy server
+
+Proxy configuration works with both HTTP and HTTPS endpoints. When using an
+HTTPS endpoint through an HTTP proxy, the proxy performs HTTP CONNECT tunneling
+to establish the secure connection. SOCKS proxies (SOCKS4 and SOCKS5) can also
+handle both HTTP and HTTPS traffic transparently.
+
+If proxy authentication fails (invalid credentials or unsupported authentication
+method), the HTTP request fails and the batch is retried according to the
+configured retry policy. Authentication errors are logged with details from
+libcurl (e.g., "Proxy authentication required" or "Invalid proxy credentials").
+
+Note that proxy configuration is independent of TLS configuration. You can use
+both proxy and TLS parameters together. For example, you might route HTTPS
+traffic through an HTTP proxy, or use an HTTPS proxy with TLS verification
+enabled for the collector endpoint.
 
 Legacy single-attribute parameters (``resource.service_instance_id`` and
 ``resource.deployment.environment``) are still supported for backward compatibility
@@ -427,25 +520,3 @@ The following counters are tracked per worker instance:
 Counters are thread-safe and use atomic operations for updates. Each worker
 instance maintains its own statistics object, allowing operators to monitor
 performance per action instance when multiple omotlp actions are configured.
-
-Implementation status
----------------------
-
-The module is being implemented in phases. The checklist below tracks the
-original build plan and the current status of each item:
-
-* ✅ Configuration plumbing, environment-variable defaults, and JSON payload
-  assembly helpers are in place.
-* ✅ HTTP/JSON transport now batches records, applies optional gzip compression,
-  and retries transient collector failures with jittered backoff.
-* ✅ TLS/mTLS support for secure HTTPS connections with configurable certificate
-  verification.
-* ✅ Shell regression coverage validates batching, gzip, retry, and TLS behaviour.
-* ⏳ Optional gRPC façade and HTTP/protobuf variants remain unimplemented.
-
-Roadmap
--------
-
-The remaining work mirrors the outstanding checklist items above. Upcoming
-patches will focus on the optional gRPC façade, the HTTP/protobuf fast-path, and
-any feedback-driven refinements that stem from preview deployments.

@@ -1063,6 +1063,7 @@ TESTS += \
         omotlp-basic.sh \
         omotlp-batch.sh \
         omotlp-compression.sh \
+        omotlp-proxy.sh \
         omotlp-tls.sh \
         omotlp-trace-correlation.sh
 endif

@@ -124,6 +124,10 @@ typedef struct _instanceData {
     uchar *tlsClientKeyFile;
     int tlsVerifyHostname;  /* 0 = disabled, 1 = enabled */
     int tlsVerifyPeer;      /* 0 = disabled, 1 = enabled */
+    /* Proxy configuration */
+    uchar *proxyUrl;
+    uchar *proxyUser;
+    uchar *proxyPassword;
 } instanceData;
 
 typedef struct omotlp_batch_entry_s {
@@ -201,7 +205,10 @@ static struct cnfparamdescr actpdescr[] = {{"endpoint", eCmdHdlrString, 0},
                                            {"tls.cert", eCmdHdlrString, 0},
                                            {"tls.key", eCmdHdlrString, 0},
                                            {"tls.verify_hostname", eCmdHdlrGetWord, 0},
-                                           {"tls.verify_peer", eCmdHdlrGetWord, 0}};
+                                           {"tls.verify_peer", eCmdHdlrGetWord, 0},
+                                           {"proxy", eCmdHdlrString, 0},
+                                           {"proxy.user", eCmdHdlrString, 0},
+                                           {"proxy.password", eCmdHdlrString, 0}};
 static struct cnfparamblk actpblk = {CNFPARAMBLK_VERSION, sizeof(actpdescr) / sizeof(struct cnfparamdescr), actpdescr};
 
 static rsRetVal parse_headers_env(instanceData *pData, const char *text);
@@ -1758,7 +1765,12 @@ static rsRetVal omotlp_flush_batch_locked(wrkrInstanceData_t *pWrkrData, omotlp_
             if (latency_ms > 0) {
                 STATSCOUNTER_ADD(pWrkrData->httpRequestLatencyMs, pWrkrData->mutHttpRequestLatencyMs, latency_ms);
             }
-            /* Don't clear batch on 4xx - it will be retried or dropped by the caller */
+            /* Clear batch on 4xx errors - the payload was already sent and rejected.
+             * For non-retryable 4xx (400, 401, 403, 404, etc.), retrying won't help.
+             * For retryable 4xx (408, 429), the HTTP client already handled retries.
+             * In both cases, we should clear the batch to avoid duplicate sends. */
+            DBGPRINTF("omotlp: omotlp_flush_batch: HTTP 4xx error, clearing batch");
+            omotlp_batch_clear(batch);
         } else if (status_code >= 500) {
             STATSCOUNTER_INC(pWrkrData->ctrHttpStatus5xx, pWrkrData->mutCtrHttpStatus5xx);
             STATSCOUNTER_INC(pWrkrData->ctrBatchesRetried, pWrkrData->mutCtrBatchesRetried);
@@ -2035,6 +2047,10 @@ static inline void setInstParamDefaults(instanceData *pData) {
     pData->tlsClientKeyFile = NULL;
     pData->tlsVerifyHostname = 1;  /* Default: verify hostname */
     pData->tlsVerifyPeer = 1;      /* Default: verify peer certificate */
+    /* Proxy defaults */
+    pData->proxyUrl = NULL;
+    pData->proxyUser = NULL;
+    pData->proxyPassword = NULL;
     /* Trace correlation defaults */
     pData->traceIdPropertyName = NULL;      /* Will default to "trace_id" */
     pData->spanIdPropertyName = NULL;       /* Will default to "span_id" */
@@ -2113,6 +2129,11 @@ BEGINcreateWrkrInstance
     http_cfg.tls_client_key_file = (const char *)pData->tlsClientKeyFile;
     http_cfg.tls_verify_hostname = pData->tlsVerifyHostname;
     http_cfg.tls_verify_peer = pData->tlsVerifyPeer;
+    
+    /* Proxy configuration */
+    http_cfg.proxy_url = (const char *)pData->proxyUrl;
+    http_cfg.proxy_user = (const char *)pData->proxyUser;
+    http_cfg.proxy_password = (const char *)pData->proxyPassword;
     
     iRet = omotlp_http_client_create(&http_cfg, &pWrkrData->http_client);
     if (iRet != RS_RET_OK) {
@@ -2214,6 +2235,9 @@ BEGINfreeInstance
         free(pData->tlsCaCertDir);
         free(pData->tlsClientCertFile);
         free(pData->tlsClientKeyFile);
+        free(pData->proxyUrl);
+        free(pData->proxyUser);
+        free(pData->proxyPassword);
         for (int i = 0; i < 8; ++i) {
             free(pData->severityMap.entries[i].severity_text);
         }
@@ -2513,6 +2537,23 @@ BEGINnewActInst
                 ABORT_FINALIZE(RS_RET_PARAM_ERROR);
             }
             free(text);
+        } else if (!strcmp(actpblk.descr[i].name, "proxy")) {
+            CHKiRet(assignParamFromEStr(&pData->proxyUrl, pvals[i].val.d.estr));
+            /* Validate URL format */
+            if (pData->proxyUrl != NULL) {
+                if (strncmp((char *)pData->proxyUrl, "http://", 7) != 0 &&
+                    strncmp((char *)pData->proxyUrl, "https://", 8) != 0 &&
+                    strncmp((char *)pData->proxyUrl, "socks4://", 9) != 0 &&
+                    strncmp((char *)pData->proxyUrl, "socks5://", 9) != 0) {
+                    LogError(0, RS_RET_PARAM_ERROR,
+                            "omotlp: proxy URL must start with http://, https://, socks4://, or socks5://");
+                    ABORT_FINALIZE(RS_RET_PARAM_ERROR);
+                }
+            }
+        } else if (!strcmp(actpblk.descr[i].name, "proxy.user")) {
+            CHKiRet(assignParamFromEStr(&pData->proxyUser, pvals[i].val.d.estr));
+        } else if (!strcmp(actpblk.descr[i].name, "proxy.password")) {
+            CHKiRet(assignParamFromEStr(&pData->proxyPassword, pvals[i].val.d.estr));
         } else {
             dbgprintf("omotlp: unhandled parameter '%s'\n", actpblk.descr[i].name);
         }
@@ -2601,6 +2642,15 @@ BEGINdoAction
     pthread_mutex_unlock(&pWrkrData->batch_mutex);
 
 finalize_it:
+    /* Free trace correlation strings if they were allocated by populateLogRecord */
+    if (record.trace_id != NULL) {
+        free((char *)record.trace_id);
+        record.trace_id = NULL;
+    }
+    if (record.span_id != NULL) {
+        free((char *)record.span_id);
+        record.span_id = NULL;
+    }
 ENDdoAction
 
 NO_LEGACY_CONF_parseSelectorAct /* clang-format off */

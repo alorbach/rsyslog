@@ -23,6 +23,10 @@ typedef struct omotlp_http_client_config_s {
     const char *tls_client_key_file;
     int tls_verify_hostname;
     int tls_verify_peer;
+    /* Proxy configuration */
+    const char *proxy_url;
+    const char *proxy_user;
+    const char *proxy_password;
 } omotlp_http_client_config_t;
 
 typedef struct omotlp_http_client_s omotlp_http_client_t;

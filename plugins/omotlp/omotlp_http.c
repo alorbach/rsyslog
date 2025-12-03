@@ -3,6 +3,7 @@
 #include "omotlp_http.h"
 
 #include <curl/curl.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -149,6 +150,45 @@ static rsRetVal set_common_options(omotlp_http_client_t *client, const omotlp_ht
                 "omotlp/http: failed to set peer verification: %s",
                 curl_easy_strerror(rc));
         ABORT_FINALIZE(RS_RET_INTERNAL_ERROR);
+    }
+
+    /* Proxy configuration */
+    if (config->proxy_url != NULL && config->proxy_url[0] != '\0') {
+        rc = curl_easy_setopt(client->handle, CURLOPT_PROXY, config->proxy_url);
+        if (rc != CURLE_OK) {
+            LogError(0, RS_RET_INTERNAL_ERROR,
+                    "omotlp/http: failed to set proxy URL: %s",
+                    curl_easy_strerror(rc));
+            ABORT_FINALIZE(RS_RET_INTERNAL_ERROR);
+        }
+        
+        /* Proxy authentication */
+        if (config->proxy_user != NULL && config->proxy_user[0] != '\0') {
+            char *userpwd = NULL;
+            size_t user_len = strlen(config->proxy_user);
+            size_t pwd_len = (config->proxy_password != NULL) ? strlen(config->proxy_password) : 0;
+            size_t total = user_len + 1 + pwd_len + 1;
+            
+            userpwd = (char *)malloc(total);
+            if (userpwd == NULL) {
+                ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+            }
+            
+            snprintf(userpwd, total, "%s:%s", 
+                    config->proxy_user,
+                    config->proxy_password ? config->proxy_password : "");
+            
+            rc = curl_easy_setopt(client->handle, CURLOPT_PROXYUSERPWD, userpwd);
+            if (rc != CURLE_OK) {
+                free(userpwd);
+                LogError(0, RS_RET_INTERNAL_ERROR,
+                        "omotlp/http: failed to set proxy credentials: %s",
+                        curl_easy_strerror(rc));
+                ABORT_FINALIZE(RS_RET_INTERNAL_ERROR);
+            }
+            
+            free(userpwd);
+        }
     }
 
 finalize_it:
