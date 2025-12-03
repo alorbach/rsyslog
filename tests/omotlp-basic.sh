@@ -77,9 +77,20 @@ import sys
 
 path = sys.argv[1]
 try:
+    # OTEL Collector file exporter writes newline-delimited JSON (one JSON object per line)
+    records = []
     with open(path, "r", encoding="utf-8") as f:
-        payload = json.load(f)
-    records = payload["resourceLogs"][0]["scopeLogs"][0]["logRecords"]
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            payload = json.loads(line)
+            if "resourceLogs" in payload:
+                for resource_log in payload["resourceLogs"]:
+                    if "scopeLogs" in resource_log:
+                        for scope_log in resource_log["scopeLogs"]:
+                            if "logRecords" in scope_log:
+                                records.extend(scope_log["logRecords"])
 except Exception as exc:
     sys.stderr.write(f"omotlp-basic: failed to parse OTLP output: {exc}\n")
     sys.exit(1)

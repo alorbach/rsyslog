@@ -293,13 +293,9 @@ rsRetVal omotlp_http_client_post(omotlp_http_client_t *client, const uint8_t *pa
 
             if (delay_ms > 0) {
                 sleep_with_backoff(apply_jitter(delay_ms, client->retry_jitter_percent));
-                if (client->retry_max_ms > 0 && delay_ms > client->retry_max_ms / 2) {
+                delay_ms *= 2;
+                if (client->retry_max_ms > 0 && delay_ms > client->retry_max_ms) {
                     delay_ms = client->retry_max_ms;
-                } else if (delay_ms > 0) {
-                    delay_ms *= 2;
-                    if (client->retry_max_ms > 0 && delay_ms > client->retry_max_ms) {
-                        delay_ms = client->retry_max_ms;
-                    }
                 }
             }
             ++retries;
@@ -326,15 +322,9 @@ rsRetVal omotlp_http_client_post(omotlp_http_client_t *client, const uint8_t *pa
 
             if (delay_ms > 0) {
                 sleep_with_backoff(apply_jitter(delay_ms, client->retry_jitter_percent));
-                if (delay_ms > 0) {
-                    if (delay_ms >= client->retry_max_ms && client->retry_max_ms > 0) {
-                        delay_ms = client->retry_max_ms;
-                    } else {
-                        delay_ms *= 2;
-                        if (client->retry_max_ms > 0 && delay_ms > client->retry_max_ms) {
-                            delay_ms = client->retry_max_ms;
-                        }
-                    }
+                delay_ms *= 2;
+                if (client->retry_max_ms > 0 && delay_ms > client->retry_max_ms) {
+                    delay_ms = client->retry_max_ms;
                 }
             }
             ++retries;

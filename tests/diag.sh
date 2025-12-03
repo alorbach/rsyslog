@@ -3339,8 +3339,8 @@ prepare_otel_collector() {
 	if [[ "$otel_output_file" != /* ]]; then
 		otel_output_file="$(cd "$(dirname "$otel_output_file")" && pwd)/$(basename "$otel_output_file")"
 	fi
-	# Ensure it's properly escaped for YAML (escape special regex chars but not the path separators)
-	otel_output_file_escaped=$(echo "$otel_output_file" | sed 's/[[\.*^$()+?{|]/\\&/g')
+	# Ensure it's properly escaped for sed replacement string (only &, \, and delimiter need escaping)
+	otel_output_file_escaped=$(printf '%s\n' "$otel_output_file" | sed -e 's/[&|\\]/\\&/g')
 	sed -i "s|\${OTEL_OUTPUT_FILE}|$otel_output_file_escaped|g" "$otelcol_work_dir/config.yaml"
 	sed -i "s|\${OTEL_METRICS_PORT}|$OTEL_METRICS_PORT|g" "$otelcol_work_dir/config.yaml"
 	sed -i "s|endpoint: 0.0.0.0:0|endpoint: 0.0.0.0:$OTEL_COLLECTOR_PORT|g" "$otelcol_work_dir/config.yaml"
