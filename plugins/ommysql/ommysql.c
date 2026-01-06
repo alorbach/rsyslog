@@ -37,6 +37,7 @@
 #include <netdb.h>
 #include <mysql.h>
 #include <mysqld_error.h>
+#include <pthread.h>
 #include "conf.h"
 #include "syslogd-types.h"
 #include "srUtils.h"
@@ -67,6 +68,7 @@ typedef struct _instanceData {
     uchar *configsection; /* MySQL Client Configuration Section */
     uchar *tplName; /* format template to use */
     uchar *socket; /* MySQL socket path */
+    pthread_mutex_t mutInit; /* mutex to protect mysql_init() calls */
 } instanceData;
 
 typedef struct wrkrInstanceData {
@@ -109,6 +111,12 @@ ENDinitConfVars
 
 BEGINcreateInstance
     CODESTARTcreateInstance;
+    int r;
+    if ((r = pthread_mutex_init(&pData->mutInit, NULL)) != 0) {
+        LogError(r, RS_RET_ERR, "ommysql: cannot create MySQL initialization mutex, failing this action");
+        ABORT_FINALIZE(RS_RET_ERR);
+    }
+finalize_it:
 ENDcreateInstance
 
 
@@ -136,6 +144,7 @@ static void closeMySQL(wrkrInstanceData_t *pWrkrData) {
 
 BEGINfreeInstance
     CODESTARTfreeInstance;
+    pthread_mutex_destroy(&pData->mutInit);
     free(pData->configfile);
     free(pData->configsection);
     free(pData->tplName);
@@ -206,7 +215,13 @@ static rsRetVal initMySQL(wrkrInstanceData_t *pWrkrData, int bSilent) {
         pWrkrData->threadInitialized = true;
     }
 
+    /* Protect mysql_init() call with mutex to avoid data race when multiple
+     * worker threads initialize connections concurrently. The MySQL client
+     * library may use shared internal state during initialization.
+     */
+    pthread_mutex_lock(&pData->mutInit);
     pWrkrData->hmysql = mysql_init(NULL);
+    pthread_mutex_unlock(&pData->mutInit);
     if (pWrkrData->hmysql == NULL) {
         LogError(0, RS_RET_SUSPENDED, "can not initialize MySQL handle");
         iRet = RS_RET_SUSPENDED;
