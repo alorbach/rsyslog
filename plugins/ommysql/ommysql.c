@@ -35,6 +35,7 @@
 #include <errno.h>
 #include <time.h>
 #include <netdb.h>
+#include <pthread.h>
 #include <mysql.h>
 #include <mysqld_error.h>
 #include "conf.h"
@@ -67,6 +68,7 @@ typedef struct _instanceData {
     uchar *configsection; /* MySQL Client Configuration Section */
     uchar *tplName; /* format template to use */
     uchar *socket; /* MySQL socket path */
+    pthread_mutex_t mutInit; /* mutex to protect MySQL initialization */
 } instanceData;
 
 typedef struct wrkrInstanceData {
@@ -109,6 +111,12 @@ ENDinitConfVars
 
 BEGINcreateInstance
     CODESTARTcreateInstance;
+    int r;
+    if ((r = pthread_mutex_init(&pData->mutInit, NULL)) != 0) {
+        LogError(r, RS_RET_ERR, "ommysql: cannot create MySQL initialization mutex, failing this action");
+        ABORT_FINALIZE(RS_RET_ERR);
+    }
+finalize_it:
 ENDcreateInstance
 
 
@@ -140,6 +148,7 @@ BEGINfreeInstance
     free(pData->configsection);
     free(pData->tplName);
     free(pData->socket);
+    pthread_mutex_destroy(&pData->mutInit);
 ENDfreeInstance
 
 
@@ -194,9 +203,14 @@ static void reportDBError(wrkrInstanceData_t *pWrkrData, int bSilent) {
 static rsRetVal initMySQL(wrkrInstanceData_t *pWrkrData, int bSilent) {
     instanceData *pData;
     DEFiRet;
+    int mutexLocked = 0;
 
     assert(pWrkrData->hmysql == NULL);
     pData = pWrkrData->pData;
+
+    /* Protect MySQL initialization from concurrent access by multiple workers */
+    pthread_mutex_lock(&pData->mutInit);
+    mutexLocked = 1;
 
     if (!pWrkrData->threadInitialized) {
         if (mysql_thread_init()) {
@@ -209,44 +223,50 @@ static rsRetVal initMySQL(wrkrInstanceData_t *pWrkrData, int bSilent) {
     pWrkrData->hmysql = mysql_init(NULL);
     if (pWrkrData->hmysql == NULL) {
         LogError(0, RS_RET_SUSPENDED, "can not initialize MySQL handle");
-        iRet = RS_RET_SUSPENDED;
-    } else { /* we could get the handle, now on with work... */
-        mysql_options(pWrkrData->hmysql, MYSQL_READ_DEFAULT_GROUP,
-                      ((pData->configsection != NULL) ? (char *)pData->configsection : "client"));
-        if (pData->configfile != NULL) {
-            FILE *fp;
-            fp = fopen((char *)pData->configfile, "r");
-            int err = errno;
-            if (fp == NULL) {
-                char msg[512];
-                snprintf(msg, sizeof(msg), "Could not open '%s' for reading", pData->configfile);
-                if (bSilent) {
-                    char errStr[512];
-                    rs_strerror_r(err, errStr, sizeof(errStr));
-                    dbgprintf("mysql configuration error(%d): %s - %s\n", err, msg, errStr);
-                } else
-                    LogError(err, NO_ERRCODE, "mysql configuration error: %s\n", msg);
-            } else {
-                fclose(fp);
-                mysql_options(pWrkrData->hmysql, MYSQL_READ_DEFAULT_FILE, pData->configfile);
-            }
-        }
-        /* Connect to database */
-        if (mysql_real_connect(pWrkrData->hmysql, pData->dbsrv, pData->dbuid, pData->dbpwd, pData->dbname,
-                               pData->dbsrvPort, (const char *)pData->socket, 0) == NULL) {
-            reportDBError(pWrkrData, bSilent);
-            closeMySQL(pWrkrData); /* ignore any error we may get */
-            ABORT_FINALIZE(RS_RET_SUSPENDED);
-        }
-        if (mysql_autocommit(pWrkrData->hmysql, 0)) {
-            LogMsg(0, NO_ERRCODE, LOG_WARNING,
-                   "ommysql: activating autocommit failed, "
-                   "some data may be duplicated\n");
-            reportDBError(pWrkrData, 0);
+        ABORT_FINALIZE(RS_RET_SUSPENDED);
+    }
+
+    /* we could get the handle, now on with work... */
+    mysql_options(pWrkrData->hmysql, MYSQL_READ_DEFAULT_GROUP,
+                  ((pData->configsection != NULL) ? (char *)pData->configsection : "client"));
+    if (pData->configfile != NULL) {
+        FILE *fp;
+        fp = fopen((char *)pData->configfile, "r");
+        int err = errno;
+        if (fp == NULL) {
+            char msg[512];
+            snprintf(msg, sizeof(msg), "Could not open '%s' for reading", pData->configfile);
+            if (bSilent) {
+                char errStr[512];
+                rs_strerror_r(err, errStr, sizeof(errStr));
+                dbgprintf("mysql configuration error(%d): %s - %s\n", err, msg, errStr);
+            } else
+                LogError(err, NO_ERRCODE, "mysql configuration error: %s\n", msg);
+        } else {
+            fclose(fp);
+            mysql_options(pWrkrData->hmysql, MYSQL_READ_DEFAULT_FILE, pData->configfile);
         }
     }
 
+    /* Connect to database */
+    if (mysql_real_connect(pWrkrData->hmysql, pData->dbsrv, pData->dbuid, pData->dbpwd, pData->dbname, pData->dbsrvPort,
+                           (const char *)pData->socket, 0) == NULL) {
+        reportDBError(pWrkrData, bSilent);
+        closeMySQL(pWrkrData); /* ignore any error we may get */
+        ABORT_FINALIZE(RS_RET_SUSPENDED);
+    }
+
+    if (mysql_autocommit(pWrkrData->hmysql, 0)) {
+        LogMsg(0, NO_ERRCODE, LOG_WARNING,
+               "ommysql: activating autocommit failed, "
+               "some data may be duplicated\n");
+        reportDBError(pWrkrData, 0);
+    }
+
 finalize_it:
+    if (mutexLocked) {
+        pthread_mutex_unlock(&pData->mutInit);
+    }
     RETiRet;
 }
 
