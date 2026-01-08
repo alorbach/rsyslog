@@ -76,7 +76,8 @@ RUN	dnf -y install \
 # for a file tclConfig.sh, which should be present in the library directory (usually
 # beneath /usr). It contains the environment variables. Inside container do:
 # $cat $(find /usr -name tclConfig.sh|head -n1)
-ENV	TCL_LIB_SPEC="-L/usr/lib64 -ltcl8.6" \
+# Fedora 42 ships with TCL 9.0; use -ltcl instead of version-specific -ltcl8.6
+ENV	TCL_LIB_SPEC="-L/usr/lib64 -ltcl" \
 	TCL_INCLUDE_SPEC="-I/usr/include"
 
 WORKDIR	/home/devel
@@ -274,10 +275,7 @@ ENV RSYSLOG_CONFIGURE_OPTIONS \
 	--enable-omruleset \
 	--enable-omsendertrack \
 	--enable-omstdout \
-	# TCL module disabled due to missing TCL 8.6 library in Fedora 42
-	# TODO: Re-enable once TCL 8.6 library is available or alternative is found
-	# See: https://github.com/rsyslog/rsyslog/issues/5998 (create issue)
-	--disable-omtcl \
+	--enable-omtcl \
 	--enable-omudpspoof \
 	--enable-omuxsock \
 	--enable-openssl \
