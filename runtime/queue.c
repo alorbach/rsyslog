@@ -973,7 +973,121 @@ static rsRetVal qqueueTryLoadPersistedInfo(qqueue_t *pThis) {
 
     CHKiRet(strm.SeekCurrOffs(pThis->tVars.disk.pWrite));
     CHKiRet(strm.SeekCurrOffs(pThis->tVars.disk.pReadDel));
-    CHKiRet(strm.SeekCurrOffs(pThis->tVars.disk.pReadDeq));
+    
+    /* Try to seek to the dequeue position. If the file is missing (due to dirty shutdown),
+     * we need to recover by finding the next available file and reporting lost messages.
+     */
+    {
+        rsRetVal seekRet = strm.SeekCurrOffs(pThis->tVars.disk.pReadDeq);
+        if (seekRet == RS_RET_FILE_NOT_FOUND) {
+            /* The dequeue file referenced in .qi doesn't exist (dirty shutdown scenario).
+             * We need to find the next available file and mark messages as lost.
+             */
+            const unsigned int origFileNum = strmGetCurrFileNum(pThis->tVars.disk.pReadDeq);
+            const unsigned int writeFileNum = strmGetCurrFileNum(pThis->tVars.disk.pWrite);
+            const int origQueueSize = getLogicalQueueSize(pThis);
+            int messagesLost = 0;
+            unsigned int nextFileNum = origFileNum;
+            uchar *pszFileName = NULL;
+            struct stat statBuf;
+            int foundFile = 0;
+            rsRetVal localRet = RS_RET_OK;
+            
+            DBGPRINTF("%s: dequeue file %d not found during restart, searching for next available file\n",
+                      obj.GetName((obj_t *)pThis), origFileNum);
+            
+            /* Search for the next existing file, up to the write file number */
+            while (nextFileNum <= writeFileNum && !foundFile && localRet == RS_RET_OK) {
+                /* Generate the file name for this file number */
+                if (pszFileName != NULL) {
+                    free(pszFileName);
+                    pszFileName = NULL;
+                }
+                localRet = genFileName(&pszFileName,
+                                   pThis->tVars.disk.pReadDeq->pszDir,
+                                   pThis->tVars.disk.pReadDeq->lenDir,
+                                   pThis->tVars.disk.pReadDeq->pszFName,
+                                   pThis->tVars.disk.pReadDeq->lenFName,
+                                   nextFileNum,
+                                   pThis->tVars.disk.pReadDeq->iFileNumDigits);
+                
+                if (localRet == RS_RET_OK) {
+                    if (stat((char *)pszFileName, &statBuf) == 0) {
+                        /* Found an existing file */
+                        foundFile = 1;
+                        DBGPRINTF("%s: found next available file: %d\n",
+                                 obj.GetName((obj_t *)pThis), nextFileNum);
+                    } else {
+                        nextFileNum++;
+                    }
+                }
+            }
+            
+            if (pszFileName != NULL) {
+                free(pszFileName);
+                pszFileName = NULL;
+            }
+            
+            if (localRet != RS_RET_OK) {
+                /* Error during file search */
+                ABORT_FINALIZE(localRet);
+            }
+            
+            if (foundFile) {
+                /* Update the stream to point to the next file, starting at offset 0 */
+                pThis->tVars.disk.pReadDeq->iCurrFNum = nextFileNum;
+                pThis->tVars.disk.pReadDeq->iCurrOffs = 0;
+                pThis->tVars.disk.pReadDeq->strtOffs = 0;
+                
+                /* Also update ReadDel to match */
+                pThis->tVars.disk.pReadDel->iCurrFNum = nextFileNum;
+                pThis->tVars.disk.pReadDel->iCurrOffs = 0;
+                pThis->tVars.disk.pReadDel->strtOffs = 0;
+                
+                /* Calculate messages lost based on queue size.
+                 * We can't know the exact count, but we report the entire queue size
+                 * as potentially affected.
+                 */
+                messagesLost = origQueueSize;
+                
+                /* Adjust queue size - we're effectively marking all previously queued messages as lost */
+                if (messagesLost > 0) {
+                    ATOMIC_SUB(&pThis->iQueueSize, messagesLost, &pThis->mutQueueSize);
+#ifdef ENABLE_IMDIAG
+                    #ifdef HAVE_ATOMIC_BUILTINS
+                    ATOMIC_SUB(&iOverallQueueSize, messagesLost, &NULL);
+                    #else
+                    iOverallQueueSize -= messagesLost;
+                    #endif
+#endif
+                }
+                
+                LogError(0, RS_RET_ERR,
+                        "%s: lost %d messages from diskqueue due to missing file %d during restart "
+                        "(dirty shutdown recovery)", obj.GetName((obj_t *)pThis),
+                        messagesLost, origFileNum);
+            } else {
+                /* No files found - mark entire queue as lost */
+                messagesLost = origQueueSize;
+                if (messagesLost > 0) {
+                    ATOMIC_SUB(&pThis->iQueueSize, messagesLost, &pThis->mutQueueSize);
+#ifdef ENABLE_IMDIAG
+                    #ifdef HAVE_ATOMIC_BUILTINS
+                    ATOMIC_SUB(&iOverallQueueSize, messagesLost, &NULL);
+                    #else
+                    iOverallQueueSize -= messagesLost;
+                    #endif
+#endif
+                }
+                LogError(0, RS_RET_ERR,
+                        "%s: lost %d messages from diskqueue - no queue files found after file %d "
+                        "(dirty shutdown recovery)", obj.GetName((obj_t *)pThis),
+                        messagesLost, origFileNum);
+            }
+        } else {
+            CHKiRet(seekRet);
+        }
+    }
 
     /* OK, we could successfully read the file, so we now can request that it be
      * deleted when we are done with the persisted information.
