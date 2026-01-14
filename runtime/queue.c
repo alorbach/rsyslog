@@ -981,12 +981,11 @@ static rsRetVal qqueueTryLoadPersistedInfo(qqueue_t *pThis) {
         rsRetVal seekRet = strm.SeekCurrOffs(pThis->tVars.disk.pReadDeq);
         if (seekRet == RS_RET_FILE_NOT_FOUND) {
             /* The dequeue file referenced in .qi doesn't exist (dirty shutdown scenario).
-             * We need to find the next available file and mark messages as lost.
+             * We need to find the next available file. Messages from the missing file(s)
+             * are considered lost, but we should continue with remaining files.
              */
             const unsigned int origFileNum = strmGetCurrFileNum(pThis->tVars.disk.pReadDeq);
             const unsigned int writeFileNum = strmGetCurrFileNum(pThis->tVars.disk.pWrite);
-            const int origQueueSize = getLogicalQueueSize(pThis);
-            int messagesLost = 0;
             unsigned int nextFileNum = origFileNum;
             uchar *pszFileName = NULL;
             struct stat statBuf;
@@ -1034,7 +1033,11 @@ static rsRetVal qqueueTryLoadPersistedInfo(qqueue_t *pThis) {
             }
             
             if (foundFile) {
-                /* Update the stream to point to the next file, starting at offset 0 */
+                /* Update the stream to point to the next file, starting at offset 0.
+                 * We don't adjust the queue size here - the DequeueConsumableElements
+                 * function will handle detecting and reporting the lost messages when
+                 * it discovers the read/write pointers are inconsistent.
+                 */
                 pThis->tVars.disk.pReadDeq->iCurrFNum = nextFileNum;
                 pThis->tVars.disk.pReadDeq->iCurrOffs = 0;
                 pThis->tVars.disk.pReadDeq->strtOffs = 0;
@@ -1044,45 +1047,19 @@ static rsRetVal qqueueTryLoadPersistedInfo(qqueue_t *pThis) {
                 pThis->tVars.disk.pReadDel->iCurrOffs = 0;
                 pThis->tVars.disk.pReadDel->strtOffs = 0;
                 
-                /* Calculate messages lost based on queue size.
-                 * We can't know the exact count, but we report the entire queue size
-                 * as potentially affected.
-                 */
-                messagesLost = origQueueSize;
-                
-                /* Adjust queue size - we're effectively marking all previously queued messages as lost */
-                if (messagesLost > 0) {
-                    ATOMIC_SUB(&pThis->iQueueSize, messagesLost, &pThis->mutQueueSize);
-#ifdef ENABLE_IMDIAG
-                    #ifdef HAVE_ATOMIC_BUILTINS
-                    ATOMIC_SUB(&iOverallQueueSize, messagesLost, &NULL);
-                    #else
-                    iOverallQueueSize -= messagesLost;
-                    #endif
-#endif
-                }
-                
                 LogError(0, RS_RET_ERR,
-                        "%s: lost %d messages from diskqueue due to missing file %d during restart "
+                        "%s: diskqueue file %d not found during restart, skipped to file %d "
                         "(dirty shutdown recovery)", obj.GetName((obj_t *)pThis),
-                        messagesLost, origFileNum);
+                        origFileNum, nextFileNum);
             } else {
-                /* No files found - mark entire queue as lost */
-                messagesLost = origQueueSize;
-                if (messagesLost > 0) {
-                    ATOMIC_SUB(&pThis->iQueueSize, messagesLost, &pThis->mutQueueSize);
-#ifdef ENABLE_IMDIAG
-                    #ifdef HAVE_ATOMIC_BUILTINS
-                    ATOMIC_SUB(&iOverallQueueSize, messagesLost, &NULL);
-                    #else
-                    iOverallQueueSize -= messagesLost;
-                    #endif
-#endif
-                }
+                /* No files found after the missing one. This likely means all remaining
+                 * data was lost. Report it but allow startup to continue. The queue
+                 * size will be corrected during normal operation.
+                 */
                 LogError(0, RS_RET_ERR,
-                        "%s: lost %d messages from diskqueue - no queue files found after file %d "
-                        "(dirty shutdown recovery)", obj.GetName((obj_t *)pThis),
-                        messagesLost, origFileNum);
+                        "%s: diskqueue file %d not found during restart and no subsequent files found "
+                        "(dirty shutdown recovery - queue data may be lost)", 
+                        obj.GetName((obj_t *)pThis), origFileNum);
             }
         } else {
             CHKiRet(seekRet);
