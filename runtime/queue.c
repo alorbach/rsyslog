@@ -986,7 +986,7 @@ static rsRetVal qqueueTryLoadPersistedInfo(qqueue_t *pThis) {
              */
             const unsigned int origFileNum = strmGetCurrFileNum(pThis->tVars.disk.pReadDeq);
             const unsigned int writeFileNum = strmGetCurrFileNum(pThis->tVars.disk.pWrite);
-            unsigned int nextFileNum = origFileNum;
+            unsigned int nextFileNum = origFileNum + 1; /* Start search from file after the missing one */
             uchar *pszFileName = NULL;
             struct stat statBuf;
             int foundFile = 0;
@@ -995,7 +995,9 @@ static rsRetVal qqueueTryLoadPersistedInfo(qqueue_t *pThis) {
             DBGPRINTF("%s: dequeue file %d not found during restart, searching for next available file\n",
                       obj.GetName((obj_t *)pThis), origFileNum);
             
-            /* Search for the next existing file, up to the write file number */
+            /* Search for the next existing file, starting after the missing file.
+             * We search up to and including the write file number.
+             */
             while (nextFileNum <= writeFileNum && !foundFile && localRet == RS_RET_OK) {
                 /* Generate the file name for this file number */
                 if (pszFileName != NULL) {
@@ -1037,6 +1039,11 @@ static rsRetVal qqueueTryLoadPersistedInfo(qqueue_t *pThis) {
                  * We don't adjust the queue size here - the DequeueConsumableElements
                  * function will handle detecting and reporting the lost messages when
                  * it discovers the read/write pointers are inconsistent.
+                 * 
+                 * Note: We directly modify stream internals here rather than using API
+                 * functions because there's no stream API to reset to a different file
+                 * number at offset 0 without attempting to open it first. This is safe
+                 * because we're still in the construction/initialization phase.
                  */
                 pThis->tVars.disk.pReadDeq->iCurrFNum = nextFileNum;
                 pThis->tVars.disk.pReadDeq->iCurrOffs = 0;
