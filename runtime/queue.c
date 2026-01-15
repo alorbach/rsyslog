@@ -998,12 +998,10 @@ static rsRetVal qqueueTryLoadPersistedInfo(qqueue_t *pThis) {
             /* Search for the next existing file, starting after the missing file.
              * We search up to and including the write file number.
              */
-            while (nextFileNum <= writeFileNum && !foundFile && localRet == RS_RET_OK) {
+            while (nextFileNum <= writeFileNum && !foundFile) {
                 /* Generate the file name for this file number */
-                if (pszFileName != NULL) {
-                    free(pszFileName);
-                    pszFileName = NULL;
-                }
+                free(pszFileName);
+                pszFileName = NULL;
                 localRet = genFileName(&pszFileName,
                                    pThis->tVars.disk.pReadDeq->pszDir,
                                    pThis->tVars.disk.pReadDeq->lenDir,
@@ -1011,23 +1009,22 @@ static rsRetVal qqueueTryLoadPersistedInfo(qqueue_t *pThis) {
                                    pThis->tVars.disk.pReadDeq->lenFName,
                                    nextFileNum,
                                    pThis->tVars.disk.pReadDeq->iFileNumDigits);
+                if (localRet != RS_RET_OK) {
+                    break;
+                }
                 
-                if (localRet == RS_RET_OK) {
-                    if (stat((char *)pszFileName, &statBuf) == 0) {
-                        /* Found an existing file */
-                        foundFile = 1;
-                        DBGPRINTF("%s: found next available file: %d\n",
-                                 obj.GetName((obj_t *)pThis), nextFileNum);
-                    } else {
-                        nextFileNum++;
-                    }
+                if (stat((char *)pszFileName, &statBuf) == 0) {
+                    /* Found an existing file */
+                    foundFile = 1;
+                    DBGPRINTF("%s: found next available file: %d\n",
+                             obj.GetName((obj_t *)pThis), nextFileNum);
+                } else {
+                    nextFileNum++;
                 }
             }
             
-            if (pszFileName != NULL) {
-                free(pszFileName);
-                pszFileName = NULL;
-            }
+            free(pszFileName);
+            pszFileName = NULL;
             
             if (localRet != RS_RET_OK) {
                 /* Error during file search */
