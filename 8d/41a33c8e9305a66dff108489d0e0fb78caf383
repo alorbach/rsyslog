@@ -1,0 +1,19 @@
+packaging/rpm/rpmbuild/SPECS/rsyslog-v8-stable.spec
+  s_2b5d8bd7abaefa::t_569ad0530d0dab 315-325,527-537,696-697,997-1004
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.13",
+  "base_commit_sha": "8d41a33c8e9305a66dff108489d0e0fb78caf383",
+  "prompts": {},
+  "sessions": {
+    "s_2b5d8bd7abaefa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f5f16-e537-7a83-9a0d-d4743f99d4ce",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Andre Lorbach <alorbach@adiscon.com>"
+    }
+  }
+}
