@@ -1,6 +1,12 @@
 --------------------------------------------------------------------------------------
 Scheduled Release 8.2610.0 (aka 2026.10) 2026-10-??
 
+- 2026-08-20: imdtls: reject DTLS peers that fail identity checks
+  Listeners with tls.authmode set to name or fingerprint now close the
+  session when tls.permittedPeer does not match. Previously the check
+  was logged and an unpermitted peer could still submit records.
+  Thanks to Ada Logics and Anthropic Claude for reporting the issue.
+
 --------------------------------------------------------------------------------------
 Scheduled Release 8.2608.0 (aka 2026.08) 2026-08-18
 

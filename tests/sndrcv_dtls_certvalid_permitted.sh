@@ -1,7 +1,8 @@
 #!/bin/bash
 # This file is part of the rsyslog project, released under ASL 2.0
-# Verify successful cert-valid DTLS transfer when the peer name is explicitly
-# permitted. The receiver must record the exact injected message sequence.
+# Verify successful DTLS transfer when tls.authmode="name" and the sender
+# certificate SAN (testbench.rsyslog.com) is listed in tls.permittedpeer.
+# The receiver must record the exact injected message sequence.
 . ${srcdir:=.}/diag.sh init
 export RSTB_IMDIAG_INJECT_DELAY_MODE=full
 printf 'using TLS driver: %s\n' ${RS_TLS_DRIVER:=gtls}
@@ -29,7 +30,7 @@ input(	type="imdtls"
 	tls.mycert="'$srcdir'/tls-certs/cert.pem"
 	tls.myprivkey="'$srcdir'/tls-certs/key.pem"
 	tls.authmode="name"
-	tls.permittedpeer="rsyslog"
+	tls.permittedpeer="testbench.rsyslog.com"
 )
 
 template(name="outfmt" type="string" string="%msg:F,58:2%\n")
